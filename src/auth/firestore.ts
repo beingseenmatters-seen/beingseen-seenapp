@@ -25,6 +25,8 @@ export async function ensureUserDocument(
     createdAt: serverTimestamp(),
     loginMethod: method,
     onboardingCompleted: false,
+    onboardingStarted: false,
+    understandingProgress: 0,
   };
 
   await setDoc(userRef, newUser);
@@ -40,5 +42,5 @@ export async function updateUserDocument(
   uid: string,
   data: Partial<SeenUser>,
 ): Promise<void> {
-  await setDoc(doc(db, 'users', uid), data, { merge: true });
+  await setDoc(doc(db, 'users', uid), { ...data, updatedAt: serverTimestamp() }, { merge: true });
 }

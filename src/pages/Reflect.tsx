@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, ChevronDown, Info, RotateCcw, Trash2, ToggleLeft, ToggleRight, Send } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../i18n';
+import { useAuth } from '../auth';
 import { sendReflectWithGate } from '../services/seenApi';
 import { analyzeUserState } from '../services/questionGate';
 import { ResponseStyle, type ReflectDebug, type ResponseStyleType } from '../types/responseStyle';
@@ -42,6 +43,10 @@ const STORAGE_KEY = 'seen_reflect_session';
 export default function Reflect() {
   const [step, setStep] = useState(0);
   const { t, language, setLanguage, effectiveLanguage } = useLanguage();
+  const { seenUser } = useAuth();
+  const navigate = useNavigate();
+  const understandingProgress = seenUser?.understandingProgress ?? 0;
+  const showUnderstandingBanner = understandingProgress < 6;
   const [inputValue, setInputValue] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -542,6 +547,23 @@ export default function Reflect() {
                 </p>
               </div>
             </div>
+
+            {/* Understanding reminder */}
+            {showUnderstandingBanner && (
+              <button
+                onClick={() => navigate('/me/questions')}
+                className="shrink-0 w-full p-4 rounded-xl bg-gray-50 border border-gray-100 text-left mb-3 hover:border-gray-200 transition-colors group"
+              >
+                <p className="text-xs text-secondary font-light leading-relaxed">
+                  {effectiveLanguage === 'zh'
+                    ? '我越了解你，就越能真正地与你同频。'
+                    : 'The more I understand you, the more I can truly resonate with you.'}
+                </p>
+                <span className="text-xs text-primary font-medium mt-1.5 inline-flex items-center gap-1 group-hover:gap-2 transition-all">
+                  {effectiveLanguage === 'zh' ? '继续了解 →' : 'Continue understanding →'}
+                </span>
+              </button>
+            )}
 
             {/* Action buttons */}
             <div className="shrink-0 space-y-2 pb-3">

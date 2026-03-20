@@ -1,10 +1,21 @@
 import { ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../i18n';
+import { useAuth } from '../auth';
 
 export default function Me() {
   const navigate = useNavigate();
-  const { t } = useLanguage();
+  const { t, effectiveLanguage } = useLanguage();
+  const { seenUser, signOut } = useAuth();
+
+  const understandingProgress = seenUser?.understandingProgress ?? 0;
+  const totalQuestions = 6;
+  const isComplete = understandingProgress >= totalQuestions;
+  const lang = effectiveLanguage === 'zh' ? 'zh' : 'en';
+
+  const handleLogout = async () => {
+    await signOut();
+  };
 
   return (
     <div className="px-6 pt-16 pb-8 h-full overflow-y-auto no-scrollbar">
@@ -20,17 +31,68 @@ export default function Me() {
       </div>
 
       <div className="space-y-6">
+        {/* Understanding Progress Card */}
+        <div className="p-5 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
+          <div className="space-y-1">
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+              {lang === 'zh' ? '我的理解' : 'My Understanding'}
+            </h3>
+            <p className="text-sm text-secondary font-light leading-relaxed">
+              {lang === 'zh'
+                ? '这些答案帮助塑造你被理解的方式——\n以及你与他人连接的方式。'
+                : 'These insights help shape how you are understood —\nand how you connect with others.'}
+            </p>
+          </div>
+
+          {/* Progress bar */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted">
+                {lang === 'zh' ? '理解进度' : 'Understanding Progress'}
+              </span>
+              <span className="text-xs font-medium text-primary">
+                {understandingProgress} / {totalQuestions}
+              </span>
+            </div>
+            <div className="flex gap-1.5">
+              {Array.from({ length: totalQuestions }).map((_, idx) => (
+                <div
+                  key={idx}
+                  className={`h-1.5 flex-1 rounded-full transition-colors ${
+                    idx < understandingProgress ? 'bg-primary' : 'bg-gray-200'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+
+          {!isComplete && (
+            <>
+              <p className="text-xs text-muted font-light leading-relaxed">
+                {lang === 'zh'
+                  ? '你的资料越完整，\n你的体验就越有意义。'
+                  : 'The more complete your profile is,\nthe more meaningful your experience will be.'}
+              </p>
+              <button
+                onClick={() => navigate('/me/questions')}
+                className="w-full py-3 rounded-xl bg-primary text-white text-sm font-medium hover:bg-black transition-colors flex items-center justify-center gap-1"
+              >
+                {lang === 'zh' ? '继续 →' : 'Continue →'}
+              </button>
+            </>
+          )}
+        </div>
+
         <Section title={t('me.section_profile')}>
-          <MenuItem 
+          <MenuItem
             title={t('me.menu_profile')}
             subtitle={t('me.menu_profile_sub')}
             onClick={() => navigate('/me/profile')}
           />
         </Section>
 
-        {/* About Me Section - New */}
         <Section title={t('me.section_questions')}>
-          <MenuItem 
+          <MenuItem
             title={t('me.menu_questions')}
             subtitle={t('me.menu_questions_sub')}
             onClick={() => navigate('/me/questions')}
@@ -38,12 +100,12 @@ export default function Me() {
         </Section>
 
         <Section title={t('me.section_core')}>
-          <MenuItem 
+          <MenuItem
             title={t('me.menu_understanding')}
             subtitle={t('me.menu_understanding_sub')}
             onClick={() => navigate('/me/understanding')}
           />
-          <MenuItem 
+          <MenuItem
             title={t('me.menu_ai')}
             subtitle={t('me.menu_ai_sub')}
             onClick={() => navigate('/me/ai-response')}
@@ -51,20 +113,30 @@ export default function Me() {
         </Section>
 
         <Section title={t('me.section_data')}>
-          <MenuItem 
+          <MenuItem
             title={t('me.menu_privacy')}
             subtitle={t('me.menu_privacy_sub')}
             onClick={() => navigate('/me/privacy')}
           />
-          <MenuItem 
+          <MenuItem
             title={t('me.menu_account')}
             subtitle={t('me.menu_account_sub')}
             onClick={() => navigate('/me/account')}
           />
         </Section>
 
-        <div className="pt-8 text-center">
-           <p className="mt-8 text-[10px] text-gray-300 uppercase tracking-widest">{t('me.version')}</p>
+        {/* Logout */}
+        <div className="pt-4">
+          <button
+            onClick={handleLogout}
+            className="w-full py-3 rounded-xl border border-gray-200 text-secondary text-sm hover:bg-gray-50 transition-colors"
+          >
+            {t('me.logout')}
+          </button>
+        </div>
+
+        <div className="pt-4 text-center">
+           <p className="mt-4 text-[10px] text-gray-300 uppercase tracking-widest">{t('me.version')}</p>
         </div>
       </div>
     </div>
@@ -84,7 +156,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function MenuItem({ title, subtitle, onClick }: { title: string; subtitle: string; onClick?: () => void }) {
   return (
-    <button 
+    <button
       onClick={onClick}
       className="w-full flex items-center justify-between p-5 bg-white border border-gray-100 rounded-2xl hover:border-gray-300 transition-all duration-300 group shadow-sm"
     >
