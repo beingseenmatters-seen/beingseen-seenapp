@@ -13,6 +13,11 @@ dist-ssr
 *.local
 .env
 
+# Platform build artifacts
+ios/App/Pods
+android/app/build
+android/.gradle
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
