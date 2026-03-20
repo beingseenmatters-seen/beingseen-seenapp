@@ -48,6 +48,8 @@
     "error_network": "连接不上网络，检查一下再试试。",
     "error_invalid_email": "这看起来不太像邮箱地址，再看看？",
     "error_popup_closed": "窗口被关闭了，准备好了再试。",
+    "error_popup_blocked": "浏览器阻止了登录窗口，请允许弹出窗口后重试。",
+    "error_unauthorized_domain": "当前域名尚未授权登录，请联系我们。",
     "error_too_many": "尝试次数太多了，深呼吸一下，稍后再试。",
     "error_disabled": "这个账户已被停用，如有疑问请联系我们。",
     "error_link_expired": "链接已过期或已被使用，请重新发送。",

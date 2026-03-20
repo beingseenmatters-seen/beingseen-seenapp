@@ -15,7 +15,7 @@ import * as googleWeb from './providers/googleWeb';
 import * as appleNative from './providers/appleNative';
 import * as firestoreOps from './firestore';
 import { registerDeepLinkListener } from './deepLink';
-import { isNative } from './platform';
+import { isNative, isWeb } from './platform';
 
 // ---------------------------------------------------------------------------
 // State
@@ -69,6 +69,11 @@ function friendlyErrorKey(error: unknown): string {
     case 'auth/popup-closed-by-user':
     case 'auth/cancelled-popup-request':
       return 'auth.error_popup_closed';
+    case 'auth/popup-blocked':
+    case 'auth/operation-not-supported-in-this-environment':
+      return 'auth.error_popup_blocked';
+    case 'auth/unauthorized-domain':
+      return 'auth.error_unauthorized_domain';
     case 'auth/network-request-failed':
       return 'auth.error_network';
     case 'auth/invalid-email':
@@ -118,10 +123,34 @@ const initialState: AuthState = {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, initialState);
   const pendingDeepLinkRef = useRef<string | null>(null);
+  const emailLinkHandledRef = useRef(false);
 
-  // --- Auth state listener + native deep link listener ---
+  // --- Auth state listener + startup checks ---
   useEffect(() => {
+    // 1. On web: detect email sign-in link in the current URL BEFORE
+    //    onAuthStateChanged fires, so we don't accidentally redirect away.
+    if (isWeb() && !emailLinkHandledRef.current) {
+      const href = window.location.href;
+      if (emailLink.isEmailLink(href)) {
+        console.log('[auth] detected email sign-in link on app load');
+        emailLinkHandledRef.current = true;
+        handleWebEmailLink(href);
+      }
+    }
+
+    // 2. On web: pick up any pending Google redirect sign-in.
+    if (isWeb()) {
+      googleWeb.completeGoogleRedirect().then(async (user) => {
+        if (user) {
+          console.log('[auth] completed pending google redirect sign-in');
+          await firestoreOps.ensureUserDocument(user, 'google');
+        }
+      });
+    }
+
+    // 3. Standard Firebase auth state listener.
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('[auth] onAuthStateChanged:', user ? `uid=${user.uid}` : 'null');
       if (user) {
         try {
           const seenUser = await firestoreOps.getUserDocument(user.uid);
@@ -135,14 +164,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    // On native, listen for deep links (email sign-in links opened from email app).
-    // On web, email link completion is handled by EmailLinkWaitingScreen.
+    // 4. On native: listen for deep links (email sign-in links opened from email app).
     const removeDeepLink = registerDeepLinkListener((url) => {
       if (emailLink.isEmailLink(url)) {
-        console.log('[Auth] Deep link is an email sign-in link, completing...');
+        console.log('[auth] deep link is an email sign-in link, completing...');
         handleDeepLinkEmailSignIn(url);
       } else {
-        console.log('[Auth] Deep link received but not an email sign-in link:', url);
+        console.log('[auth] deep link received but not an email sign-in link');
       }
     });
 
@@ -152,12 +180,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleDeepLinkEmailSignIn = async (url: string) => {
+  // --- Web email link handler (called once on app load) ---
+  const handleWebEmailLink = async (href: string) => {
     const storedEmail = emailLink.getStoredEmail();
-    console.log('[Auth] handleDeepLinkEmailSignIn', { url, storedEmail: storedEmail ?? '(none)' });
+    console.log('[auth] handling web email link', { hasStoredEmail: !!storedEmail });
 
     if (!storedEmail) {
-      console.log('[Auth] No stored email for deep link — saving URL for manual entry');
+      // No stored email — the EmailLinkWaitingScreen will prompt the user.
+      // Don't block here; let the app render normally so the user can
+      // type their email on the verify screen.
+      console.log('[auth] no stored email — waiting for user input on verify screen');
+      return;
+    }
+
+    dispatch({ type: 'LOADING' });
+    try {
+      const user = await emailLink.completeEmailSignIn(href);
+      await firestoreOps.ensureUserDocument(user, 'email');
+      // Clean the URL so the sign-in params don't linger.
+      window.history.replaceState({}, '', '/');
+      console.log('[auth] web email link sign-in completed');
+    } catch (err) {
+      console.error('[auth] web email link sign-in failed:', (err as Error)?.message);
+      dispatch({ type: 'SET_ERROR', error: friendlyErrorKey(err) });
+    }
+  };
+
+  // --- Native deep link email handler ---
+  const handleDeepLinkEmailSignIn = async (url: string) => {
+    const storedEmail = emailLink.getStoredEmail();
+    console.log('[auth] handleDeepLinkEmailSignIn', { hasStoredEmail: !!storedEmail });
+
+    if (!storedEmail) {
       pendingDeepLinkRef.current = url;
       dispatch({ type: 'SET_ERROR', error: 'auth.error_missing_email' });
       return;
@@ -168,9 +222,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const user = await emailLink.completeEmailSignIn(url);
       await firestoreOps.ensureUserDocument(user, 'email');
       pendingDeepLinkRef.current = null;
-      console.log('[Auth] Deep link email sign-in completed');
+      console.log('[auth] deep link email sign-in completed');
     } catch (err) {
-      console.error('[Auth] Deep link email sign-in failed:', (err as Error)?.message, (err as { code?: string })?.code);
+      console.error('[auth] deep link email sign-in failed:', (err as Error)?.message);
       dispatch({ type: 'SET_ERROR', error: friendlyErrorKey(err) });
     }
   };
@@ -179,7 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const handleProviderAuth = useCallback(
     async (method: LoginMethod, action: () => Promise<User>) => {
-      console.log('[Auth] Provider sign-in started:', method);
+      console.log('[auth] provider sign-in started:', method);
       dispatch({ type: 'LOADING' });
       try {
         const user = await action();
@@ -187,13 +241,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const seenUser = await firestoreOps.getUserDocument(user.uid);
         dispatch({ type: 'SET_USER', firebaseUser: user, seenUser });
         syncLocalStorage(seenUser);
-        console.log('[Auth] Provider sign-in succeeded:', method);
+        console.log('[auth] provider sign-in succeeded:', method);
       } catch (err) {
         const code = (err as { code?: string })?.code;
         if (
           code === 'auth/popup-closed-by-user' ||
           code === 'auth/cancelled-popup-request'
         ) {
+          console.log('[auth] sign-in cancelled by user');
           dispatch({ type: 'CLEAR_ERROR' });
           dispatch({
             type: 'SET_USER',
@@ -202,7 +257,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
           return;
         }
-        console.error('[Auth] Provider sign-in failed:', method, (err as Error)?.message);
+        console.error('[auth] provider sign-in failed:', method, code, (err as Error)?.message);
         dispatch({ type: 'SET_ERROR', error: friendlyErrorKey(err) });
         throw err;
       }
@@ -232,6 +287,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           seenUser: state.seenUser,
         });
       } catch (err) {
+        console.error('[auth] failed to send email link:', (err as Error)?.message);
         dispatch({ type: 'SET_ERROR', error: friendlyErrorKey(err) });
         throw err;
       }
@@ -246,15 +302,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pendingDeepLinkRef.current ||
         (isNative() ? null : window.location.href);
 
-      console.log('[Auth] completeEmailSignIn called', {
+      console.log('[auth] completeEmailSignIn called', {
         source: deepLinkUrl ? 'deepLink' : pendingDeepLinkRef.current ? 'pendingRef' : 'windowHref',
-        isEmailLink: url ? emailLink.isEmailLink(url) : false,
-        manualEmail: manualEmail ?? '(auto)',
-        native: isNative(),
+        isLink: url ? emailLink.isEmailLink(url) : false,
+        hasManualEmail: !!manualEmail,
       });
 
       if (!url || !emailLink.isEmailLink(url)) {
-        console.log('[Auth] No valid email sign-in link URL available');
+        console.log('[auth] no valid email sign-in link URL available');
         return false;
       }
 
@@ -266,14 +321,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!isNative()) {
           window.history.replaceState({}, '', '/');
         }
-        console.log('[Auth] Email sign-in completed successfully');
+        console.log('[auth] email sign-in completed successfully');
         return true;
       } catch (err) {
-        console.error(
-          '[Auth] Email sign-in failed:',
-          (err as Error)?.message,
-          (err as { code?: string })?.code,
-        );
+        console.error('[auth] email sign-in failed:', (err as Error)?.message, (err as { code?: string })?.code);
         dispatch({ type: 'SET_ERROR', error: friendlyErrorKey(err) });
         return false;
       }
@@ -287,10 +338,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await firestoreOps.updateUserDocument(state.firebaseUser.uid, data);
       const updated = await firestoreOps.getUserDocument(state.firebaseUser.uid);
       if (updated) {
-        console.log('[Auth] Profile updated:', {
-          onboardingCompleted: updated.onboardingCompleted,
-          nickname: updated.nickname,
-        });
         dispatch({ type: 'UPDATE_SEEN_USER', seenUser: updated });
         syncLocalStorage(updated);
       } else {
@@ -307,7 +354,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       emailLink.clearStoredEmail();
       localStorage.removeItem('seen_user');
       dispatch({ type: 'SET_USER', firebaseUser: null, seenUser: null });
-      console.log('[Auth] User signed out');
+      console.log('[auth] user signed out');
     } catch (err) {
       dispatch({ type: 'SET_ERROR', error: friendlyErrorKey(err) });
     }

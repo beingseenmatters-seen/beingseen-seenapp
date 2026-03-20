@@ -5,32 +5,22 @@ import {
   type User,
 } from 'firebase/auth';
 import { auth } from '../../services/firebase';
-import { isNative } from '../platform';
+import { AUTH_APP_URL } from '../config';
 
 const EMAIL_KEY = 'seen_email_for_signin';
 
-function getCallbackUrl(): string {
-  if (isNative()) {
-    const appUrl = import.meta.env.VITE_APP_URL;
-    if (appUrl) return `${appUrl}/auth/verify`;
-    console.warn(
-      '[EmailLink] VITE_APP_URL not set — email link callback will not work on native. ' +
-      'Set it to your HTTPS hosting domain (e.g. https://seen.web.app).',
-    );
-    return `https://${import.meta.env.VITE_FIREBASE_AUTH_DOMAIN}`;
-  }
-  return `${window.location.origin}/auth/verify`;
-}
-
 export async function sendEmailLink(email: string): Promise<void> {
-  const callbackUrl = getCallbackUrl();
-  console.log('[EmailLink] Sending sign-in link', { email, callbackUrl, native: isNative() });
+  const callbackUrl = `${AUTH_APP_URL}/auth/verify`;
+
+  console.log('[auth] sending email link', { email, callbackUrl });
+
   await sendSignInLinkToEmail(auth, email, {
     url: callbackUrl,
     handleCodeInApp: true,
   });
+
   localStorage.setItem(EMAIL_KEY, email);
-  console.log('[EmailLink] Link sent, email saved to localStorage');
+  console.log('[auth] email link sent, email saved to localStorage');
 }
 
 export function getStoredEmail(): string | null {
@@ -51,14 +41,15 @@ export async function completeEmailSignIn(
 ): Promise<User> {
   const storedEmail = localStorage.getItem(EMAIL_KEY);
   const email = manualEmail || storedEmail;
-  console.log('[EmailLink] completeSignIn', {
-    storedEmail: storedEmail ?? '(none)',
-    manualEmail: manualEmail ?? '(none)',
-    using: email ?? '(none)',
+
+  console.log('[auth] completing email link sign-in', {
+    hasStoredEmail: !!storedEmail,
+    hasManualEmail: !!manualEmail,
+    usingEmail: email ? '(set)' : '(none)',
   });
 
   if (!email) {
-    console.error('[EmailLink] No email available for sign-in link completion');
+    console.error('[auth] no email available for sign-in link completion');
     const err = new Error('no_stored_email');
     (err as unknown as Record<string, string>).code = 'auth/missing-email';
     throw err;
@@ -66,6 +57,6 @@ export async function completeEmailSignIn(
 
   const result = await signInWithEmailLink(auth, email, url);
   localStorage.removeItem(EMAIL_KEY);
-  console.log('[EmailLink] signInWithEmailLink succeeded, uid:', result.user.uid);
+  console.log('[auth] email link sign-in succeeded, uid:', result.user.uid);
   return result.user;
 }

@@ -48,6 +48,8 @@
     "error_network": "We couldn't connect. Check your connection and try again.",
     "error_invalid_email": "That doesn't look like an email address. Mind checking?",
     "error_popup_closed": "Looks like the window was closed. Try again when you're ready.",
+    "error_popup_blocked": "Your browser blocked the sign-in window. Please allow popups and try again.",
+    "error_unauthorized_domain": "This domain isn't authorized for sign-in yet. Please contact support.",
     "error_too_many": "Too many attempts. Take a breath and try again shortly.",
     "error_disabled": "This account has been disabled. Please reach out if this seems wrong.",
     "error_link_expired": "This link has expired or was already used. Please request a new one.",
