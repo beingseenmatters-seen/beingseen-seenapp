@@ -1,0 +1,419 @@
+{
+  "common": {
+    "back": "Back",
+    "next": "Next",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saved": "Saved",
+    "send": "Send",
+    "done": "Done",
+    "not_now": "Not Now",
+    "continue": "Continue",
+    "loading": "Loading",
+    "delete": "Delete",
+    "finish": "Finish",
+    "skip": "Skip",
+    "later": "Maybe later",
+    "begin": "Begin",
+    "feature_coming_soon": "Coming Soon",
+    "distress_notice": "I sense you may be distressed. I'll respond gently.",
+    "gentle_response": "I'll respond gently to you",
+    "unsaved_confirm": "You have unsaved changes. Leave without saving?"
+  },
+  "nav": {
+    "reflect": "Reflect",
+    "resonate": "Resonate",
+    "inbox": "Inbox",
+    "me": "Me"
+  },
+  "auth": {
+    "welcome_title": "Welcome to Seen",
+    "welcome_subtitle": "You don't need to become anyone here.\nJust say what you want, at your own pace.",
+    "options_title": "How would you like to continue?",
+    "options_subtitle": "No account to create. Just step in.",
+    "continue_apple": "Continue with Apple",
+    "continue_google": "Continue with Google",
+    "continue_email": "Continue with Email",
+    "email_title": "What's your email?",
+    "email_placeholder": "your@email.com",
+    "send_link": "Send Sign-in Link",
+    "verify_title": "Check your email",
+    "verify_subtitle": "We sent a sign-in link to",
+    "verify_hint": "Open the link in your email to continue.",
+    "verify_resend_btn": "Didn't receive it? Resend",
+    "verify_resent": "Sent again. Check your inbox.",
+    "verify_different": "Use a different email",
+    "error_generic": "Something didn't go through. Let's try again.",
+    "error_network": "We couldn't connect. Check your connection and try again.",
+    "error_invalid_email": "That doesn't look like an email address. Mind checking?",
+    "error_popup_closed": "Looks like the window was closed. Try again when you're ready.",
+    "error_too_many": "Too many attempts. Take a breath and try again shortly.",
+    "error_disabled": "This account has been disabled. Please reach out if this seems wrong.",
+    "error_link_expired": "This link has expired or was already used. Please request a new one.",
+    "error_missing_email": "We couldn't find your email. Please enter it below to continue.",
+    "verify_enter_email": "Enter your email to complete sign-in",
+    "verify_submit_email": "Continue",
+    "google_web_only": "Web only"
+  },
+  "onboarding": {
+    "q1_title": "How should we call you?",
+    "q1_placeholder": "A name you're comfortable with",
+    "desire_title": "What do you want more of\nin your life right now?",
+    "desire_placeholder": "Take your time...",
+    "desire_note": "There's no right answer. This is just for you.",
+    "welcome_title": "Welcome to Seen",
+    "welcome_subtitle": "You don't need to become anyone here.\nJust say what you want, at your own pace.",
+    "q2_title": "Where are you, roughly?",
+    "q2_subtitle": "(Only for time and language)",
+    "q2_choose": "Choose location",
+    "q2_skip": "I'd rather not say",
+    "q2_later": "Maybe later",
+    "q3_title": "Which age range feels closest to you?",
+    "q3_subtitle": "(You can skip)",
+    "q3_skip": "I'd rather not say",
+    "age_18_24": "18–24",
+    "age_25_34": "25–34",
+    "age_35_44": "35–44",
+    "age_45_54": "45–54",
+    "age_55_plus": "55+"
+  },
+  "optional_cards": {
+    "hobby_title": "If you had one extra hour today,\nwhat would you want to use it for?",
+    "hobby_watch": "Watch something",
+    "hobby_walk": "Walk / Exercise",
+    "hobby_movie": "Movies / Shows",
+    "hobby_chat": "Chat with someone",
+    "hobby_alone": "Be alone",
+    "hobby_create": "Create something",
+    "hobby_learn": "Learn something new",
+    "hobby_other": "Other",
+    "hobby_action": "Answer",
+    "self_desc_title": "If you had to describe yourself in one sentence,\nwhat would it be?",
+    "self_desc_hint": "e.g. A happy fool / Someone who thinks a lot but lives simply",
+    "self_desc_save": "Save",
+    "self_desc_skip": "Not now",
+    "zodiac_title": "Would you like to share your zodiac sign?",
+    "zodiac_subtitle": "(Just for fun)",
+    "zodiac_aries": "Aries",
+    "zodiac_taurus": "Taurus",
+    "zodiac_gemini": "Gemini",
+    "zodiac_cancer": "Cancer",
+    "zodiac_leo": "Leo",
+    "zodiac_virgo": "Virgo",
+    "zodiac_libra": "Libra",
+    "zodiac_scorpio": "Scorpio",
+    "zodiac_sagittarius": "Sagittarius",
+    "zodiac_capricorn": "Capricorn",
+    "zodiac_aquarius": "Aquarius",
+    "zodiac_pisces": "Pisces"
+  },
+  "me_questions": {
+    "intro": "These are just for you.\nTake your time. Or leave them blank.",
+    "q1_title": "Is there something in your life\nthat still makes you feel proud?",
+    "q2_title": "Is there something you regret?\nYou don't have to answer.",
+    "q3_title": "Who did you want to be as a child?\nLooking back, what has changed?",
+    "q4_title": "If you described yourself in one sentence now,\nwould it be the same as before?",
+    "q5_title": "When you're tired,\nwhat do you usually do to feel better?",
+    "q6_title": "Is there a sentence,\nor a person,\nthat once truly hit you at some moment?",
+    "action_save": "Save",
+    "action_skip": "Skip",
+    "action_later": "Write later",
+    "footer": "What you write here belongs to you.\nYou can change or remove it anytime."
+  },
+  "reflect": {
+    "title": "REFLECT",
+    "step0_title": "What's on your mind?",
+    "step0_subtitle": "This is not a stage.\nYou don't need to perform.",
+    "action_speak": "Speak",
+    "action_write": "Write",
+    "action_continue": "Continue Conversation",
+    "action_clear_context": "Clear Context",
+    "context_cleared_toast": "Conversation context cleared",
+    "keep_context_title": "Keep context for this conversation",
+    "keep_context_desc": "So you can finish one thought.\nNot saved. Not used for matching.\nClear anytime.",
+    "privacy_note": "Your expression is private.",
+    "step1_title": "STEP 1",
+    "step1_subtitle": "How should we treat your words?",
+    "opt_listen": "Mirror · Help me feel understood",
+    "opt_listen_hint": "Reflect my thinking without pushing it forward",
+    "opt_clarify": "Organizer · Clarify my thinking",
+    "opt_clarify_hint": "Extract the logic chain and make it clear",
+    "opt_blindspot": "Guide · Help me think deeper",
+    "opt_blindspot_hint": "Ask deeper questions and expand the thought",
+    "opt_blindspot_warning": "Guide deepens the thinking through questions, but never decides for you; you can switch to 'Mirror' anytime.",
+    "opt_polish": "Expression Helper · Help me express it better",
+    "opt_polish_hint": "Refine the language and offer better phrasing",
+    "step1_footer": "You can change the default response in 'Me' at any time.",
+    "mirror_title": "MIRROR",
+    "mirror_subtitle": "What you just said\nmight reflect this:",
+    "section_concern": "What you truly care about",
+    "section_emotion": "Underlying emotions",
+    "section_question": "A gentle inquiry",
+    "action_save": "Save",
+    "action_share": "Create Shareable",
+    "mirror_footer": "We use AI not to give you answers,\nbut to help you see yourself.",
+    "bridge_step": "STEP 3",
+    "bridge_title": "Connection happens\nwhen you see yourself clearly.",
+    "bridge_desc": "Seen does not manufacture relationships.\nOnly when your expression becomes clear,\nwill we present the few who truly resonate.",
+    "bridge_action_resonate": "Go to Resonate",
+    "bridge_action_reflect": "Continue Reflecting",
+    "bridge_footer": "There is no rush. Connection is never the goal."
+  },
+  "resonate": {
+    "title": "Resonate",
+    "step0_title": "You are still knowing yourself.",
+    "step0_desc": "As your expression clears,\nthose who resonate will draw near.",
+    "action_continue": "Continue Reflecting",
+    "action_settings": "Set My Understanding",
+    "demo_show": "Demo: Show Candidate",
+    "demo_reset": "Demo: Reset to Candidate",
+    "card_tag": "High Resonance",
+    "card_title": "You are highly aligned on 'Conflict Style' and 'Life Pace'.",
+    "card_subtitle": "This is not a label, but a resonance in expression.",
+    "dim_value": "Values",
+    "dim_value_val": "Long-term Meaning → Leaning",
+    "dim_conflict": "Conflict Style",
+    "dim_conflict_val": "Understand Emotion First",
+    "dim_pace": "Life Pace",
+    "dim_pace_val": "Slow · Deep · Less",
+    "dim_money": "Money View",
+    "dim_money_val": "Security from Stability",
+    "dim_express": "Expression Style",
+    "dim_express_val": "Deep · Feeling Oriented",
+    "action_request": "Request a Conversation",
+    "footer_note": "Connection requires mutual consent. Private conversation.",
+    "confirm_title": "Send a conversation request?",
+    "confirm_desc": "You will send a request to a resonated peer.\nThey can choose to accept or ignore.\nThe conversation will remain private.",
+    "action_send_request": "Send Request",
+    "waiting_title": "Request Sent",
+    "waiting_desc": "You sent a request.\nNo response yet. You don't need to do anything else.",
+    "action_goto_inbox": "Go to Inbox",
+    "empty_title": "No more resonance\nfor today.",
+    "empty_desc": "You can continue expressing,\nor come back when you are ready.",
+    "empty_note": "Connection is never about quantity."
+  },
+  "inbox": {
+    "title": "Inbox",
+    "subtitle": "Only private conversations you chose to enter.",
+    "item_title": "A Resonated Peer",
+    "item_desc": "Connected via 'Conflict Style' and 'Life Pace'",
+    "time_ago": "2d ago",
+    "header_tag": "Resonance Connection",
+    "connection_reason": "You connected because of:",
+    "placeholder": "Take your time...",
+    "system_msg": "You connected through understanding.\nNo need to please, no need to explain.\nJust express as you are."
+  },
+  "me": {
+    "title": "Me",
+    "subtitle": "This is not a profile page, but the boundaries you set for yourself.",
+    "section_profile": "Basic Profile",
+    "section_core": "Core Settings",
+    "section_questions": "About Me",
+    "menu_understanding": "My Understanding",
+    "menu_understanding_sub": "Values, Conflict, Pace",
+    "menu_ai": "How AI Responds",
+    "menu_ai_sub": "Role Preference, Intensity",
+    "menu_questions": "My Answers",
+    "menu_questions_sub": "Questions that belong only to you",
+    "menu_profile": "Basic Profile",
+    "menu_profile_sub": "Name, age, location, gender, zodiac",
+    "section_data": "Data & Privacy",
+    "menu_privacy": "Privacy & Data",
+    "menu_privacy_sub": "Export or Delete Data",
+    "menu_account": "Account",
+    "menu_account_sub": "Apple ID",
+    "logout": "Log Out",
+    "version": "Seen App v1.0.3",
+    "title_sub": ""
+  },
+  "settings": {
+    "profile": {
+      "header": "Basic Profile",
+      "title": "Basic Profile",
+      "field_nickname": "Nickname",
+      "field_age": "Age Range",
+      "field_location": "Location (Optional)",
+      "field_gender": "Gender (Optional)",
+      "field_zodiac": "Zodiac (Optional)",
+      "gender": {
+        "female": "Female",
+        "male": "Male",
+        "non_binary": "Non-binary",
+        "prefer_not": "Prefer not to say"
+      }
+    },
+    "understanding": {
+      "header": "My Understanding",
+      "title": "Inner Structure",
+      "desc": "This is not a test, there are no right answers.\nThese answers help AI understand you better,\nand help you meet those who truly resonate.",
+      "cards": {
+        "value_orientation": {
+          "title": "When facing a choice, what are you more responsible to?",
+          "labels": [
+            "Current Reality",
+            "Long-term Meaning"
+          ],
+          "desc": "No right or wrong, just where you lean when deciding."
+        },
+        "self_vs_relationship": {
+          "title": "When your wants conflict with others' expectations?",
+          "labels": [
+            "Prioritize Self",
+            "Prioritize Relationship"
+          ],
+          "desc": "Your basic stance when facing the world."
+        },
+        "conflict_handling": {
+          "title": "Your first reaction to disagreement?",
+          "labels": [
+            "Understand Emotion",
+            "Clarify Logic"
+          ],
+          "desc": "Not 'who is right', but where you start understanding."
+        },
+        "life_pace": {
+          "title": "Your life pace leans towards?",
+          "labels": [
+            "Fast",
+            "Slow"
+          ],
+          "desc": "Some walk fast, some walk deep. Neither is better."
+        },
+        "connection_depth": {
+          "title": "What kind of connection do you enjoy?",
+          "labels": [
+            "Relaxed Company",
+            "Deep Dialogue"
+          ],
+          "desc": "Some need proximity, some need understanding."
+        },
+        "money_view": {
+          "title": "What is money to you?",
+          "labels": [
+            "Source of Security",
+            "Tool for Growth"
+          ],
+          "desc": "The role of money affects almost every choice."
+        },
+        "risk_attitude": {
+          "title": "When basic needs are met, you likely?",
+          "options": [
+            "🏠 Maintain stability, reduce uncertainty",
+            "🚀 Accept risk for greater possibility",
+            "⚖️ Depends on context, not limited by rule"
+          ],
+          "desc": "Not brave or conservative, but how you face uncertainty."
+        },
+        "life_worth": {
+          "title": "What makes life worth living?",
+          "options": [
+            "🧭 Walking on a path I believe in",
+            "❤️ Living authentically, true to heart",
+            "🤝 Building deep and real relationships",
+            "🌍 creating meaning for others or the world"
+          ],
+          "desc": "What you deem 'worthy' decides who gets your time."
+        },
+        "expression_style": {
+          "title": "How do you naturally express yourself?",
+          "labels": [
+            "Feelings",
+            "Structure & Logic"
+          ],
+          "desc": "Not 'skill', but your natural language."
+        },
+        "connection_intent": {
+          "title": "What connection do you seek here?",
+          "options": [
+            "🤝 Friend / Company",
+            "💬 Deep Dialogue / Being Understood",
+            "🌱 Growth Companion",
+            "🤝 Collaboration / Long-term"
+          ],
+          "desc": "Not a goal, but who you want to walk with."
+        }
+      },
+      "action_save": "Save My Understanding",
+      "footer": "This info is not public, only for building your inner boundaries."
+    },
+    "ai_response": {
+      "header": "How AI Responds",
+      "title": "How I am Accompanied",
+      "desc": "This is not 'Who am I', but:\n'How I wish to be understood and accompanied.'",
+      "module_a_title": "Who should AI be more like?",
+      "roles": {
+        "mirror": {
+          "title": "Mirror",
+          "desc": "Reflect my thinking so I feel understood"
+        },
+        "organizer": {
+          "title": "Organizer",
+          "desc": "Extract the logic chain and clarify my thinking"
+        },
+        "helper": {
+          "title": "Expression Helper",
+          "desc": "Refine the language and provide better phrasing"
+        },
+        "guide": {
+          "title": "Guide",
+          "desc": "Ask deeper questions and expand my thinking"
+        }
+      },
+      "module_a_note": "These are not four tones of voice, but four cognitive functions: reflect, structure, express, and explore.",
+      "module_b_title": "How much intervention do you want?",
+      "intensity_labels": [
+        "Just Listen",
+        "Point out Blind Spots"
+      ],
+      "module_b_note": "Sometimes you need to be heard, sometimes challenged.",
+      "module_c_title": "When emotions run high, AI should?",
+      "emotions": {
+        "comfort": "Comfort first",
+        "analyze": "Analyze first",
+        "context": "Context dependent"
+      },
+      "action_save": "Save My Preferences"
+    },
+    "privacy": {
+      "header": "Privacy & Data",
+      "title": "Sovereignty Over Self",
+      "desc": "You are not a product.\nYour expression does not belong to the platform.",
+      "module_a_title": "My Data",
+      "export_explanation": "Export is for your own backup and portability. Files are generated on your device and are not uploaded. You can clear anytime.",
+      "export_scope": "Export includes: Your saved expressions and Me answers. Does not include: matching results, others' data, or system logs.",
+      "action_export_text": "📄 Export as Text (.txt)",
+      "action_export_json": "📦 Export as JSON",
+      "action_export_pdf": "🖨 Print / Save as PDF",
+      "action_export": "📤 Export All My Expressions",
+      "action_download": "📥 Download as Text / PDF / JSON",
+      "module_a_note": "Every word you said can be taken with you.",
+      "export_success": "Export completed",
+      "export_empty": "No data to export",
+      "module_b_title": "Delete & Forget",
+      "action_delete_single": "🗑 Delete Single Record",
+      "action_clear_history": "🔥 Clear All History",
+      "module_b_note": "Once deleted, system keeps no copies.",
+      "action_close_account": "❌ Close Account & Clear Data",
+      "confirm_msg": "Your expression is yours.\nOnce deleted, we cannot recover it.",
+      "confirm_yes": "Confirm Delete",
+      "confirm_no": "Cancel",
+      "footer_promise": "Data Promise",
+      "footer_desc": "No data selling · No ad profiling\nNo third-party access · No identifiable profiles"
+    },
+    "account": {
+      "header": "Account",
+      "title": "System Self",
+      "module_a_title": "Language",
+      "lang_zh": "中文",
+      "lang_en": "English",
+      "module_b_title": "Login & Security",
+      "current_method": "Current Method",
+      "action_change_method": "Change Login Method",
+      "action_view_devices": "View Recent Devices",
+      "action_logout_devices": "Log Out All Devices",
+      "action_logout": "Log Out",
+      "action_delete": "Request Account Deletion"
+    }
+  }
+}

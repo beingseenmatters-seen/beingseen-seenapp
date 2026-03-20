@@ -1,0 +1,419 @@
+{
+  "common": {
+    "back": "返回",
+    "next": "下一步",
+    "confirm": "确认",
+    "cancel": "取消",
+    "save": "保存",
+    "saved": "已保存",
+    "send": "发送",
+    "done": "完成",
+    "not_now": "不是现在",
+    "continue": "继续",
+    "loading": "加载中",
+    "delete": "删除",
+    "finish": "完成",
+    "skip": "跳过",
+    "later": "以后再说",
+    "begin": "开始",
+    "feature_coming_soon": "功能即将上线",
+    "distress_notice": "我感受到你可能有些不安，会以更温和的方式回应",
+    "gentle_response": "我会以更温和的方式回应你",
+    "unsaved_confirm": "你有未保存的更改，确定离开吗？"
+  },
+  "nav": {
+    "reflect": "对话",
+    "resonate": "同频",
+    "inbox": "来信",
+    "me": "我"
+  },
+  "auth": {
+    "welcome_title": "欢迎来到 Seen",
+    "welcome_subtitle": "在这里，你不需要成为谁。\n你只需要慢慢说，我们会认真听。",
+    "options_title": "你想用什么方式继续？",
+    "options_subtitle": "无需注册，只需踏入。",
+    "continue_apple": "通过 Apple 继续",
+    "continue_google": "通过 Google 继续",
+    "continue_email": "通过邮箱继续",
+    "email_title": "你的邮箱是？",
+    "email_placeholder": "your@email.com",
+    "send_link": "发送登录链接",
+    "verify_title": "查看你的邮箱",
+    "verify_subtitle": "我们已发送登录链接至",
+    "verify_hint": "打开邮箱中的链接即可继续。",
+    "verify_resend_btn": "没收到？重新发送",
+    "verify_resent": "已重新发送，请检查收件箱。",
+    "verify_different": "使用其他邮箱",
+    "error_generic": "出了点小状况，我们再试一次。",
+    "error_network": "连接不上网络，检查一下再试试。",
+    "error_invalid_email": "这看起来不太像邮箱地址，再看看？",
+    "error_popup_closed": "窗口被关闭了，准备好了再试。",
+    "error_too_many": "尝试次数太多了，深呼吸一下，稍后再试。",
+    "error_disabled": "这个账户已被停用，如有疑问请联系我们。",
+    "error_link_expired": "链接已过期或已被使用，请重新发送。",
+    "error_missing_email": "找不到你的邮箱，请在下方输入以继续。",
+    "verify_enter_email": "输入邮箱以完成登录",
+    "verify_submit_email": "继续",
+    "google_web_only": "仅网页端"
+  },
+  "onboarding": {
+    "welcome_title": "欢迎来到 Seen",
+    "welcome_subtitle": "在这里，你不需要成为谁。\n你只需要慢慢说，我们会认真听。",
+    "q1_title": "我该怎么称呼你？",
+    "q1_placeholder": "你想被叫的名字",
+    "desire_title": "你现在最希望生活中\n多一些什么？",
+    "desire_placeholder": "慢慢想，不着急...",
+    "desire_note": "没有标准答案，这只属于你。",
+    "q2_title": "你大概在哪儿？",
+    "q2_subtitle": "（只用来匹配时间和语言）",
+    "q2_choose": "选择地区",
+    "q2_skip": "我不想说",
+    "q2_later": "以后再说",
+    "q3_title": "你在哪个年龄段？",
+    "q3_subtitle": "（你可以跳过）",
+    "q3_skip": "不想说",
+    "age_18_24": "18–24",
+    "age_25_34": "25–34",
+    "age_35_44": "35–44",
+    "age_45_54": "45–54",
+    "age_55_plus": "55+"
+  },
+  "optional_cards": {
+    "hobby_title": "如果今天多出一小时，\n你最想用来做什么？",
+    "hobby_watch": "看点东西",
+    "hobby_walk": "走走 / 运动",
+    "hobby_movie": "看电影 / 剧",
+    "hobby_chat": "和人聊聊",
+    "hobby_alone": "一个人待着",
+    "hobby_create": "做点创作",
+    "hobby_learn": "学点新东西",
+    "hobby_other": "其他",
+    "hobby_action": "回答",
+    "self_desc_title": "如果要用一句话形容你自己，\n你会怎么说？",
+    "self_desc_hint": "比如：快乐的小傻子 / 想很多但活得简单的人",
+    "self_desc_save": "保存",
+    "self_desc_skip": "先不说",
+    "zodiac_title": "你愿意告诉我你的星座吗？",
+    "zodiac_subtitle": "（纯粹好玩）",
+    "zodiac_aries": "白羊座",
+    "zodiac_taurus": "金牛座",
+    "zodiac_gemini": "双子座",
+    "zodiac_cancer": "巨蟹座",
+    "zodiac_leo": "狮子座",
+    "zodiac_virgo": "处女座",
+    "zodiac_libra": "天秤座",
+    "zodiac_scorpio": "天蝎座",
+    "zodiac_sagittarius": "射手座",
+    "zodiac_capricorn": "摩羯座",
+    "zodiac_aquarius": "水瓶座",
+    "zodiac_pisces": "双鱼座"
+  },
+  "me_questions": {
+    "intro": "这些问题不会展示给任何人。\n你可以慢慢写，也可以什么都不写。",
+    "q1_title": "在你的人生里，\n有没有一件事让你至今仍然觉得骄傲？",
+    "q2_title": "有没有一件你曾经后悔的事？\n你可以不回答。",
+    "q3_title": "你小时候想成为什么样的人？\n现在回头看，有什么变了吗？",
+    "q4_title": "如果现在再用一句话形容你自己，\n会和以前一样吗？",
+    "q5_title": "当你累了，\n通常会做什么让自己好一点？",
+    "q6_title": "有没有一句话，\n或一个人，\n曾在某个时刻真正击中过你？",
+    "action_save": "保存",
+    "action_skip": "跳过",
+    "action_later": "以后再写",
+    "footer": "你写下的内容，只属于你自己。\n你可以随时修改或删除。"
+  },
+  "reflect": {
+    "title": "REFLECT",
+    "step0_title": "今天，\n有什么想说的吗？",
+    "step0_subtitle": "这里不是社交场合，\n你不需要表演。",
+    "action_speak": "说一说",
+    "action_write": "写一写",
+    "action_continue": "继续对话",
+    "action_clear_context": "一键清空",
+    "context_cleared_toast": "已清空本次对话内容",
+    "keep_context_title": "在本次对话中保留上下文",
+    "keep_context_desc": "用于把一件事整理清楚\n不进入匹配、不长期保存\n你可以随时一键清空",
+    "privacy_note": "你的表达是私密的。",
+    "step1_title": "STEP 1",
+    "step1_subtitle": "你希望我们如何对待你的话？",
+    "opt_listen": "镜子 · 让我被理解",
+    "opt_listen_hint": "照见我的想法，不推进话题",
+    "opt_clarify": "整理者 · 帮我理清思路",
+    "opt_clarify_hint": "提取逻辑链，清晰表达",
+    "opt_blindspot": "引导者 · 帮我深入思考",
+    "opt_blindspot_hint": "提出更深问题，扩展思考",
+    "opt_blindspot_warning": "引导者会用问题推进思考，但不会替你下结论；你随时可以切换为「镜子」。",
+    "opt_polish": "表达辅助 · 帮我更好表达",
+    "opt_polish_hint": "优化语言，提供表达版本",
+    "step1_footer": "你可以在「我」中随时调整默认回应方式。",
+    "mirror_title": "MIRROR",
+    "mirror_subtitle": "你刚才说的，\n可能在表达这些：",
+    "section_concern": "你真正关心的是",
+    "section_emotion": "隐含的情绪",
+    "section_question": "一个追问",
+    "action_save": "保存",
+    "action_share": "生成分享版",
+    "mirror_footer": "我们用 AI，不是为了给你答案，\n而是帮助你看见你自己。",
+    "bridge_step": "STEP 3",
+    "bridge_title": "当你更清楚自己时，\n连接才会发生。",
+    "bridge_desc": "Seen 不会为你制造关系。\n只有当你的表达逐渐清晰，\n我们才会为你呈现极少数可能真正同频的人。",
+    "bridge_action_resonate": "前往同频（Resonate）",
+    "bridge_action_reflect": "继续表达（Reflect）",
+    "bridge_footer": "你不需要着急。连接，从来不是目的。"
+  },
+  "resonate": {
+    "title": "同频",
+    "step0_title": "你还在认识自己。",
+    "step0_desc": "当你的表达越来越清晰，\n同频的人才会越接近你。",
+    "action_continue": "继续表达",
+    "action_settings": "设置我的理解方式",
+    "demo_show": "Demo: Show Candidate",
+    "demo_reset": "Demo: Reset to Candidate",
+    "card_tag": "High Resonance",
+    "card_title": "你们在「如何面对分歧」与「生活节奏」上高度一致。",
+    "card_subtitle": "这不是标签，而是你们表达中的共振。",
+    "dim_value": "价值取向",
+    "dim_value_val": "长期意义 → 偏向",
+    "dim_conflict": "冲突方式",
+    "dim_conflict_val": "先理解情绪",
+    "dim_pace": "生活节奏",
+    "dim_pace_val": "慢 · 深 · 少",
+    "dim_money": "金钱观",
+    "dim_money_val": "安全感更多来自稳定",
+    "dim_express": "表达风格",
+    "dim_express_val": "偏深入 · 偏感受",
+    "action_request": "请求一次对话",
+    "footer_note": "连接需要双方同意。对话将保持私密。",
+    "confirm_title": "发送一次对话请求？",
+    "confirm_desc": "你将向一位同频者发送对话请求。\n对方可以选择接受或忽略。\n对话将保持私密。",
+    "action_send_request": "发送请求",
+    "waiting_title": "请求已发送",
+    "waiting_desc": "你向一位同频者发出了对话请求。\n对方尚未回应。你无需再做任何事。",
+    "action_goto_inbox": "去 Inbox 看看",
+    "empty_title": "今天没有更多\n同频呈现。",
+    "empty_desc": "你可以继续表达，\n或在准备好时再回来。",
+    "empty_note": "连接从来不是越多越好。"
+  },
+  "inbox": {
+    "title": "对话",
+    "subtitle": "这里只有你选择进入的私密对话。",
+    "item_title": "一位同频者",
+    "item_desc": "你们因「如何面对分歧」和「生活节奏」而连接",
+    "time_ago": "2 天前",
+    "header_tag": "同频连接",
+    "connection_reason": "你们因以下原因被连接：",
+    "placeholder": "你可以慢慢说...",
+    "system_msg": "你们因理解而连接。\n你不需要取悦对方，也无需解释自己。\n只需如实表达。"
+  },
+  "me": {
+    "title": "我",
+    "subtitle": "这里不是你的个人资料页，而是你为自己设定的边界。",
+    "section_profile": "基础资料",
+    "section_core": "核心设置",
+    "section_questions": "关于我",
+    "menu_understanding": "我的理解方式",
+    "menu_understanding_sub": "价值取向、冲突处理、生活节奏",
+    "menu_ai": "AI 如何回应我",
+    "menu_ai_sub": "角色偏好、建议强度",
+    "menu_questions": "我的回答",
+    "menu_questions_sub": "那些只属于你自己的问题",
+    "menu_profile": "基础资料",
+    "menu_profile_sub": "昵称、年龄、地区、性别/星座",
+    "section_data": "数据与隐私",
+    "menu_privacy": "隐私与数据",
+    "menu_privacy_sub": "导出或删除我的数据",
+    "menu_account": "账户",
+    "menu_account_sub": "Apple ID",
+    "logout": "退出登录",
+    "version": "Seen App v1.0.3",
+    "title_sub": "遇见"
+  },
+  "settings": {
+    "profile": {
+      "header": "基础资料",
+      "title": "基础资料",
+      "field_nickname": "昵称",
+      "field_age": "年龄段",
+      "field_location": "所在地（可选）",
+      "field_gender": "性别（可选）",
+      "field_zodiac": "星座（可选）",
+      "gender": {
+        "female": "女性",
+        "male": "男性",
+        "non_binary": "非二元",
+        "prefer_not": "不方便说"
+      }
+    },
+    "understanding": {
+      "header": "我的理解方式",
+      "title": "内在结构",
+      "desc": "这里不是测试，也没有标准答案。\n这些回答仅用于 AI 更好地理解你，\n以及帮助你遇见真正同频的人。",
+      "cards": {
+        "value_orientation": {
+          "title": "当你面对选择时，你更愿意对什么负责？",
+          "labels": [
+            "当下是否真实",
+            "长期是否有意义"
+          ],
+          "desc": "没有对错，只是你做决定时更靠近哪一端。"
+        },
+        "self_vs_relationship": {
+          "title": "当你想要的，与他人期待不一致时，你更接近？",
+          "labels": [
+            "优先忠于自己",
+            "优先照顾关系"
+          ],
+          "desc": "这是你面对世界时的基本站位。"
+        },
+        "conflict_handling": {
+          "title": "当出现分歧时，你的第一反应更像？",
+          "labels": [
+            "先理解情绪",
+            "先澄清逻辑"
+          ],
+          "desc": "不是「你对还是我对」，而是你先从哪里开始理解。"
+        },
+        "life_pace": {
+          "title": "你与生活相处的节奏，更接近哪一侧？",
+          "labels": [
+            "快",
+            "慢"
+          ],
+          "desc": "有些人走得快，有些人走得深，没有谁更好。"
+        },
+        "connection_depth": {
+          "title": "你更享受哪种连接方式？",
+          "labels": [
+            "轻松陪伴",
+            "深度对话"
+          ],
+          "desc": "有人需要靠近，有人需要理解。"
+        },
+        "money_view": {
+          "title": "对你来说，金钱更像什么？",
+          "labels": [
+            "安全感来源",
+            "成长与自由的工具"
+          ],
+          "desc": "钱在你人生中扮演的角色，会影响你几乎所有选择。"
+        },
+        "risk_attitude": {
+          "title": "当基本生活无忧时，你更可能？",
+          "options": [
+            "🏠 维持稳定，减少不确定",
+            "🚀 接受一定风险，换更大可能",
+            "⚖️ 看具体情境，不被单一原则限制"
+          ],
+          "desc": "不是勇敢或保守，而是你如何面对不确定。"
+        },
+        "life_worth": {
+          "title": "什么会让你觉得，这一生没有白过？",
+          "options": [
+            "🧭 我走在自己认同的方向上",
+            "❤️ 我活得真实，没有背离内心",
+            "🤝 我建立了深度而真实的关系",
+            "🌍 我对他人或世界产生了意义"
+          ],
+          "desc": "你认为什么「值得」，会决定你把时间给谁。"
+        },
+        "expression_style": {
+          "title": "你更习惯如何表达自己？",
+          "labels": [
+            "说感受",
+            "说结构与逻辑"
+          ],
+          "desc": "不是「会不会说」，而是你自然使用哪种语言。"
+        },
+        "connection_intent": {
+          "title": "你希望通过 Seen 建立怎样的连接？",
+          "options": [
+            "🤝 朋友 / 陪伴",
+            "💬 深度交流 / 被理解",
+            "🌱 共同成长",
+            "🤝 合作 / 长期共事"
+          ],
+          "desc": "不是目的，而是你愿意与谁走在同一段路上。"
+        }
+      },
+      "action_save": "保存我的理解方式",
+      "footer": "这些信息不会公开展示，仅用于构建你的内在边界。"
+    },
+    "ai_response": {
+      "header": "AI 如何回应我",
+      "title": "我如何被陪伴",
+      "desc": "这里不是「我是谁」，而是：\n「我希望被怎样理解、被怎样陪伴。」",
+      "module_a_title": "你希望 AI 更像谁？",
+      "roles": {
+        "mirror": {
+          "title": "镜子",
+          "desc": "照见我的想法，让我被理解"
+        },
+        "organizer": {
+          "title": "整理者",
+          "desc": "提取逻辑链，帮我理清思路"
+        },
+        "helper": {
+          "title": "表达辅助",
+          "desc": "优化语言，提供表达版本"
+        },
+        "guide": {
+          "title": "引导者",
+          "desc": "提出更深问题，扩展我的思考"
+        }
+      },
+      "module_a_note": "这不是四种语气，而是四种认知功能：照见、结构化、表达优化、深入探索。",
+      "module_b_title": "你希望被「介入」到什么程度？",
+      "intensity_labels": [
+        "只倾听",
+        "主动指出盲点"
+      ],
+      "module_b_note": "有时你只需要被听见，有时你愿意被挑战。",
+      "module_c_title": "当你情绪强烈时，你希望 AI？",
+      "emotions": {
+        "comfort": "先安抚，不分析",
+        "analyze": "先分析，不安慰",
+        "context": "视情境而定"
+      },
+      "action_save": "保存我的偏好"
+    },
+    "privacy": {
+      "header": "隐私与数据",
+      "title": "我对自己拥有主权",
+      "desc": "你不是产品。\n你的表达，不属于平台。",
+      "module_a_title": "我的数据",
+      "export_explanation": "导出用于你自行备份与迁移。数据只在你设备上生成文件，不会上传。你也可以随时一键清空。",
+      "export_scope": "可导出内容：你保存的表达记录和「我」中的回答。不包括：匹配结果、他人信息、系统日志。",
+      "action_export_text": "📄 导出为文本 (.txt)",
+      "action_export_json": "📦 导出为 JSON",
+      "action_export_pdf": "🖨 打印 / 保存为 PDF",
+      "action_export": "📤 导出我的所有表达",
+      "action_download": "📥 下载为文本 / PDF / JSON",
+      "module_a_note": "你说过的每一句话，都可以完整带走。",
+      "export_success": "导出完成",
+      "export_empty": "暂无可导出的数据",
+      "module_b_title": "删除与遗忘",
+      "action_delete_single": "🗑 删除单条记录",
+      "action_clear_history": "🔥 清空所有表达历史",
+      "module_b_note": "删除后，系统不保留任何副本。",
+      "action_close_account": "❌ 关闭账户并清除全部数据",
+      "confirm_msg": "你的表达不属于平台。\n一旦删除，我们不保留、不可恢复。",
+      "confirm_yes": "确认删除",
+      "confirm_no": "取消",
+      "footer_promise": "Data Promise",
+      "footer_desc": "不出售用户数据 · 不用于广告画像\n不对第三方开放 · 不生成可被识别的个人档案"
+    },
+    "account": {
+      "header": "账户",
+      "title": "系统层面的我",
+      "module_a_title": "使用语言",
+      "lang_zh": "中文",
+      "lang_en": "English",
+      "module_b_title": "登录与安全",
+      "current_method": "当前方式",
+      "action_change_method": "修改登录方式",
+      "action_view_devices": "查看最近登录设备",
+      "action_logout_devices": "退出所有设备",
+      "action_logout": "退出登录",
+      "action_delete": "申请删除账户"
+    }
+  }
+}
