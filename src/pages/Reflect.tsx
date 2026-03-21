@@ -1,12 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronDown, Info, RotateCcw, Trash2, ToggleLeft, ToggleRight, Send } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { ChevronRight, ChevronDown, Info, RotateCcw, Trash2 } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useLanguage } from '../i18n';
 import { useAuth } from '../auth';
+import { usePlatform } from '../hooks/usePlatform';
+import ChatInput from '../components/ChatInput';
 import { sendReflectWithGate } from '../services/seenApi';
 import { analyzeUserState } from '../services/questionGate';
 import { ResponseStyle, type ReflectDebug, type ResponseStyleType } from '../types/responseStyle';
+import type { RetentionOption } from '../types/insight';
+import { saveConversation, getConversationById, formatRelativeTime } from '../services/recentConversations';
+import { useRecentConversations } from '../hooks/useRecentConversations';
 import {
   mapSelectedModeToStyle,
   mapStyleToSelectedMode,
@@ -31,6 +36,7 @@ interface SavedSession {
   messages: Message[];
   step: number;
   keepContext: boolean;
+  retention?: RetentionOption;
   sessionId: string;
   sessionStyle?: ResponseStyleType;
   consecutiveQuestionTurns: number;
@@ -44,7 +50,9 @@ export default function Reflect() {
   const [step, setStep] = useState(0);
   const { t, language, setLanguage, effectiveLanguage } = useLanguage();
   const { seenUser } = useAuth();
+  const { isDesktop } = usePlatform();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const understandingProgress = seenUser?.understandingProgress ?? 0;
   const showUnderstandingBanner = understandingProgress < 6;
   const [inputValue, setInputValue] = useState('');
@@ -55,25 +63,26 @@ export default function Reflect() {
   const [lastDebug, setLastDebug] = useState<ReflectDebug | null>(null);
   const [consecutiveQuestionTurns, setConsecutiveQuestionTurns] = useState(0);
   
-  // Context Retention State
-  const [keepContext, setKeepContext] = useState(false);
+  const keepContext = true;
+  const [retention, setRetention] = useState<RetentionOption>('3days');
+  const [retentionDropdownOpen, setRetentionDropdownOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [sessionStyle, setSessionStyle] = useState<ResponseStyleType | undefined>(undefined);
   const [hasSavedSession, setHasSavedSession] = useState(false);
 
-  // Collapsible response style
-  const [styleExpanded, setStyleExpanded] = useState(false);
+  // Role dropdown open/close
+  const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
 
-  // User state preview
+  // Recent conversations for mobile (no sidebar)
+  const { conversations: recentConversations } = useRecentConversations();
+
   const [userStatePreview, setUserStatePreview] = useState<{ isDistressed: boolean; isAskingForDeepDive: boolean }>({
     isDistressed: false,
     isAskingForDeepDive: false
   });
 
-  // Chat scroll ref
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Read Me default style and compute effective style for UI display
   const meDefaultStyle = readMeDefaultStyle();
   const effectiveSelectedMode = selectedMode !== null 
     ? selectedMode 
@@ -81,10 +90,31 @@ export default function Reflect() {
       ? mapStyleToSelectedMode(meDefaultStyle)
       : null;
 
-  // Confirmed summary flow state
   const [pendingSummary, setPendingSummary] = useState<ConversationExtraction | null>(null);
   const [showSummaryConfirmation, setShowSummaryConfirmation] = useState(false);
   const [pendingInsightAction, setPendingInsightAction] = useState<'clear' | 'finish' | 'leave' | null>(null);
+
+  // TODO (Spec §九): Lightweight calibration after conversation end
+  const [calibrationInsight, setCalibrationInsight] = useState<{ key: string; text: string } | null>(null);
+
+  // Restore a retained conversation from URL ?conversation=<id>
+  useEffect(() => {
+    const convoId = searchParams.get('conversation');
+    if (!convoId) return;
+
+    setSearchParams({}, { replace: true });
+    const convo = getConversationById(convoId);
+    if (!convo) return;
+
+    setMessages(convo.messages.map(m => ({ role: m.role, text: m.text })));
+    setStep(2);
+    setRetention(convo.retention);
+    setSessionId(convo.id);
+    setSessionStyle(convo.sessionStyle as ResponseStyleType | undefined);
+    setSelectedMode(convo.selectedMode ?? null);
+    setHasSavedSession(false);
+    setJustCleared(false);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load saved session on mount
   useEffect(() => {
@@ -102,13 +132,13 @@ export default function Reflect() {
     }
   }, []);
 
-  // Persist session when keepContext is ON
   useEffect(() => {
-    if (keepContext && sessionId) {
+    if (sessionId) {
       const session: SavedSession = {
         messages,
         step,
         keepContext,
+        retention,
         sessionId,
         sessionStyle,
         consecutiveQuestionTurns,
@@ -116,12 +146,18 @@ export default function Reflect() {
         timestamp: Date.now()
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-    } else if (!keepContext && !hasSavedSession) {
-      if (step !== 0) {
-        localStorage.removeItem(STORAGE_KEY);
+
+      if (retention !== 'none' && messages.filter(m => m.role === 'user' && m.text.trim()).length > 0) {
+        saveConversation(
+          sessionId,
+          messages.map(m => ({ role: m.role, text: m.text })),
+          retention,
+          effectiveLanguage === 'zh' ? 'zh' : 'en',
+          { sessionStyle, selectedMode }
+        );
       }
     }
-  }, [messages, step, keepContext, sessionId, sessionStyle, consecutiveQuestionTurns, selectedMode, hasSavedSession]);
+  }, [messages, step, keepContext, retention, sessionId, sessionStyle, consecutiveQuestionTurns, selectedMode, effectiveLanguage]);
 
   useEffect(() => {
     if (inputValue.trim()) {
@@ -138,7 +174,6 @@ export default function Reflect() {
     }
   }, [inputValue, messages]);
 
-  // Auto-scroll chat to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
@@ -156,7 +191,7 @@ export default function Reflect() {
         const session: SavedSession = JSON.parse(saved);
         setMessages(session.messages);
         setStep(session.step === 0 ? 2 : session.step);
-        setKeepContext(session.keepContext);
+        setRetention(session.retention ?? '3days');
         setSessionId(session.sessionId);
         setSessionStyle(session.sessionStyle);
         setConsecutiveQuestionTurns(session.consecutiveQuestionTurns);
@@ -171,7 +206,6 @@ export default function Reflect() {
     }
   };
 
-  // Track whether user just cleared a conversation (to show trust message)
   const [justCleared, setJustCleared] = useState(false);
 
   const getConversationStats = () => {
@@ -202,16 +236,12 @@ export default function Reflect() {
     return true;
   };
 
-  // NOTE: useBlocker removed — requires data router (createBrowserRouter).
-  // Navigation-away interception is disabled until router migration.
-
   const handleClearContext = () => {
     if (messages.length > 0 && hasMeaningfulExchange()) {
       if (openSummaryConfirmation('clear')) {
         return;
       }
     }
-
     performClear();
   };
 
@@ -221,14 +251,13 @@ export default function Reflect() {
         return;
       }
     }
-
     setStep(3);
   };
 
   const performClear = () => {
     localStorage.removeItem(STORAGE_KEY);
     setHasSavedSession(false);
-    setKeepContext(false);
+    setRetention('3days');
     setSessionId(undefined);
     setSessionStyle(undefined);
     setMessages([]);
@@ -237,6 +266,8 @@ export default function Reflect() {
     setPendingSummary(null);
     setPendingInsightAction(null);
     setShowSummaryConfirmation(false);
+    setRoleDropdownOpen(false);
+    setRetentionDropdownOpen(false);
     
     if (step !== 0) {
       setStep(0);
@@ -248,12 +279,10 @@ export default function Reflect() {
     if (pendingSummary) {
       saveApprovedSummary(pendingSummary);
     }
-
     if (pendingInsightAction === 'clear') {
       performClear();
       return;
     }
-
     setPendingSummary(null);
     setPendingInsightAction(null);
     setShowSummaryConfirmation(false);
@@ -265,7 +294,6 @@ export default function Reflect() {
       performClear();
       return;
     }
-
     setPendingSummary(null);
     setPendingInsightAction(null);
     setShowSummaryConfirmation(false);
@@ -288,6 +316,8 @@ export default function Reflect() {
   const handleReply = async () => {
     if (!inputValue.trim()) return;
 
+    setRoleDropdownOpen(false);
+    setRetentionDropdownOpen(false);
     const currentInput = inputValue;
     setMessages(prev => [...prev, { role: 'user', text: currentInput }]);
     setInputValue('');
@@ -331,6 +361,8 @@ export default function Reflect() {
   const handleSend = async () => {
     if (!inputValue.trim()) return;
     
+    setRoleDropdownOpen(false);
+    setRetentionDropdownOpen(false);
     setJustCleared(false);
     setStep(2);
     setConsecutiveQuestionTurns(0);
@@ -397,7 +429,7 @@ export default function Reflect() {
     transition: { duration: 0.4, ease: "easeOut" as const }
   };
 
-  const options = [
+  const roleOptions = [
     { label: t('reflect.opt_listen'), hint: effectiveLanguage === 'zh' ? '照见你的想法，让你被理解' : 'Reflect your thinking so you feel understood' },
     { label: t('reflect.opt_clarify'), hint: effectiveLanguage === 'zh' ? '提取逻辑链，帮你理清思路' : 'Extract the logic chain and clarify your thinking' },
     { label: t('reflect.opt_blindspot'), hint: effectiveLanguage === 'zh' ? '提出更深问题，扩展思考' : 'Ask deeper questions and expand the thinking' },
@@ -416,9 +448,6 @@ export default function Reflect() {
     return styleNames[mode] || styleNames[0];
   };
 
-  const currentStyleName = sessionStyle 
-    ? getStyleDisplayName(mapStyleToSelectedMode(sessionStyle))
-    : getStyleDisplayName(effectiveSelectedMode);
   const sessionCompletionReached = hasMeaningfulExchange();
   const endConversationLabel = effectiveLanguage === 'zh' ? '结束对话' : 'End conversation';
 
@@ -427,46 +456,220 @@ export default function Reflect() {
 
   const summarySections = pendingSummary
     ? [
-        {
-          key: 'thinkingPath',
-          label: effectiveLanguage === 'zh' ? '你的思考路径' : 'Your Thinking Path',
-          values: pendingSummary.thinkingPath,
-        },
-        {
-          key: 'thinkingStyle',
-          label: effectiveLanguage === 'zh' ? '你的思考方式' : 'Your Thinking Style',
-          values: pendingSummary.thinkingStyle,
-        },
-        {
-          key: 'coreQuestions',
-          label: effectiveLanguage === 'zh' ? '你的核心问题' : 'Your Core Questions',
-          values: pendingSummary.coreQuestions,
-        },
-        {
-          key: 'worldview',
-          label: effectiveLanguage === 'zh' ? '你的世界观' : 'Your Worldview',
-          values: pendingSummary.worldview,
-        },
-        {
-          key: 'relationshipPhilosophy',
-          label: effectiveLanguage === 'zh' ? '你的关系哲学' : 'Your Relationship Philosophy',
-          values: pendingSummary.relationshipPhilosophy,
-        },
-        {
-          key: 'conversationStyle',
-          label: effectiveLanguage === 'zh' ? '你的对话风格' : 'Your Conversation Style',
-          values: pendingSummary.conversationStyle,
-        },
+        { key: 'thinkingPath', label: effectiveLanguage === 'zh' ? '你的思考路径' : 'Your Thinking Path', values: pendingSummary.thinkingPath },
+        { key: 'thinkingStyle', label: effectiveLanguage === 'zh' ? '你的思考方式' : 'Your Thinking Style', values: pendingSummary.thinkingStyle },
+        { key: 'coreQuestions', label: effectiveLanguage === 'zh' ? '你的核心问题' : 'Your Core Questions', values: pendingSummary.coreQuestions },
+        { key: 'worldview', label: effectiveLanguage === 'zh' ? '你的世界观' : 'Your Worldview', values: pendingSummary.worldview },
+        { key: 'relationshipPhilosophy', label: effectiveLanguage === 'zh' ? '你的关系哲学' : 'Your Relationship Philosophy', values: pendingSummary.relationshipPhilosophy },
+        { key: 'conversationStyle', label: effectiveLanguage === 'zh' ? '你的对话风格' : 'Your Conversation Style', values: pendingSummary.conversationStyle },
       ].filter(section => section.values.length > 0)
     : [];
 
+  // =========================================================================
+  // Role dropdown (shared logic, rendered in different positions per platform)
+  // =========================================================================
+
+  const roleDropdownMenu = (
+    <AnimatePresence>
+      {roleDropdownOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setRoleDropdownOpen(false)} />
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 4 }}
+            transition={{ duration: 0.15 }}
+            className={`absolute ${isDesktop ? 'bottom-full left-0 mb-2' : 'top-full left-0 mt-1'} w-64 bg-white border border-gray-100 rounded-xl shadow-lg z-20 overflow-hidden`}
+          >
+            <div className="p-1.5 space-y-0.5">
+              {roleOptions.map((opt, i) => {
+                const isSelected = effectiveSelectedMode === i;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setSelectedMode(i);
+                      setRoleDropdownOpen(false);
+                    }}
+                    className={`w-full px-3 py-2 text-left rounded-lg transition-colors ${
+                      isSelected ? 'bg-gray-50 text-gray-900' : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium">{opt.label}</span>
+                      {isSelected && <span className="text-gray-400 text-[10px]">✓</span>}
+                    </div>
+                    <span className="block text-[10px] text-gray-500 mt-0.5 leading-snug">{opt.hint}</span>
+                    {i === 2 && isSelected && (
+                      <span className="block text-[10px] text-amber-500 mt-1 leading-snug">
+                        {guideWarning}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+
+  // =========================================================================
+  // Retention dropdown (shared)
+  // =========================================================================
+
+  const retentionDropdown = (
+    <div className="relative">
+      <button
+        onClick={() => setRetentionDropdownOpen(!retentionDropdownOpen)}
+        className="flex items-center gap-1.5 px-1.5 py-1 rounded-md text-[11px] hover:bg-gray-100 transition-colors"
+      >
+        <span className="text-gray-500">
+          {t('reflect.retention_label')}
+        </span>
+        <span className="font-medium text-gray-700">
+          {retention === '3days' ? t('reflect.retention_3days')
+            : retention === '7days' ? t('reflect.retention_7days')
+            : t('reflect.retention_none')}
+        </span>
+        <ChevronDown
+          size={11}
+          className={`text-gray-400 transition-transform duration-200 ${retentionDropdownOpen ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      <AnimatePresence>
+        {retentionDropdownOpen && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setRetentionDropdownOpen(false)} />
+            <motion.div
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 4 }}
+              transition={{ duration: 0.15 }}
+              className="absolute bottom-full right-0 mb-2 w-56 bg-white border border-gray-100 rounded-xl shadow-lg z-20 overflow-hidden"
+            >
+              <div className="p-1.5 space-y-0.5">
+                {([
+                  { key: '3days' as RetentionOption, label: t('reflect.retention_3days') },
+                  { key: '7days' as RetentionOption, label: t('reflect.retention_7days') },
+                  { key: 'none' as RetentionOption, label: t('reflect.retention_none') },
+                ]).map((opt) => {
+                  const isSelected = retention === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      onClick={() => {
+                        setRetention(opt.key);
+                        setRetentionDropdownOpen(false);
+                      }}
+                      className={`w-full px-3 py-2 text-left rounded-lg transition-colors ${
+                        isSelected ? 'bg-gray-50 text-gray-900' : 'text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium">{opt.label}</span>
+                        {isSelected && <span className="text-gray-400 text-[10px]">✓</span>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="px-3 pb-2 pt-1 border-t border-gray-50">
+                <p className="text-[9px] text-gray-500 leading-snug">
+                  {t('reflect.retention_note')}
+                </p>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+
+  // =========================================================================
+  // Composer footer — platform-aware
+  // =========================================================================
+
+  const meDefaultStyleName = (() => {
+    const names = effectiveLanguage === 'zh'
+      ? ['镜子', '整理者', '引导者', '表达辅助']
+      : ['Mirror', 'Organizer', 'Guide', 'Expression Helper'];
+    const idx = meDefaultStyle ? mapStyleToSelectedMode(meDefaultStyle) : null;
+    return idx !== null ? names[idx] : names[0];
+  })();
+
+  const composerFooter = isDesktop ? (
+    <div className="flex items-center justify-between pt-1">
+      {/* Desktop: role dropdown on left */}
+      <div className="relative">
+        <button
+          onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
+          className="flex items-center gap-1.5 px-1.5 py-1 rounded-md text-[11px] hover:bg-gray-100 transition-colors"
+        >
+          <span className="text-gray-500">
+            {effectiveLanguage === 'zh' ? '角色' : 'Role'}
+          </span>
+          <span className="font-medium text-gray-700">
+            {getStyleDisplayName(effectiveSelectedMode)}
+          </span>
+          <ChevronDown
+            size={11}
+            className={`text-gray-400 transition-transform duration-200 ${roleDropdownOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
+        {roleDropdownMenu}
+      </div>
+      {retentionDropdown}
+    </div>
+  ) : (
+    <div className="flex items-center justify-between pt-1">
+      {/* Mobile: AI preference (read-only) on left */}
+      <div className="flex items-center gap-1 px-1 py-0.5 text-[11px]">
+        <span className="text-gray-500">
+          {effectiveLanguage === 'zh' ? '偏好' : 'Style'}
+        </span>
+        <span className="font-medium text-gray-600">
+          {meDefaultStyleName}
+        </span>
+      </div>
+      {/* Mobile: retention on right */}
+      {retentionDropdown}
+    </div>
+  );
+
+  // =========================================================================
+  // Render
+  // =========================================================================
+
   return (
     <div className="h-full flex flex-col relative">
-      {/* Page sub-header: REFLECT label (left) + Language switch (right) */}
-      <div className="shrink-0 flex items-center justify-between px-5 pt-2 pb-0.5">
-        <span className="text-[10px] font-semibold tracking-[0.2em] text-gray-500 uppercase">
-          {t('reflect.title')}
-        </span>
+      {/* Page sub-header — full width, outside max-w container */}
+      <div className="shrink-0 flex items-center justify-between px-5 pt-3 pb-1">
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] font-semibold tracking-[0.2em] text-gray-500 uppercase">
+            {t('nav.reflect')}
+          </span>
+          {/* Mobile: role selector next to title (ChatGPT model-selector style) */}
+          {!isDesktop && (
+            <div className="relative">
+              <button
+                onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-50 text-[11px] active:bg-gray-100 transition-colors"
+              >
+                <span className="font-medium text-gray-700">
+                  {getStyleDisplayName(effectiveSelectedMode)}
+                </span>
+                <ChevronDown
+                  size={11}
+                  className={`text-gray-400 transition-transform duration-200 ${roleDropdownOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+              {roleDropdownMenu}
+            </div>
+          )}
+        </div>
         <select
           value={language}
           onChange={(e) => setLanguage(e.target.value as any)}
@@ -528,81 +731,117 @@ export default function Reflect() {
         </div>
       )}
 
-      {/* Main content area */}
+      {/* Main content area — centered on desktop */}
+      <div className={`flex-1 min-h-0 flex flex-col ${isDesktop ? 'max-w-3xl mx-auto w-full' : ''}`}>
       <AnimatePresence mode="wait">
         
         {/* ==================== Step 0: Home ==================== */}
         {step === 0 && (
-          <motion.div key="step0" {...fadeIn} className="flex-1 flex flex-col px-5 overflow-hidden">
-            {/* Centered hero */}
-            <div className="flex-1 flex flex-col justify-center">
+          <motion.div key="step0" {...fadeIn} className="flex-1 flex flex-col overflow-hidden">
+            <div className={`flex-1 flex flex-col ${isDesktop ? 'justify-center' : 'justify-end'} px-5`}>
               <div className="space-y-2">
-                <h2 className="text-xl font-light leading-snug text-primary">
+                <h2 className={`font-light leading-snug text-primary ${isDesktop ? 'text-2xl' : 'text-xl'}`}>
                   {t('reflect.step0_title')}
                 </h2>
-                <p className="text-xs text-gray-500 font-light">
-                  {effectiveLanguage === 'zh' 
-                    ? '这里不是社交场合，你不需要表演。' 
-                    : 'This is not a stage. You don\'t need to perform.'}
+                <p className="text-sm text-gray-600 font-light">
+                  {t('reflect.step0_subtitle')}
                 </p>
               </div>
+
+              {/* Mobile: Recent Conversations (no sidebar on mobile) */}
+              {!isDesktop && recentConversations.length > 0 && (
+                <div className="mt-5 mb-2">
+                  <h3 className="text-[9px] font-semibold tracking-[0.15em] text-gray-500 uppercase mb-2">
+                    {t('nav.recent_title')}
+                  </h3>
+                  <div className="space-y-px">
+                    {recentConversations.slice(0, 5).map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          setSearchParams({ conversation: c.id }, { replace: true });
+                          const convo = getConversationById(c.id);
+                          if (!convo) return;
+                          setMessages(convo.messages.map(m => ({ role: m.role, text: m.text })));
+                          setStep(2);
+                          setRetention(convo.retention);
+                          setSessionId(convo.id);
+                          setSessionStyle(convo.sessionStyle as ResponseStyleType | undefined);
+                          setSelectedMode(convo.selectedMode ?? null);
+                          setHasSavedSession(false);
+                          setJustCleared(false);
+                          setSearchParams({}, { replace: true });
+                        }}
+                        className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-gray-50 active:bg-gray-100 transition-colors text-left"
+                      >
+                        <span className="text-xs text-gray-600 font-medium truncate">
+                          {c.title || (effectiveLanguage === 'zh' ? '对话' : 'Conversation')}
+                        </span>
+                        <span className="text-[9px] text-gray-400 shrink-0 ml-2">
+                          {formatRelativeTime(c.createdAt, effectiveLanguage === 'zh' ? 'zh' : 'en')}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[9px] text-gray-400 mt-1.5 px-1">
+                    {t('nav.recent_hint')}
+                  </p>
+                </div>
+              )}
             </div>
 
-            {/* Understanding reminder */}
-            {showUnderstandingBanner && (
-              <button
-                onClick={() => navigate('/me/questions')}
-                className="shrink-0 w-full p-4 rounded-xl bg-gray-50 border border-gray-100 text-left mb-3 hover:border-gray-200 transition-colors group"
-              >
-                <p className="text-xs text-secondary font-light leading-relaxed">
-                  {effectiveLanguage === 'zh'
-                    ? '我越了解你，就越能真正地与你同频。'
-                    : 'The more I understand you, the more I can truly resonate with you.'}
-                </p>
-                <span className="text-xs text-primary font-medium mt-1.5 inline-flex items-center gap-1 group-hover:gap-2 transition-all">
-                  {effectiveLanguage === 'zh' ? '继续了解 →' : 'Continue understanding →'}
-                </span>
-              </button>
-            )}
-
-            {/* Action buttons */}
-            <div className="shrink-0 space-y-2 pb-3">
-              {hasSavedSession ? (
-                <>
-                  <button 
-                    onClick={handleContinueSession}
-                    className="w-full py-2.5 rounded-xl bg-primary text-white flex items-center justify-center space-x-2 hover:bg-black transition-colors text-sm font-medium"
-                  >
-                    <RotateCcw size={14} strokeWidth={1.5} />
-                    <span>{t('reflect.action_continue')}</span>
-                  </button>
-                  <button 
-                    onClick={handleClearContext}
-                    className="w-full py-2 rounded-lg text-gray-500 flex items-center justify-center space-x-1 hover:bg-gray-50 text-[11px]"
-                  >
-                    <Trash2 size={12} />
-                    <span>{t('reflect.action_clear_context')}</span>
-                  </button>
-                </>
-              ) : (
-                <button 
-                  onClick={() => setStep(1)}
-                  className="w-full py-3 rounded-xl bg-primary text-white flex items-center justify-center space-x-2 hover:bg-black transition-colors text-sm font-medium"
+            <div className="shrink-0 px-5">
+              {showUnderstandingBanner && (
+                <button
+                  onClick={() => navigate('/me/questions')}
+                  className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-100 text-left mb-2 hover:border-gray-200 transition-colors group flex items-center justify-between"
                 >
-                  <span>{t('reflect.action_write')}</span>
-                  <ChevronRight size={14} strokeWidth={2} />
+                  <p className="text-[11px] text-gray-600 font-light leading-snug">
+                    {effectiveLanguage === 'zh'
+                      ? '我越了解你，就越能真正地与你同频。'
+                      : 'The more I understand you, the more I can truly resonate with you.'}
+                  </p>
+                  <span className="text-[11px] text-primary font-medium shrink-0 ml-3 group-hover:translate-x-0.5 transition-transform">
+                    {effectiveLanguage === 'zh' ? '继续了解 →' : 'Continue understanding →'}
+                  </span>
                 </button>
               )}
-              <p className="text-[10px] text-center text-gray-500">{t('reflect.privacy_note')}</p>
 
-              {/* Trust / memory explanation — shown after clear or always as subtle footer */}
-              {justCleared && (
-                <p className="text-[10px] text-gray-500 font-light leading-relaxed text-center pt-2 px-2">
-                  {effectiveLanguage === 'zh'
-                    ? '你可以清除聊天内容，但不必从零开始。我们不会保留具体对话，只会留下关于你如何思考的一点点理解，用于更准确地发现与你同频的人。'
-                    : 'You can clear your chat, but you don\'t have to start from scratch. We don\'t keep the conversation — only a small understanding of how you think, to better find those who resonate with you.'}
-                </p>
-              )}
+              <div className="space-y-2 pb-3">
+                {hasSavedSession ? (
+                  <>
+                    <button 
+                      onClick={handleContinueSession}
+                      className="w-full py-2.5 rounded-xl bg-primary text-white flex items-center justify-center space-x-2 hover:bg-black transition-colors text-sm font-medium"
+                    >
+                      <RotateCcw size={14} strokeWidth={1.5} />
+                      <span>{t('reflect.action_continue')}</span>
+                    </button>
+                    <button 
+                      onClick={handleClearContext}
+                      className="w-full py-2 rounded-lg text-gray-500 flex items-center justify-center space-x-1 hover:bg-gray-50 text-[11px]"
+                    >
+                      <Trash2 size={12} />
+                      <span>{t('reflect.action_clear_context')}</span>
+                    </button>
+                  </>
+                ) : (
+                  <button 
+                    onClick={() => setStep(1)}
+                    className="w-full py-3 rounded-xl bg-primary text-white flex items-center justify-center space-x-2 hover:bg-black transition-colors text-sm font-medium"
+                  >
+                    <span>{t('reflect.action_write')}</span>
+                    <ChevronRight size={14} strokeWidth={2} />
+                  </button>
+                )}
+                {justCleared && (
+                  <p className="text-[10px] text-gray-500 font-light leading-relaxed text-center pt-2 px-2">
+                    {effectiveLanguage === 'zh'
+                      ? '你可以清除聊天内容，但不必从零开始。我们不会保留具体对话，只会留下关于你如何思考的一点点理解，用于更准确地发现与你同频的人。'
+                      : 'You can clear your chat, but you don\'t have to start from scratch. We don\'t keep the conversation — only a small understanding of how you think, to better find those who resonate with you.'}
+                  </p>
+                )}
+              </div>
             </div>
           </motion.div>
         )}
@@ -616,12 +855,12 @@ export default function Reflect() {
               exit={{ opacity: 0 }}
               className="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex flex-col justify-center px-6"
             >
-              <div className="space-y-6">
+              <div className={`space-y-6 ${isDesktop ? 'max-w-lg mx-auto' : ''}`}>
                 <div className="space-y-2">
                   <h3 className="text-xl font-light text-primary">
                     {effectiveLanguage === 'zh' ? '这份总结，像你吗？' : 'Does this sound like you?'}
                   </h3>
-                  <p className="text-xs text-gray-500 leading-relaxed whitespace-pre-line">
+                  <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-line">
                     {effectiveLanguage === 'zh'
                       ? '聊天内容可以清除，但理解不必从零开始。\n如果你认可这份总结，我们会保留这次对话中显现出的思考方式，用于更准确的同频匹配。\n如果你不认可，它不会被保留。'
                       : 'Chat history can be cleared, but understanding doesn\'t have to start from zero.\nIf you approve this summary, we\'ll keep the thinking patterns that emerged here for better matching.\nIf not, it will be discarded.'}
@@ -669,7 +908,7 @@ export default function Reflect() {
                   </button>
                   <button
                     onClick={handleRejectSummary}
-                    className="w-full py-3 rounded-xl border border-gray-200 text-gray-500 text-sm hover:bg-gray-50 transition-colors"
+                    className="w-full py-3 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
                   >
                     {effectiveLanguage === 'zh' ? '删除此次总结' : 'Discard Summary'}
                   </button>
@@ -679,121 +918,38 @@ export default function Reflect() {
           )}
         </AnimatePresence>
 
-        {/* ==================== Step 1: Input + Preferences ==================== */}
+        {/* ==================== Step 1: Compose (ChatGPT-style) ==================== */}
         {step === 1 && (
-          <motion.div key="step1" {...fadeIn} className="flex-1 flex flex-col px-5 overflow-hidden">
-            {/* Small prompt */}
-            <p className="shrink-0 text-sm font-light text-gray-500 pt-1 pb-1.5">
-              {t('reflect.step0_title')}
-            </p>
-            
-            {/* Large textarea — fills available space */}
-            <div className="relative flex-1 min-h-0 pb-1">
-              <textarea
-                className="w-full h-full p-3 rounded-xl border border-gray-200 focus:border-primary text-base font-light text-primary placeholder:text-gray-300 bg-white transition-all resize-none focus:outline-none"
-                placeholder={effectiveLanguage === 'zh' ? '在这里输入...' : 'Type here...'} 
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                autoFocus
-              />
-              {userStatePreview.isDistressed && (
-                <div className="absolute bottom-3 left-3 px-2 py-1 rounded-md bg-amber-100 text-amber-700 text-[10px]">
+          <motion.div key="step1" {...fadeIn} className="flex-1 flex flex-col overflow-hidden">
+            {/* Centered prompt — takes remaining space */}
+            <div className="flex-1 flex flex-col justify-center items-center px-8">
+              <h2 className={`font-light leading-snug text-primary text-center ${isDesktop ? 'text-2xl' : 'text-xl'}`}>
+                {t('reflect.step0_title')}
+              </h2>
+              <p className="text-sm text-gray-600 font-light mt-2 text-center">
+                {t('reflect.step0_subtitle')}
+              </p>
+            </div>
+
+            {/* Distress warning */}
+            {userStatePreview.isDistressed && inputValue.trim() && (
+              <div className={`${isDesktop ? 'px-8' : 'px-4'} pb-2`}>
+                <div className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-[10px] text-center">
                   {effectiveLanguage === 'zh' ? '我感受到你可能有些不安，会以更温和的方式回应' : 'I sense you may be distressed. I\'ll respond gently.'}
                 </div>
-              )}
-            </div>
-
-            {/* Compact controls row: Keep Context + Style dropdown */}
-            <div className="shrink-0 flex items-center justify-between py-1.5 gap-3">
-              {/* Keep Context toggle */}
-              <button 
-                onClick={() => setKeepContext(!keepContext)}
-                className="flex items-center space-x-1.5"
-              >
-                <span className={`transition-colors duration-200 ${keepContext ? 'text-primary' : 'text-gray-300'}`}>
-                  {keepContext ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
-                </span>
-                <span className="text-[10px] text-gray-500 whitespace-nowrap">
-                  {effectiveLanguage === 'zh' ? '保留上下文' : 'Keep context'}
-                </span>
-              </button>
-
-              {/* Style dropdown trigger */}
-              <div className="relative">
-                <button
-                  onClick={() => setStyleExpanded(!styleExpanded)}
-                  className="flex items-center space-x-1 px-2 py-1 rounded-md hover:bg-gray-50 transition-colors"
-                >
-                  <span className="text-[10px] text-gray-500 uppercase tracking-wider">
-                    {effectiveLanguage === 'zh' ? '方式' : 'Style'}
-                  </span>
-                  <span className="text-[11px] font-medium text-primary">
-                    {getStyleDisplayName(effectiveSelectedMode)}
-                  </span>
-                  <ChevronDown 
-                    size={12} 
-                    className={`text-gray-500 transition-transform duration-200 ${styleExpanded ? 'rotate-180' : ''}`} 
-                  />
-                </button>
-                
-                {/* Dropdown panel */}
-                <AnimatePresence>
-                  {styleExpanded && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 4 }}
-                      transition={{ duration: 0.15 }}
-                      className="absolute bottom-full right-0 mb-1 w-56 bg-white border border-gray-100 rounded-lg shadow-lg z-20 overflow-hidden"
-                    >
-                      <div className="p-1.5 space-y-0.5">
-                        {options.map((opt, i) => {
-                          const isSelected = effectiveSelectedMode === i;
-                          return (
-                            <button 
-                              key={i} 
-                              onClick={() => {
-                                setSelectedMode(i);
-                                setStyleExpanded(false);
-                              }}
-                              className={`w-full px-2.5 py-1.5 text-left rounded-md transition-all duration-150 ${
-                                isSelected 
-                                  ? 'bg-primary/5 text-primary' 
-                                  : 'hover:bg-gray-50 text-gray-600'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs">{opt.label}</span>
-                                {isSelected && <span className="text-primary text-[10px]">✓</span>}
-                              </div>
-                              <span className="block text-[9px] text-gray-500 mt-0.5">{opt.hint}</span>
-                              {i === 2 && isSelected && (
-                                <span className="block text-[9px] text-amber-600 mt-0.5 leading-snug">
-                                  {guideWarning}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
               </div>
-            </div>
+            )}
 
-            {/* Send button */}
-            <div className="shrink-0 pb-2 pt-0.5">
-              <button 
-                onClick={handleSend}
-                disabled={!inputValue.trim()}
-                className={`w-full py-2.5 rounded-xl flex items-center justify-center space-x-2 text-white transition-all text-sm font-medium ${
-                  !inputValue.trim() ? 'bg-gray-200 cursor-not-allowed' : 'bg-primary hover:bg-black'
-                }`}
-              >
-                <span>{t('common.send')}</span>
-                <Send size={14} strokeWidth={2} />
-              </button>
+            {/* Bottom-floating compact composer */}
+            <div className={`shrink-0 ${isDesktop ? 'px-8 pb-4' : 'px-4 pb-3'}`}>
+              <ChatInput
+                value={inputValue}
+                onChange={setInputValue}
+                onSend={handleSend}
+                placeholder={effectiveLanguage === 'zh' ? '在这里输入...' : 'Type here...'}
+                autoFocus
+                footer={composerFooter}
+              />
             </div>
           </motion.div>
         )}
@@ -801,25 +957,20 @@ export default function Reflect() {
         {/* ==================== Step 2: Chat / Conversation ==================== */}
         {step === 2 && (
           <motion.div key="step2" {...fadeIn} className="flex-1 flex flex-col overflow-hidden">
-            {/* Mini toolbar row */}
-            <div className="shrink-0 flex items-center justify-between px-5 py-1.5 border-b border-gray-50">
-              <span className="text-[11px] text-gray-500 font-medium tracking-wider uppercase">
-                {currentStyleName}
-              </span>
+            {/* Minimal toolbar — actions only, no style label */}
+            <div className="shrink-0 flex items-center justify-end px-5 py-1.5 border-b border-gray-50">
               <div className="flex items-center space-x-1">
-                {keepContext && (
-                  <button 
-                    onClick={() => {
-                      if (confirm(effectiveLanguage === 'zh' ? '确定要清空当前对话吗？' : 'Clear this conversation?')) {
-                        handleClearContext();
-                      }
-                    }}
-                    className="p-1.5 text-gray-300 hover:text-red-400 transition-colors"
-                    title={t('reflect.action_clear_context')}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
+                <button 
+                  onClick={() => {
+                    if (confirm(effectiveLanguage === 'zh' ? '确定要清空当前对话吗？' : 'Clear this conversation?')) {
+                      handleClearContext();
+                    }
+                  }}
+                  className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"
+                  title={t('reflect.action_clear_context')}
+                >
+                  <Trash2 size={14} />
+                </button>
                 <button 
                   onClick={handleEndConversation}
                   className="px-2.5 py-1 rounded-full text-[10px] text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
@@ -829,16 +980,16 @@ export default function Reflect() {
               </div>
             </div>
 
-            {/* Chat messages — takes maximum space */}
-            <div className="flex-1 overflow-y-auto no-scrollbar px-5 py-3 space-y-3">
+            {/* Chat messages */}
+            <div className={`flex-1 overflow-y-auto no-scrollbar py-4 space-y-4 ${isDesktop ? 'px-8' : 'px-5'}`}>
               {messages.map((msg, idx) => (
-                <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                  <div className={`px-3.5 py-2.5 rounded-2xl max-w-[82%] ${
-                    msg.role === 'user' 
-                      ? 'bg-primary text-white' 
+                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`rounded-2xl max-w-[80%] ${
+                    msg.role === 'user'
+                      ? 'bg-gray-900 text-white px-4 py-3'
                       : msg.role === 'system'
-                        ? 'bg-amber-50 text-amber-700'
-                        : 'bg-gray-100 text-gray-700'
+                        ? 'bg-amber-50 text-amber-700 px-4 py-3'
+                        : 'bg-gray-50 text-gray-800 px-4 py-3'
                   }`}>
                     <p className="text-sm font-light leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                   </div>
@@ -851,8 +1002,8 @@ export default function Reflect() {
               ))}
 
               {isLoading && (
-                <div className="flex flex-col items-start">
-                  <div className="px-4 py-3 rounded-2xl bg-gray-100">
+                <div className="flex justify-start">
+                  <div className="px-4 py-3 rounded-2xl bg-gray-50">
                     <div className="flex space-x-1">
                       <div className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
                       <div className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
@@ -864,34 +1015,23 @@ export default function Reflect() {
               <div ref={chatEndRef} />
             </div>
 
-            {/* Input bar — fixed at bottom of chat area */}
-            <div className="shrink-0 px-4 py-2.5 border-t border-gray-100 bg-white">
+            {/* Compact composer with role + context footer */}
+            <div className={`shrink-0 bg-white ${isDesktop ? 'px-8 py-3' : 'px-4 py-2.5'}`}>
               {userStatePreview.isDistressed && inputValue.trim() && (
                 <div className="mb-2 px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-[10px]">
                   {effectiveLanguage === 'zh' ? '我会以更温和的方式回应你' : 'I\'ll respond gently to you'}
                 </div>
               )}
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleReply()}
-                  placeholder={effectiveLanguage === 'zh' ? '继续说...' : 'Continue...'}
-                  disabled={isLoading}
-                  className="flex-1 px-4 py-2.5 rounded-full border border-gray-200 focus:border-primary focus:outline-none bg-gray-50 text-sm font-light"
-                />
-                <button 
-                  onClick={handleReply}
-                  disabled={!inputValue.trim() || isLoading}
-                  className="p-2.5 text-white bg-primary rounded-full disabled:opacity-30 disabled:bg-gray-300 shrink-0"
-                >
-                  <Send size={16} />
-                </button>
-              </div>
-              <p className="text-[9px] text-gray-400 text-center mt-1.5">{t('reflect.mirror_footer')}</p>
+              <ChatInput
+                value={inputValue}
+                onChange={setInputValue}
+                onSend={handleReply}
+                placeholder={effectiveLanguage === 'zh' ? '继续说...' : 'Continue...'}
+                disabled={isLoading}
+                footer={composerFooter}
+              />
+              <p className="text-[9px] text-gray-500 text-center mt-2">{t('reflect.mirror_footer')}</p>
 
-              {/* Trust copy shown after clearing within chat */}
               {justCleared && messages.length === 0 && (
                 <p className="text-[10px] text-gray-500 font-light leading-relaxed text-center pt-1.5 px-2">
                   {effectiveLanguage === 'zh'
@@ -910,10 +1050,44 @@ export default function Reflect() {
                <h2 className="text-2xl font-light text-primary leading-snug whitespace-pre-line">
                  {t('reflect.bridge_title')}
                </h2>
-               <p className="text-sm text-gray-500 font-light leading-relaxed whitespace-pre-line">
+               <p className="text-sm text-gray-600 font-light leading-relaxed whitespace-pre-line">
                  {t('reflect.bridge_desc')}
                </p>
              </div>
+
+             {/* Calibration prompt (Spec §九) — only shown when a new insight is detected */}
+             {calibrationInsight && (
+               <div className="w-full max-w-xs bg-gray-50 rounded-xl p-4 space-y-3">
+                 <p className="text-xs text-gray-600 leading-relaxed">
+                   {effectiveLanguage === 'zh' ? '我对你的一个理解是：' : 'One thing I noticed about you:'}
+                 </p>
+                 <p className="text-sm text-primary font-light leading-relaxed">
+                   {calibrationInsight.text}
+                 </p>
+                 <div className="flex gap-2">
+                   <button
+                     onClick={() => {
+                       // TODO: feed back into confidence scoring
+                       console.log('[Calibration] like_me:', calibrationInsight.key);
+                       setCalibrationInsight(null);
+                     }}
+                     className="flex-1 py-2 rounded-lg border border-gray-200 text-xs text-primary hover:bg-white transition-colors"
+                   >
+                     {effectiveLanguage === 'zh' ? '这很像我' : 'That sounds like me'}
+                   </button>
+                   <button
+                     onClick={() => {
+                       // TODO: feed back into confidence scoring
+                       console.log('[Calibration] not_like_me:', calibrationInsight.key);
+                       setCalibrationInsight(null);
+                     }}
+                     className="flex-1 py-2 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-white transition-colors"
+                   >
+                     {effectiveLanguage === 'zh' ? '不太像' : 'Not really'}
+                   </button>
+                 </div>
+               </div>
+             )}
 
              <div className="space-y-2.5 w-full max-w-xs">
                 <Link to="/resonate" className="block w-full py-3 rounded-xl bg-primary text-white hover:bg-black transition-colors text-sm font-medium text-center">
@@ -921,17 +1095,18 @@ export default function Reflect() {
                 </Link>
                 <button 
                   onClick={() => setStep(0)}
-                  className="block w-full py-3 rounded-xl border border-gray-200 text-gray-500 hover:border-gray-400 transition-colors text-sm"
+                  className="block w-full py-3 rounded-xl border border-gray-200 text-gray-600 hover:border-gray-400 transition-colors text-sm font-medium"
                 >
                   {t('reflect.bridge_action_reflect')}
                 </button>
              </div>
              
-             <p className="text-[10px] text-gray-400 font-light">{t('reflect.bridge_footer')}</p>
+             <p className="text-[10px] text-gray-500 font-light">{t('reflect.bridge_footer')}</p>
           </motion.div>
         )}
 
       </AnimatePresence>
+      </div>
     </div>
   );
 }

@@ -517,6 +517,25 @@ export const readUserPersonalityModel = readUserUnderstandingModel;
 export const saveUserPersonalityModel = saveUserUnderstandingModel;
 export const clearUserPersonalityModel = clearUserUnderstandingModel;
 
+// ---------------------------------------------------------------------------
+// TODO (Spec §八): Incremental model update
+// Current buildUserUnderstandingModel does full-rebuild from all insights.
+// Should be changed to:
+//   1. Generate session summary (topic, emotionalTone, keywords, tension)
+//   2. Extract candidate insights from this session
+//   3. Compare candidates against existing stable model
+//   4. Only persist: new entries, reinforced entries, corrected entries
+//   5. Never overwrite stable traits from a single emotional session
+//   6. Track confidence per value: initial=0.5, reinforced +0.1, calibrated ±0.15
+//   7. Promote candidate → stable when confidence >= 0.75 AND reinforcementCount >= 3
+// ---------------------------------------------------------------------------
+
+// TODO (Spec §九): Calibration integration
+// After saveApprovedSummary, check if any new high-confidence candidate exists.
+// If so, return it as a CalibrationPrompt for the UI to display.
+// User response ("like_me" / "not_like_me") feeds back into confidence.
+// ---------------------------------------------------------------------------
+
 // Confirmed-summary orchestration
 
 export function hasMeaningfulExtraction(extraction: ConversationExtraction): boolean {

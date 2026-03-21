@@ -43,3 +43,36 @@ export interface UserUnderstandingModel {
 
 // Backward-compatible alias while older imports are migrated.
 export type UserPersonalityModel = UserUnderstandingModel;
+
+// ---------------------------------------------------------------------------
+// TODO: Layered insight model (Spec §八 — incremental, not full-overwrite)
+// ---------------------------------------------------------------------------
+// Each insight entry should carry a confidence score.
+// Only insights reinforced across multiple sessions should enter "stable".
+// Single-session observations stay as "candidate" until verified.
+//
+// TODO: Add these fields to SessionInsight / UserUnderstandingModel:
+//   - emotionalTone: string (per-session, dynamic — NOT long-term trait)
+//   - tension: string (per-session)
+//   - confidence: number per value in each dimension
+//   - reinforcementCount: number
+//   - firstSeen / lastReinforced timestamps
+//
+// TODO: Separate dynamic state (mood, energy) from stable traits.
+//   - "今天很累" → dynamic state, not a personality conclusion
+//   - "重视责任" with confidence > 0.75 across 3+ sessions → stable trait
+//
+// TODO: buildUserUnderstandingModel should diff against existing model,
+//   only saving new/strengthened/corrected entries, not full-overwrite.
+// ---------------------------------------------------------------------------
+
+// TODO: Calibration prompt (Spec §九)
+// After conversation end, if a high-value new insight is detected,
+// show a lightweight confirmation: "这很像我" / "不太像"
+// Result adjusts confidence score for that insight entry.
+export interface CalibrationResult {
+  insightKey: string;
+  insightValue: string;
+  userResponse: 'like_me' | 'not_like_me';
+  timestamp: number;
+}

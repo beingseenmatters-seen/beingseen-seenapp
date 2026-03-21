@@ -28,6 +28,17 @@ export default function EmailLinkWaitingScreen() {
 
     const href = window.location.href;
     const isLink = isEmailLink(href);
+    
+    // If we are on web but the user is on a mobile device, try to redirect to the app
+    if (isLink && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      console.log('[EmailLinkWaiting] Mobile browser detected, attempting to redirect to app');
+      const urlParams = new URLSearchParams(window.location.search);
+      const appSchemeUrl = `seenapp://auth/verify?${urlParams.toString()}`;
+      window.location.href = appSchemeUrl;
+      
+      // We still continue in case the app isn't installed and the redirect fails
+    }
+
     const email = getStoredEmail();
 
     console.log('[EmailLinkWaiting] Mount check', { isLink, storedEmail: email ?? '(none)', href });

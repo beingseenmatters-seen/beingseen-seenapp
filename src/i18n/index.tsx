@@ -1,4 +1,5 @@
-import { useState, createContext, useContext, type ReactNode } from 'react';
+import { useState, createContext, useContext, useEffect, type ReactNode } from 'react';
+import { Device } from '@capacitor/device';
 import zh from './zh.json';
 import en from './en.json';
 
@@ -32,6 +33,20 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     return (saved === 'zh' || saved === 'en' || saved === 'auto') ? saved : 'auto';
   });
 
+  const [deviceLang, setDeviceLang] = useState<string>('');
+
+  useEffect(() => {
+    const fetchDeviceLang = async () => {
+      try {
+        const info = await Device.getLanguageCode();
+        setDeviceLang(info.value.toLowerCase());
+      } catch {
+        // Fallback
+      }
+    };
+    fetchDeviceLang();
+  }, []);
+
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
     localStorage.setItem('seen_language', lang);
@@ -40,9 +55,13 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const getEffectiveLanguage = (lang: Language): 'zh' | 'en' => {
     if (lang === 'auto') {
-      const systemLang = navigator.language.toLowerCase();
+      if (deviceLang) {
+        return deviceLang.startsWith('zh') ? 'zh' : 'en';
+      }
+      const systemLangs = navigator.languages || [navigator.language];
+      const primaryLang = (systemLangs[0] || '').toLowerCase();
       // Check for zh-CN, zh-TW, etc.
-      return systemLang.startsWith('zh') ? 'zh' : 'en';
+      return primaryLang.startsWith('zh') ? 'zh' : 'en';
     }
     return lang;
   };

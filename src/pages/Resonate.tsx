@@ -73,11 +73,16 @@ export default function Resonate() {
   };
 
   return (
-    <div className="px-6 pt-16 pb-8 h-full flex flex-col relative">
+    <div className="h-full flex flex-col relative">
+      <div className="shrink-0 px-5 pt-3 pb-1">
+        <span className="text-[11px] font-semibold tracking-[0.2em] text-gray-500 uppercase">
+          {t('nav.resonate')}
+        </span>
+      </div>
+      <div className="flex-1 min-h-0 px-6 pb-8 flex flex-col overflow-y-auto no-scrollbar">
       <AnimatePresence mode="wait">
         {step === 0 && (
           <motion.div key="step0" {...fadeIn} className="flex-1 flex flex-col justify-center items-center text-center space-y-8">
-            <h1 className="text-sm font-medium tracking-widest text-muted uppercase">{t('resonate.title')}</h1>
             <div className="space-y-4">
               <h2 className="text-3xl font-light text-primary whitespace-pre-line">
                 {hasProfile ? t('resonate.empty_title') : t('resonate.step0_title')}
@@ -186,6 +191,7 @@ export default function Resonate() {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }

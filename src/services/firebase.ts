@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, initializeAuth, indexedDBLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { isNative } from '../auth/platform';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? '',
@@ -12,5 +13,11 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+
+// On native iOS/Android, avoid browserPopupRedirectResolver to prevent iframe creation
+// which can cause ATS errors with insecure HTTP requests.
+export const auth = isNative() 
+  ? initializeAuth(app, { persistence: indexedDBLocalPersistence })
+  : getAuth(app);
+
 export const db = getFirestore(app);

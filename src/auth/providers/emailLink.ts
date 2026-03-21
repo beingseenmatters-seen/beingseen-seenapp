@@ -17,6 +17,13 @@ export async function sendEmailLink(email: string): Promise<void> {
   await sendSignInLinkToEmail(auth, email, {
     url: callbackUrl,
     handleCodeInApp: true,
+    iOS: {
+      bundleId: 'com.beingseenmatters.seen',
+    },
+    android: {
+      packageName: 'com.beingseenmatters.seen',
+      installApp: false,
+    },
   });
 
   localStorage.setItem(EMAIL_KEY, email);

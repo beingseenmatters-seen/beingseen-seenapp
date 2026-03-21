@@ -20,7 +20,13 @@ export default function Inbox() {
   };
 
   return (
-    <div className="h-full relative bg-white">
+    <div className="h-full flex flex-col bg-white">
+      <div className="shrink-0 px-5 pt-3 pb-1">
+        <span className="text-[11px] font-semibold tracking-[0.2em] text-gray-500 uppercase">
+          {t('nav.inbox')}
+        </span>
+      </div>
+      <div className="flex-1 min-h-0 relative">
       <AnimatePresence initial={false} mode="wait">
         
         {/* List View */}
@@ -30,10 +36,9 @@ export default function Inbox() {
             initial={{ opacity: 0, x: -20 }} 
             animate={{ opacity: 1, x: 0 }} 
             exit={{ opacity: 0, x: -20 }} 
-            className="px-6 pt-16 h-full flex flex-col"
+            className="px-6 pt-4 h-full flex flex-col"
           >
-            <div className="space-y-2 mb-8">
-              <h1 className="text-sm font-medium tracking-widest text-muted uppercase">{t('inbox.title')}</h1>
+            <div className="space-y-1 mb-6">
               <p className="text-secondary font-light text-sm">{t('inbox.subtitle')}</p>
             </div>
 
@@ -125,6 +130,7 @@ export default function Inbox() {
         )}
 
       </AnimatePresence>
+      </div>
     </div>
   );
 }

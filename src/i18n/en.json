@@ -25,7 +25,12 @@
     "reflect": "Reflect",
     "resonate": "Resonate",
     "inbox": "Inbox",
-    "me": "Me"
+    "me": "Me",
+    "recent_title": "RECENT CONVERSATIONS",
+    "recent_hint": "Visible only during the retention period",
+    "recent_delete": "Delete this conversation",
+    "recent_delete_confirm": "The original conversation will be removed, but existing understanding will not be affected.",
+    "recent_empty": "No retained conversations"
   },
   "auth": {
     "welcome_title": "Welcome to Seen",
@@ -141,9 +146,9 @@
     "footer": "What you write here belongs to you.\nYou can change or remove it anytime."
   },
   "reflect": {
-    "title": "REFLECT",
+    "title": "Reflect",
     "step0_title": "What's on your mind?",
-    "step0_subtitle": "This is not a stage.\nYou don't need to perform.",
+    "step0_subtitle": "This is not a social occasion. You can speak freely here.",
     "action_speak": "Speak",
     "action_write": "Write",
     "action_continue": "Continue Conversation",
@@ -177,7 +182,12 @@
     "bridge_desc": "Seen does not manufacture relationships.\nOnly when your expression becomes clear,\nwill we present the few who truly resonate.",
     "bridge_action_resonate": "Go to Resonate",
     "bridge_action_reflect": "Continue Reflecting",
-    "bridge_footer": "There is no rush. Connection is never the goal."
+    "bridge_footer": "There is no rush. Connection is never the goal.",
+    "retention_label": "This conversation",
+    "retention_3days": "Save 3 days",
+    "retention_7days": "Save 7 days",
+    "retention_none": "Don't save",
+    "retention_note": "Original conversations are automatically deleted after expiry. We only keep an abstract understanding of you."
   },
   "resonate": {
     "title": "Resonate",

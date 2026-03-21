@@ -25,7 +25,12 @@
     "reflect": "对话",
     "resonate": "同频",
     "inbox": "来信",
-    "me": "我"
+    "me": "我",
+    "recent_title": "最近对话",
+    "recent_hint": "仅在保留期内可见",
+    "recent_delete": "删除此对话",
+    "recent_delete_confirm": "删除后原始对话将被清除，但已有的理解不会受影响。",
+    "recent_empty": "暂无保留的对话"
   },
   "auth": {
     "welcome_title": "欢迎来到 Seen",
@@ -141,9 +146,9 @@
     "footer": "你写下的内容，只属于你自己。\n你可以随时修改或删除。"
   },
   "reflect": {
-    "title": "REFLECT",
+    "title": "对话",
     "step0_title": "今天，\n有什么想说的吗？",
-    "step0_subtitle": "这里不是社交场合，\n你不需要表演。",
+    "step0_subtitle": "这里不是社交场合，你可以畅所欲言。",
     "action_speak": "说一说",
     "action_write": "写一写",
     "action_continue": "继续对话",
@@ -177,7 +182,12 @@
     "bridge_desc": "Seen 不会为你制造关系。\n只有当你的表达逐渐清晰，\n我们才会为你呈现极少数可能真正同频的人。",
     "bridge_action_resonate": "前往同频（Resonate）",
     "bridge_action_reflect": "继续表达（Reflect）",
-    "bridge_footer": "你不需要着急。连接，从来不是目的。"
+    "bridge_footer": "你不需要着急。连接，从来不是目的。",
+    "retention_label": "本次对话",
+    "retention_3days": "保存 3 天",
+    "retention_7days": "保存 7 天",
+    "retention_none": "不保存",
+    "retention_note": "原始对话会在到期后自动删除。系统只保留对你的抽象理解，用于帮助你更了解自己。"
   },
   "resonate": {
     "title": "同频",
@@ -213,7 +223,7 @@
     "empty_note": "连接从来不是越多越好。"
   },
   "inbox": {
-    "title": "对话",
+    "title": "来信",
     "subtitle": "这里只有你选择进入的私密对话。",
     "item_title": "一位同频者",
     "item_desc": "你们因「如何面对分歧」和「生活节奏」而连接",
