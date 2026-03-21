@@ -14,20 +14,25 @@ export async function sendEmailLink(email: string): Promise<void> {
 
   console.log('[auth] sending email link', { email, callbackUrl });
 
-  await sendSignInLinkToEmail(auth, email, {
-    url: callbackUrl,
-    handleCodeInApp: true,
-    iOS: {
-      bundleId: 'com.beingseenmatters.seen',
-    },
-    android: {
-      packageName: 'com.beingseenmatters.seen',
-      installApp: false,
-    },
-  });
+  try {
+    await sendSignInLinkToEmail(auth, email, {
+      url: callbackUrl,
+      handleCodeInApp: true,
+      iOS: {
+        bundleId: 'com.beingseenmatters.seen',
+      },
+      android: {
+        packageName: 'com.beingseenmatters.seen',
+        installApp: false,
+      },
+    });
 
-  localStorage.setItem(EMAIL_KEY, email);
-  console.log('[auth] email link sent, email saved to localStorage');
+    localStorage.setItem(EMAIL_KEY, email);
+    console.log('[auth] email link sent, email saved to localStorage');
+  } catch (err) {
+    console.error('[auth] sendSignInLinkToEmail raw error:', err);
+    throw err;
+  }
 }
 
 export function getStoredEmail(): string | null {

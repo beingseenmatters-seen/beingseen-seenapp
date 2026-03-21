@@ -287,7 +287,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           seenUser: state.seenUser,
         });
       } catch (err) {
-        console.error('[auth] failed to send email link:', (err as Error)?.message);
+        console.error('[auth] failed to send email link:', (err as Error)?.message, err);
         dispatch({ type: 'SET_ERROR', error: friendlyErrorKey(err) });
         throw err;
       }
