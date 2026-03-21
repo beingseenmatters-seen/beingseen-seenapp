@@ -62,7 +62,10 @@ export async function completeEmailSignIn(
     throw err;
   }
 
-  const result = await signInWithEmailLink(auth, email, url);
+  const result = await signInWithEmailLink(auth, email, url).catch(err => {
+    console.error('[auth] signInWithEmailLink raw error:', err);
+    throw err;
+  });
   localStorage.removeItem(EMAIL_KEY);
   console.log('[auth] email link sign-in succeeded, uid:', result.user.uid);
   return result.user;

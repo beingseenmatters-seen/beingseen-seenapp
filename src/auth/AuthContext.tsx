@@ -209,7 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // --- Native deep link email handler ---
   const handleDeepLinkEmailSignIn = async (url: string) => {
     const storedEmail = emailLink.getStoredEmail();
-    console.log('[auth] handleDeepLinkEmailSignIn', { hasStoredEmail: !!storedEmail });
+    console.log('[auth] handleDeepLinkEmailSignIn', { hasStoredEmail: !!storedEmail, url });
 
     if (!storedEmail) {
       pendingDeepLinkRef.current = url;
@@ -224,7 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       pendingDeepLinkRef.current = null;
       console.log('[auth] deep link email sign-in completed');
     } catch (err) {
-      console.error('[auth] deep link email sign-in failed:', (err as Error)?.message);
+      console.error('[auth] deep link email sign-in failed:', (err as Error)?.message, err);
       dispatch({ type: 'SET_ERROR', error: friendlyErrorKey(err) });
     }
   };
@@ -306,6 +306,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         source: deepLinkUrl ? 'deepLink' : pendingDeepLinkRef.current ? 'pendingRef' : 'windowHref',
         isLink: url ? emailLink.isEmailLink(url) : false,
         hasManualEmail: !!manualEmail,
+        url
       });
 
       if (!url || !emailLink.isEmailLink(url)) {
@@ -324,7 +325,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log('[auth] email sign-in completed successfully');
         return true;
       } catch (err) {
-        console.error('[auth] email sign-in failed:', (err as Error)?.message, (err as { code?: string })?.code);
+        console.error('[auth] email sign-in failed:', (err as Error)?.message, (err as { code?: string })?.code, err);
         dispatch({ type: 'SET_ERROR', error: friendlyErrorKey(err) });
         return false;
       }
