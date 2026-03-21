@@ -34,9 +34,12 @@ export default function EmailLinkWaitingScreen() {
       console.log('[EmailLinkWaiting] Mobile browser detected, attempting to redirect to app');
       const urlParams = new URLSearchParams(window.location.search);
       const appSchemeUrl = `seenapp://auth/verify?${urlParams.toString()}`;
+      
+      // Try to open the app
       window.location.href = appSchemeUrl;
       
-      // We still continue in case the app isn't installed and the redirect fails
+      // We still continue with the web sign-in flow just in case the app isn't installed
+      // or the redirect fails. The web app will sign the user in.
     }
 
     const email = getStoredEmail();

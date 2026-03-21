@@ -39,9 +39,10 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     const fetchDeviceLang = async () => {
       try {
         const info = await Device.getLanguageCode();
+        console.log('[i18n] Device language code:', info.value);
         setDeviceLang(info.value.toLowerCase());
-      } catch {
-        // Fallback
+      } catch (err) {
+        console.error('[i18n] Failed to get device language:', err);
       }
     };
     fetchDeviceLang();
