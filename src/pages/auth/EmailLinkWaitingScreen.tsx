@@ -35,8 +35,16 @@ export default function EmailLinkWaitingScreen() {
       const urlParams = new URLSearchParams(window.location.search);
       const appSchemeUrl = `seenapp://auth/verify?${urlParams.toString()}`;
       
-      // Try to open the app
-      window.location.href = appSchemeUrl;
+      // Try to open the app via a hidden iframe (more reliable on iOS)
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = appSchemeUrl;
+      document.body.appendChild(iframe);
+      
+      // Also try location.href as fallback
+      setTimeout(() => {
+        window.location.href = appSchemeUrl;
+      }, 100);
       
       // We still continue with the web sign-in flow just in case the app isn't installed
       // or the redirect fails. The web app will sign the user in.
