@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { 
   ResponseStyle,
   type ResponseStyleType,
@@ -16,7 +17,8 @@ export interface ReflectResponse {
 
 // In production (iOS App), use direct AWS API URL
 // In development, use proxy path to avoid CORS issues
-const API_URL = import.meta.env.PROD 
+// On web (Vercel), we must also use direct AWS API URL because there is no Vite proxy
+const API_URL = import.meta.env.PROD || Capacitor.getPlatform() === 'web'
   ? 'https://rtbzs3sjwe.execute-api.ap-southeast-2.amazonaws.com/reflect/send'
   : '/api/reflect/send';
 const APP_KEY = 'test_seen_app_key';
