@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "8M594R6LYT.com.beingseenmatters.seen",
+        "paths": [ "/auth/verify", "/auth/verify/*" ]
+      }
+    ]
+  }
+}
