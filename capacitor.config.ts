@@ -16,6 +16,9 @@ const config: CapacitorConfig = {
     CapacitorHttp: {
       // Enable native HTTP for all requests
       enabled: true
+    },
+    FirebaseAuthentication: {
+      providers: ['apple.com', 'google.com'],
     }
   }
 };

@@ -12,9 +12,15 @@ export interface UnderstandingAnswers {
 export interface SeenUser {
   uid: string;
   email: string;
+  primaryEmail?: string | null;
+  allEmails?: string[];
+  isAppleRelayEmail?: boolean;
+  providers?: string[];
+  lastLoginProvider?: string | null;
   createdAt: unknown;
   updatedAt?: unknown;
   loginMethod: LoginMethod;
+  provider?: string;
   onboardingCompleted: boolean;
   onboardingStarted?: boolean;
   nickname?: string;

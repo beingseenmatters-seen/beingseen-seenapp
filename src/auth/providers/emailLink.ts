@@ -2,6 +2,8 @@ import {
   sendSignInLinkToEmail,
   isSignInWithEmailLink,
   signInWithEmailLink,
+  linkWithCredential,
+  EmailAuthProvider,
   type User,
 } from 'firebase/auth';
 import { auth } from '../../services/firebase';
@@ -67,11 +69,29 @@ export async function completeEmailSignIn(
     throw err;
   }
 
-  const result = await signInWithEmailLink(auth, email, url).catch(err => {
-    console.error('[auth] signInWithEmailLink raw error:', err);
+  let result;
+  try {
+    if (auth.currentUser) {
+      // Link to existing user
+      const credential = EmailAuthProvider.credentialWithLink(email, url);
+      result = await linkWithCredential(auth.currentUser, credential);
+      console.log('[auth] email link successfully linked to current user');
+    } else {
+      // Sign in as new/existing user
+      result = await signInWithEmailLink(auth, email, url);
+      console.log('[auth] email link sign-in succeeded, uid:', result.user.uid);
+    }
+  } catch (err: any) {
+    console.error('[auth] email link completion raw error:', err);
+    if (err.code === 'auth/credential-already-in-use') {
+      throw new Error('This email is already linked to another Seen account.');
+    }
+    if (err.code === 'auth/provider-already-linked') {
+      throw new Error('This email is already linked to your current Seen account.');
+    }
     throw err;
-  });
+  }
+
   localStorage.removeItem(EMAIL_KEY);
-  console.log('[auth] email link sign-in succeeded, uid:', result.user.uid);
   return result.user;
 }

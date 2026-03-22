@@ -87,6 +87,10 @@ function friendlyErrorKey(error: unknown): string {
       return 'auth.error_link_expired';
     case 'auth/missing-email':
       return 'auth.error_missing_email';
+    case 'auth/credential-already-in-use':
+      return 'auth.error_credential_already_in_use';
+    case 'auth/provider-already-linked':
+      return 'auth.error_provider_already_linked';
     default:
       return 'auth.error_generic';
   }
@@ -253,12 +257,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // --- Provider-based sign-in helpers ---
 
   const handleProviderAuth = useCallback(
-    async (method: LoginMethod, action: () => Promise<User>) => {
+    async (method: LoginMethod, action: () => Promise<User | { user: User; displayName?: string }>) => {
       console.log('[auth] provider sign-in started:', method);
       dispatch({ type: 'LOADING' });
       try {
-        const user = await action();
-        await firestoreOps.ensureUserDocument(user, method);
+        const result = await action();
+        const user = 'user' in result ? result.user : result;
+        const displayName = ('displayName' in result && result.displayName) ? result.displayName : undefined;
+        
+        await firestoreOps.ensureUserDocument(user, method, displayName);
         const seenUser = await firestoreOps.getUserDocument(user.uid);
         dispatch({ type: 'SET_USER', firebaseUser: user, seenUser });
         syncLocalStorage(seenUser);

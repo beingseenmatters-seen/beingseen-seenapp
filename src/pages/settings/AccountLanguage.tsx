@@ -1,8 +1,11 @@
 import { ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { useLanguage } from '../../i18n';
 import { useAuth } from '../../auth';
 import type { LoginMethod } from '../../auth';
+import { linkGoogleToCurrentUser, linkAppleToCurrentUser, linkEmailToCurrentUser } from '../../auth/linking';
+import { isIOS } from '../../auth/platform';
 
 function getLoginMethodLabel(
   method: LoginMethod | undefined,
@@ -35,6 +38,57 @@ export default function AccountLanguage() {
   );
   const email = firebaseUser?.email || seenUser?.email || '—';
   const nickname = seenUser?.nickname;
+
+  const [linkError, setLinkError] = useState('');
+  const [isLinking, setIsLinking] = useState(false);
+
+  const providerIds = firebaseUser?.providerData.map(p => p.providerId) || [];
+  const hasApple = providerIds.includes('apple.com');
+  const hasGoogle = providerIds.includes('google.com');
+  const hasEmail = providerIds.includes('password') || providerIds.includes('emailLink');
+
+  const handleLinkGoogle = async () => {
+    try {
+      setLinkError('');
+      setIsLinking(true);
+      await linkGoogleToCurrentUser();
+      // Force reload to reflect new providers
+      window.location.reload();
+    } catch (err: any) {
+      setLinkError(err.message || 'Failed to link Google account');
+    } finally {
+      setIsLinking(false);
+    }
+  };
+
+  const handleLinkApple = async () => {
+    try {
+      setLinkError('');
+      setIsLinking(true);
+      await linkAppleToCurrentUser();
+      window.location.reload();
+    } catch (err: any) {
+      setLinkError(err.message || 'Failed to link Apple account');
+    } finally {
+      setIsLinking(false);
+    }
+  };
+
+  const handleLinkEmail = async () => {
+    const emailToLink = window.prompt('Enter email to connect:');
+    if (!emailToLink) return;
+    
+    try {
+      setLinkError('');
+      setIsLinking(true);
+      await linkEmailToCurrentUser(emailToLink);
+      alert('Verification link sent! Please check your email.');
+    } catch (err: any) {
+      setLinkError(err.message || 'Failed to send email link');
+    } finally {
+      setIsLinking(false);
+    }
+  };
 
   const handleSignOut = async () => {
     try {
@@ -89,20 +143,87 @@ export default function AccountLanguage() {
                 <span className="text-sm text-secondary">{t('settings.account.current_method')}</span>
                 <span className="text-sm font-medium text-primary">{loginMethod}</span>
               </div>
-              <div className="space-y-1">
-                <button disabled className="w-full text-left py-3 text-sm text-gray-300 cursor-not-allowed flex items-center justify-between">
-                  {t('settings.account.action_change_method')}
-                  <span className="text-[10px] uppercase tracking-wide text-muted">{t('common.feature_coming_soon')}</span>
-                </button>
-                <button disabled className="w-full text-left py-3 text-sm text-gray-300 cursor-not-allowed flex items-center justify-between">
-                  {t('settings.account.action_view_devices')}
-                  <span className="text-[10px] uppercase tracking-wide text-muted">{t('common.feature_coming_soon')}</span>
-                </button>
-                <button disabled className="w-full text-left py-3 text-sm text-gray-300 cursor-not-allowed flex items-center justify-between">
-                  {t('settings.account.action_logout_devices')}
-                  <span className="text-[10px] uppercase tracking-wide text-muted">{t('common.feature_coming_soon')}</span>
-                </button>
+            </div>
+          </section>
+
+          {/* Login Methods */}
+          <section className="space-y-4">
+            <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider pl-1">Login Methods</h3>
+            <div className="bg-gray-50 rounded-2xl p-4 space-y-4">
+              {linkError && (
+                <div className="text-sm text-red-500 pb-2">
+                  {linkError}
+                </div>
+              )}
+              
+              {/* Apple */}
+              {isIOS() && (
+                <div className="flex justify-between items-center pb-3 border-b border-gray-100">
+                  <span className="text-sm text-secondary">Apple</span>
+                  {hasApple ? (
+                    <span className="text-sm font-medium text-green-600">Connected</span>
+                  ) : (
+                    <button 
+                      onClick={handleLinkApple}
+                      disabled={isLinking}
+                      className="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                    >
+                      Connect
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Google */}
+              <div className="flex justify-between items-center pb-3 border-b border-gray-100">
+                <span className="text-sm text-secondary">Google</span>
+                {hasGoogle ? (
+                  <span className="text-sm font-medium text-green-600">Connected</span>
+                ) : (
+                  <button 
+                    onClick={handleLinkGoogle}
+                    disabled={isLinking}
+                    className="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                  >
+                    Connect
+                  </button>
+                )}
               </div>
+
+              {/* Email */}
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-secondary">Email</span>
+                {hasEmail ? (
+                  <span className="text-sm font-medium text-green-600">Connected</span>
+                ) : (
+                  <button 
+                    onClick={handleLinkEmail}
+                    disabled={isLinking}
+                    className="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                  >
+                    Connect
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Advanced Actions */}
+          <section className="space-y-4">
+            <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider pl-1">Advanced</h3>
+            <div className="bg-gray-50 rounded-2xl p-4 space-y-1">
+              <button 
+                onClick={() => alert('This feature is currently under development.')}
+                className="w-full text-left py-3 text-sm text-primary hover:text-blue-600 transition-colors flex items-center justify-between"
+              >
+                {t('settings.account.action_view_devices')}
+              </button>
+              <button 
+                onClick={() => alert('This feature is currently under development.')}
+                className="w-full text-left py-3 text-sm text-primary hover:text-blue-600 transition-colors flex items-center justify-between"
+              >
+                {t('settings.account.action_logout_devices')}
+              </button>
             </div>
           </section>
 

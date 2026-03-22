@@ -63,6 +63,16 @@
 				<string>seenapp</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.219057410128-jt5phseu2hdg41rsh9aecppit3gmmp8g</string>
+			</array>
+		</dict>
 	</array>
+	<key>GoogleSigninClientId</key>
+	<string>219057410128-jt5phseu2hdg41rsh9aecppit3gmmp8g.apps.googleusercontent.com</string>
 </dict>
 </plist>
