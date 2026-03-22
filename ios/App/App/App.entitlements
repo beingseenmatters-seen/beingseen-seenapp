@@ -4,7 +4,7 @@
 <dict>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
-		<string>applinks:beingseen-seenapp.vercel.app</string>
+		<string>applinks:app.beingseenmatters.com</string>
 	</array>
 </dict>
 </plist>

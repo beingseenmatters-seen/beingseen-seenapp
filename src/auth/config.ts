@@ -1,4 +1,4 @@
-const FALLBACK_URL = 'https://beingseen-seenapp.vercel.app';
+const FALLBACK_URL = 'https://app.beingseenmatters.com';
 
 /**
  * The canonical URL for this app in production.
