@@ -294,7 +294,7 @@ export default function Understanding() {
         </div>
 
         {/* Sticky Save Button at bottom - always visible */}
-        <div className="shrink-0 sticky bottom-0 left-0 right-0 px-6 py-4 bg-white border-t border-gray-100 safe-area-inset-bottom">
+        <div className="shrink-0 sticky bottom-0 left-0 right-0 px-6 py-4 bg-white border-t border-gray-100" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }}>
           <button 
             onClick={handleSave}
             disabled={!isDirty || isSaving}
