@@ -3,6 +3,7 @@ import { ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { useLanguage } from '../../i18n';
+import { useAuth } from '../../auth';
 
 // Custom smooth slider component with drag support
 function SmoothSlider({ 
@@ -103,20 +104,16 @@ function SmoothSlider({
 export default function AIResponse() {
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const { seenUser, updateProfile } = useAuth();
 
-  const initialPref = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem('seen_ai_preference') || '{}');
-    } catch {
-      return {};
-    }
-  }, []);
+  const initialPref = useMemo(() => seenUser?.soulProfile?.aiPreference || {}, [seenUser]);
 
   const [role, setRole] = useState(initialPref.role || 'mirror');
   const [intensity, setIntensity] = useState(initialPref.intensity ?? 50);
   const [emotionHandling, setEmotionHandling] = useState(initialPref.emotionHandling || 'context');
 
   const [toast, setToast] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [savedSnapshot, setSavedSnapshot] = useState(() =>
     JSON.stringify({ role: initialPref.role || 'mirror', intensity: initialPref.intensity ?? 50, emotionHandling: initialPref.emotionHandling || 'context' })
   );
@@ -154,12 +151,26 @@ export default function AIResponse() {
     navigate(-1);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (!isDirty) return;
+    setIsSaving(true);
+    
     const next = { role, intensity, emotionHandling };
-    localStorage.setItem('seen_ai_preference', JSON.stringify(next));
-    setSavedSnapshot(JSON.stringify(next));
-    setToast(t('common.saved'));
-    console.log('[AIResponse] saved', next);
+    
+    try {
+      await updateProfile({
+        soulProfile: { aiPreference: next }
+      });
+      
+      setSavedSnapshot(JSON.stringify(next));
+      setToast(t('common.saved'));
+      console.log('User profile saved:', { soulProfile: { aiPreference: next } });
+    } catch (error) {
+      console.error('Failed to save AI preferences:', error);
+      setToast('Error saving preferences');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -173,13 +184,13 @@ export default function AIResponse() {
           <span className="text-sm font-medium tracking-widest text-muted uppercase">{t('settings.ai_response.header')}</span>
           <button
             onClick={handleSave}
-            disabled={!isDirty}
+            disabled={!isDirty || isSaving}
             className={clsx(
               'text-sm font-medium px-2 py-1 rounded-md transition-colors',
-              isDirty ? 'text-primary hover:bg-gray-100' : 'text-gray-300 cursor-not-allowed'
+              isDirty && !isSaving ? 'text-primary hover:bg-gray-100' : 'text-gray-300 cursor-not-allowed'
             )}
           >
-            {t('common.save')}
+            {isSaving ? '...' : t('common.save')}
           </button>
         </div>
 
@@ -278,15 +289,15 @@ export default function AIResponse() {
         <div className="shrink-0 sticky bottom-0 left-0 right-0 px-6 py-4 bg-white border-t border-gray-100 safe-area-inset-bottom">
           <button 
             onClick={handleSave}
-            disabled={!isDirty}
+            disabled={!isDirty || isSaving}
             className={clsx(
               "w-full py-4 rounded-2xl text-lg font-light transition-colors",
-              isDirty 
+              isDirty && !isSaving
                 ? "bg-primary text-white hover:bg-black" 
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
             )}
           >
-            {t('settings.ai_response.action_save')}
+            {isSaving ? '...' : t('settings.ai_response.action_save')}
           </button>
         </div>
       </div>

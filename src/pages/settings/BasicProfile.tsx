@@ -3,28 +3,9 @@ import { ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { useLanguage } from '../../i18n';
+import { useAuth } from '../../auth';
 
-type SeenUser = {
-  nickname?: string;
-  age?: string;
-  location?: string;
-  gender?: string;
-  zodiac?: string;
-  onboarded?: boolean;
-};
-
-const USER_KEY = 'seen_user';
-
-function readSeenUser(): SeenUser {
-  try {
-    const raw = localStorage.getItem(USER_KEY);
-    return raw ? (JSON.parse(raw) as SeenUser) : {};
-  } catch {
-    return {};
-  }
-}
-
-function normalizeProfileForCompare(profile: SeenUser) {
+function normalizeProfileForCompare(profile: any) {
   return {
     nickname: (profile.nickname || '').trim(),
     age: profile.age || '',
@@ -37,8 +18,9 @@ function normalizeProfileForCompare(profile: SeenUser) {
 export default function BasicProfile() {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
+  const { seenUser, updateProfile } = useAuth();
 
-  const initialUser = useMemo(() => readSeenUser(), []);
+  const initialUser = useMemo(() => seenUser?.basic || {}, [seenUser]);
   const [nickname, setNickname] = useState(initialUser.nickname || '');
   const [age, setAge] = useState(initialUser.age || '');
   const [location, setLocation] = useState(initialUser.location || '');
@@ -46,6 +28,7 @@ export default function BasicProfile() {
   const [zodiac, setZodiac] = useState(initialUser.zodiac || '');
 
   const [toast, setToast] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [savedSnapshot, setSavedSnapshot] = useState(() =>
     JSON.stringify(normalizeProfileForCompare(initialUser))
@@ -100,22 +83,33 @@ export default function BasicProfile() {
     navigate(-1);
   };
 
-  const handleSave = () => {
-    const prev = readSeenUser();
-    const next: SeenUser = {
-      ...prev,
+  const handleSave = async () => {
+    if (!isDirty) return;
+    setIsSaving(true);
+    
+    const nextBasic = {
       nickname: nickname.trim(),
       age,
       location: location.trim(),
       gender,
       zodiac,
-      onboarded: prev.onboarded ?? true
     };
 
-    localStorage.setItem(USER_KEY, JSON.stringify(next));
-    setSavedSnapshot(JSON.stringify(normalizeProfileForCompare(next)));
-    setToast(t('common.saved'));
-    console.log('[Profile] saved', { nickname: next.nickname, age: next.age, location: next.location, gender: next.gender, zodiac: next.zodiac });
+    try {
+      await updateProfile({
+        basic: nextBasic,
+        nickname: nextBasic.nickname // keep top-level nickname in sync for now if needed
+      });
+      
+      setSavedSnapshot(JSON.stringify(normalizeProfileForCompare(nextBasic)));
+      setToast(t('common.saved'));
+      console.log('User profile saved:', { basic: nextBasic });
+    } catch (error) {
+      console.error('Failed to save profile:', error);
+      setToast('Error saving profile');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -137,13 +131,13 @@ export default function BasicProfile() {
 
           <button
             onClick={handleSave}
-            disabled={!isDirty}
+            disabled={!isDirty || isSaving}
             className={clsx(
               'text-sm font-medium px-2 py-1 rounded-md transition-colors',
-              isDirty ? 'text-primary hover:bg-gray-100' : 'text-gray-300 cursor-not-allowed'
+              isDirty && !isSaving ? 'text-primary hover:bg-gray-100' : 'text-gray-300 cursor-not-allowed'
             )}
           >
-            {t('common.save')}
+            {isSaving ? '...' : t('common.save')}
           </button>
         </div>
 

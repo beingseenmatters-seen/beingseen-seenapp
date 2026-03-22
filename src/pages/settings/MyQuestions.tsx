@@ -3,25 +3,16 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { useLanguage } from '../../i18n';
+import { useAuth } from '../../auth';
 
 interface QuestionAnswer {
   [key: string]: string;
 }
 
-const STORAGE_KEY = 'seen_my_questions';
-
-function readAnswers(): QuestionAnswer {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? (JSON.parse(saved) as QuestionAnswer) : {};
-  } catch {
-    return {};
-  }
-}
-
 export default function MyQuestions() {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
+  const { seenUser, updateProfile } = useAuth();
 
   const questions = useMemo(
     () => [
@@ -35,13 +26,15 @@ export default function MyQuestions() {
     [t]
   );
 
+  const initialAnswers = useMemo(() => seenUser?.soulProfile?.answers || {}, [seenUser]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<QuestionAnswer>(() => readAnswers());
+  const [answers, setAnswers] = useState<QuestionAnswer>(initialAnswers);
   const currentQuestion = questions[currentIndex];
 
   const [currentText, setCurrentText] = useState(answers[currentQuestion.key] || '');
   const [toast, setToast] = useState<string | null>(null);
-  const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify(answers));
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify(initialAnswers));
 
   const isDirty = useMemo(() => JSON.stringify(answers) !== savedSnapshot, [answers, savedSnapshot]);
 
@@ -63,11 +56,24 @@ export default function MyQuestions() {
     navigate(-1);
   };
 
-  const handleSaveAll = () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(answers));
-    setSavedSnapshot(JSON.stringify(answers));
-    setToast(t('common.saved'));
-    console.log('[MyQuestions] saved', { keys: Object.keys(answers).length });
+  const handleSaveAll = async () => {
+    if (!isDirty) return;
+    setIsSaving(true);
+    
+    try {
+      await updateProfile({
+        soulProfile: { answers }
+      });
+      
+      setSavedSnapshot(JSON.stringify(answers));
+      setToast(t('common.saved'));
+      console.log('User profile saved:', { soulProfile: { answers } });
+    } catch (error) {
+      console.error('Failed to save answers:', error);
+      setToast('Error saving answers');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleTextChange = (text: string) => {
@@ -98,13 +104,13 @@ export default function MyQuestions() {
           <span className="text-sm font-medium tracking-widest text-muted uppercase">{t('me.menu_questions')}</span>
           <button
             onClick={handleSaveAll}
-            disabled={!isDirty}
+            disabled={!isDirty || isSaving}
             className={clsx(
               'text-sm font-medium px-2 py-1 rounded-md transition-colors',
-              isDirty ? 'text-primary hover:bg-gray-100' : 'text-gray-300 cursor-not-allowed'
+              isDirty && !isSaving ? 'text-primary hover:bg-gray-100' : 'text-gray-300 cursor-not-allowed'
             )}
           >
-            {t('common.save')}
+            {isSaving ? '...' : t('common.save')}
           </button>
         </div>
 

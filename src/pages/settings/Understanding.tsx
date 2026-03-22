@@ -4,8 +4,7 @@ import { ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { useLanguage } from '../../i18n';
-
-const STORAGE_KEY = 'seen_understanding_answers';
+import { useAuth } from '../../auth';
 
 // Type definitions for the card data structure
 type CardType = 'slider' | 'radio' | 'multiselect';
@@ -95,19 +94,15 @@ const CARDS: CardData[] = [
 export default function Understanding() {
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const { seenUser, updateProfile } = useAuth();
   
-  // Load saved answers from localStorage
-  const initialAnswers = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    } catch {
-      return {};
-    }
-  }, []);
+  // Load saved answers from Firestore
+  const initialAnswers = useMemo(() => seenUser?.soulProfile?.understanding || {}, [seenUser]);
   
   const [answers, setAnswers] = useState<Record<string, any>>(initialAnswers);
   const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify(initialAnswers));
   const [toast, setToast] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Track if there are unsaved changes
   const isDirty = useMemo(() => {
@@ -140,11 +135,24 @@ export default function Understanding() {
     });
   };
 
-  const handleSave = () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(answers));
-    setSavedSnapshot(JSON.stringify(answers));
-    setToast(t('common.saved'));
-    console.log('[Understanding] saved', answers);
+  const handleSave = async () => {
+    if (!isDirty) return;
+    setIsSaving(true);
+    
+    try {
+      await updateProfile({
+        soulProfile: { understanding: answers }
+      });
+      
+      setSavedSnapshot(JSON.stringify(answers));
+      setToast(t('common.saved'));
+      console.log('User profile saved:', { soulProfile: { understanding: answers } });
+    } catch (error) {
+      console.error('Failed to save understanding:', error);
+      setToast('Error saving understanding');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleBack = () => {
@@ -289,15 +297,15 @@ export default function Understanding() {
         <div className="shrink-0 sticky bottom-0 left-0 right-0 px-6 py-4 bg-white border-t border-gray-100 safe-area-inset-bottom">
           <button 
             onClick={handleSave}
-            disabled={!isDirty}
+            disabled={!isDirty || isSaving}
             className={clsx(
               "w-full py-4 rounded-2xl text-lg font-light transition-colors",
-              isDirty 
+              isDirty && !isSaving
                 ? "bg-primary text-white hover:bg-black" 
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
             )}
           >
-            {t('settings.understanding.action_save')}
+            {isSaving ? '...' : t('settings.understanding.action_save')}
           </button>
         </div>
       </div>

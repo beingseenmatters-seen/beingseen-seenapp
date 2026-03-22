@@ -28,4 +28,20 @@ export interface SeenUser {
   lifeStory?: string;
   understandingProgress?: number;
   understandingAnswers?: UnderstandingAnswers;
+  basic?: {
+    nickname?: string;
+    age?: string;
+    location?: string;
+    gender?: string;
+    zodiac?: string;
+  };
+  soulProfile?: {
+    answers?: Record<string, string>;
+    understanding?: Record<string, any>;
+    aiPreference?: {
+      role?: string;
+      intensity?: number;
+      emotionHandling?: string;
+    };
+  };
 }
