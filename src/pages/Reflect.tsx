@@ -1,16 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronDown, Info, RotateCcw, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Info, Menu, RotateCcw, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useLanguage } from '../i18n';
 import { useAuth } from '../auth';
 import { usePlatform } from '../hooks/usePlatform';
 import ChatInput from '../components/ChatInput';
+import ReflectHistoryDrawer from '../components/ReflectHistoryDrawer';
 import { sendReflectWithGate } from '../services/seenApi';
 import { analyzeUserState } from '../services/questionGate';
 import { ResponseStyle, type ReflectDebug, type ResponseStyleType } from '../types/responseStyle';
 import type { RetentionOption } from '../types/insight';
-import { saveConversation, getConversationById, formatRelativeTime } from '../services/recentConversations';
+import { saveConversation, getConversationById } from '../services/recentConversations';
 import { useRecentConversations } from '../hooks/useRecentConversations';
 import {
   mapSelectedModeToStyle,
@@ -72,8 +73,10 @@ export default function Reflect() {
 
   // Role dropdown open/close
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [justCleared, setJustCleared] = useState(false);
 
-  // Recent conversations for mobile (no sidebar)
+  // Recent conversations for desktop sidebar + mobile drawer
   const { conversations: recentConversations } = useRecentConversations();
 
   const [userStatePreview, setUserStatePreview] = useState<{ isDistressed: boolean; isAskingForDeepDive: boolean }>({
@@ -92,20 +95,18 @@ export default function Reflect() {
 
   const [pendingSummary, setPendingSummary] = useState<ConversationExtraction | null>(null);
   const [showSummaryConfirmation, setShowSummaryConfirmation] = useState(false);
-  const [pendingInsightAction, setPendingInsightAction] = useState<'clear' | 'finish' | 'leave' | null>(null);
+  const [pendingInsightAction, setPendingInsightAction] = useState<'clear' | 'finish' | 'leave' | 'new' | null>(null);
 
   // TODO (Spec §九): Lightweight calibration after conversation end
   const [calibrationInsight, setCalibrationInsight] = useState<{ key: string; text: string } | null>(null);
 
-  // Restore a retained conversation from URL ?conversation=<id>
-  useEffect(() => {
-    const convoId = searchParams.get('conversation');
-    if (!convoId) return;
-
-    setSearchParams({}, { replace: true });
+  const restoreConversationById = (convoId: string) => {
     const convo = getConversationById(convoId);
     if (!convo) return;
 
+    setRoleDropdownOpen(false);
+    setRetentionDropdownOpen(false);
+    setMobileDrawerOpen(false);
     setMessages(convo.messages.map(m => ({ role: m.role, text: m.text })));
     setStep(2);
     setRetention(convo.retention);
@@ -114,6 +115,15 @@ export default function Reflect() {
     setSelectedMode(convo.selectedMode ?? null);
     setHasSavedSession(false);
     setJustCleared(false);
+  };
+
+  // Restore a retained conversation from URL ?conversation=<id>
+  useEffect(() => {
+    const convoId = searchParams.get('conversation');
+    if (!convoId) return;
+
+    setSearchParams({}, { replace: true });
+    restoreConversationById(convoId);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load saved session on mount
@@ -198,6 +208,9 @@ export default function Reflect() {
         setSelectedMode(session.selectedMode);
         setHasSavedSession(false);
         setJustCleared(false);
+        setRoleDropdownOpen(false);
+        setRetentionDropdownOpen(false);
+        setMobileDrawerOpen(false);
         console.log('[Reflect] continue_session', { sessionId: session.sessionId, sessionStyle: session.sessionStyle });
       } catch (e) {
         console.error('Failed to restore session', e);
@@ -205,8 +218,6 @@ export default function Reflect() {
       }
     }
   };
-
-  const [justCleared, setJustCleared] = useState(false);
 
   const getConversationStats = () => {
     const userTurns = messages.filter(m => m.role === 'user' && m.text.trim()).length;
@@ -220,7 +231,7 @@ export default function Reflect() {
     return userTurns >= 2 && aiTurns >= 1 && meaningfulTurns >= 3;
   };
 
-  const openSummaryConfirmation = (action: 'clear' | 'finish' | 'leave') => {
+  const openSummaryConfirmation = (action: 'clear' | 'finish' | 'leave' | 'new') => {
     const extracted = extractSummaryFromConversation(messages, {
       preferredResponseStyle: getStyleDisplayName(effectiveSelectedMode),
       language: effectiveLanguage === 'zh' ? 'zh' : 'en',
@@ -243,6 +254,17 @@ export default function Reflect() {
       }
     }
     performClear();
+  };
+
+  const handleStartNewConversation = () => {
+    if ((messages.length > 0 || hasSavedSession) && hasMeaningfulExchange()) {
+      if (openSummaryConfirmation('new')) {
+        return;
+      }
+    }
+
+    performClear();
+    setStep(1);
   };
 
   const handleEndConversation = () => {
@@ -268,6 +290,7 @@ export default function Reflect() {
     setShowSummaryConfirmation(false);
     setRoleDropdownOpen(false);
     setRetentionDropdownOpen(false);
+    setMobileDrawerOpen(false);
     
     if (step !== 0) {
       setStep(0);
@@ -278,6 +301,11 @@ export default function Reflect() {
   const handleConfirmSummary = () => {
     if (pendingSummary) {
       saveApprovedSummary(pendingSummary);
+    }
+    if (pendingInsightAction === 'new') {
+      performClear();
+      setStep(1);
+      return;
     }
     if (pendingInsightAction === 'clear') {
       performClear();
@@ -290,6 +318,11 @@ export default function Reflect() {
   };
 
   const handleRejectSummary = () => {
+    if (pendingInsightAction === 'new') {
+      performClear();
+      setStep(1);
+      return;
+    }
     if (pendingInsightAction === 'clear') {
       performClear();
       return;
@@ -363,9 +396,9 @@ export default function Reflect() {
     
     setRoleDropdownOpen(false);
     setRetentionDropdownOpen(false);
-    setJustCleared(false);
     setStep(2);
     setConsecutiveQuestionTurns(0);
+    setJustCleared(false);
     setMessages([{ role: 'user', text: inputValue }]);
     
     const nextSessionId = keepContext ? crypto.randomUUID() : undefined;
@@ -636,14 +669,28 @@ export default function Reflect() {
   return (
     <div className="h-full flex flex-col relative">
       {/* Page sub-header — full width, outside max-w container */}
-      <div className="shrink-0 flex items-center justify-between px-5 pt-3 pb-1">
-        <div className="flex items-center gap-3">
+      <div className="shrink-0 flex items-center justify-between px-4 pt-2 pb-1.5">
+        <div className="flex min-w-0 items-center gap-2">
+          {!isDesktop && (
+            <button
+              type="button"
+              onClick={() => {
+                setRoleDropdownOpen(false);
+                setRetentionDropdownOpen(false);
+                setMobileDrawerOpen((open) => !open);
+              }}
+              className="-ml-2 rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-800"
+              aria-label={effectiveLanguage === 'zh' ? '打开菜单' : 'Open menu'}
+            >
+              <Menu size={18} strokeWidth={1.75} />
+            </button>
+          )}
           <span className="text-[11px] font-semibold tracking-[0.2em] text-gray-500 uppercase">
             {t('nav.reflect')}
           </span>
-          {/* Mobile: role selector next to title (ChatGPT model-selector style) */}
+          {/* Mobile: role selector next to title */}
           {!isDesktop && (
-            <div className="relative">
+            <div className="relative shrink-0">
               <button
                 onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
                 className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-50 text-[11px] active:bg-gray-100 transition-colors"
@@ -721,6 +768,18 @@ export default function Reflect() {
         </div>
       )}
 
+      {!isDesktop && (
+        <ReflectHistoryDrawer
+          open={mobileDrawerOpen}
+          conversations={recentConversations}
+          activeConversationId={sessionId}
+          effectiveLanguage={effectiveLanguage === 'zh' ? 'zh' : 'en'}
+          onClose={() => setMobileDrawerOpen(false)}
+          onSelectConversation={restoreConversationById}
+          onNewConversation={handleStartNewConversation}
+        />
+      )}
+
       {/* Main content area — centered on desktop */}
       <div className={`flex-1 min-h-0 flex flex-col ${isDesktop ? 'max-w-3xl mx-auto w-full' : ''}`}>
       <AnimatePresence mode="wait">
@@ -728,60 +787,21 @@ export default function Reflect() {
         {/* ==================== Step 0: Home ==================== */}
         {step === 0 && (
           <motion.div key="step0" {...fadeIn} className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex-1 flex flex-col justify-center items-center px-5">
-              <div className="space-y-2 text-center">
-                <h2 className={`font-light leading-snug text-primary ${isDesktop ? 'text-2xl' : 'text-xl'}`}>
+            <div className="flex-1 flex flex-col justify-center items-center px-6">
+              <div className="space-y-3 text-center">
+                <h2 className={`font-light leading-snug text-primary ${isDesktop ? 'text-2xl' : 'text-[28px]'}`}>
                   {t('reflect.step0_title')}
                 </h2>
-                <p className="text-sm text-gray-600 font-light">
-                  {t('reflect.step0_subtitle')}
-                </p>
+                {isDesktop && (
+                  <p className="text-sm text-gray-600 font-light">
+                    {t('reflect.step0_subtitle')}
+                  </p>
+                )}
               </div>
             </div>
 
-            <div className="shrink-0 px-5">
-              {/* Mobile: Recent Conversations (no sidebar on mobile) */}
-              {!isDesktop && recentConversations.length > 0 && (
-                <div className="mb-4">
-                  <h3 className="text-[9px] font-semibold tracking-[0.15em] text-gray-500 uppercase mb-2">
-                    {t('nav.recent_title')}
-                  </h3>
-                  <div className="space-y-px">
-                    {recentConversations.slice(0, 5).map((c) => (
-                      <button
-                        key={c.id}
-                        onClick={() => {
-                          setSearchParams({ conversation: c.id }, { replace: true });
-                          const convo = getConversationById(c.id);
-                          if (!convo) return;
-                          setMessages(convo.messages.map(m => ({ role: m.role, text: m.text })));
-                          setStep(2);
-                          setRetention(convo.retention);
-                          setSessionId(convo.id);
-                          setSessionStyle(convo.sessionStyle as ResponseStyleType | undefined);
-                          setSelectedMode(convo.selectedMode ?? null);
-                          setHasSavedSession(false);
-                          setJustCleared(false);
-                          setSearchParams({}, { replace: true });
-                        }}
-                        className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-gray-50 active:bg-gray-100 transition-colors text-left"
-                      >
-                        <span className="text-xs text-gray-600 font-medium truncate">
-                          {c.title || (effectiveLanguage === 'zh' ? '对话' : 'Conversation')}
-                        </span>
-                        <span className="text-[9px] text-gray-400 shrink-0 ml-2">
-                          {formatRelativeTime(c.createdAt, effectiveLanguage === 'zh' ? 'zh' : 'en')}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[9px] text-gray-400 mt-1.5 px-1">
-                    {t('nav.recent_hint')}
-                  </p>
-                </div>
-              )}
-
-              {showUnderstandingBanner && (
+            <div className="shrink-0 px-5 pb-4">
+              {isDesktop && showUnderstandingBanner && (
                 <button
                   onClick={() => navigate('/me/questions')}
                   className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-100 text-left mb-2 hover:border-gray-200 transition-colors group flex items-center justify-between"
@@ -797,34 +817,64 @@ export default function Reflect() {
                 </button>
               )}
 
-              <div className="space-y-2 pb-3">
+              <div className={`${isDesktop ? 'space-y-2 pb-3' : 'mx-auto w-full max-w-sm space-y-2.5'}`}>
                 {hasSavedSession ? (
                   <>
-                    <button 
-                      onClick={handleContinueSession}
-                      className="w-full py-2.5 rounded-xl bg-primary text-white flex items-center justify-center space-x-2 hover:bg-black transition-colors text-sm font-medium"
-                    >
-                      <RotateCcw size={14} strokeWidth={1.5} />
-                      <span>{t('reflect.action_continue')}</span>
-                    </button>
-                    <button 
-                      onClick={handleClearContext}
-                      className="w-full py-2 rounded-lg text-gray-500 flex items-center justify-center space-x-1 hover:bg-gray-50 text-[11px]"
-                    >
-                      <Trash2 size={12} />
-                      <span>{t('reflect.action_clear_context')}</span>
-                    </button>
+                    {isDesktop ? (
+                      <>
+                        <button 
+                          onClick={handleContinueSession}
+                          className="w-full py-2.5 rounded-xl bg-primary text-white flex items-center justify-center space-x-2 hover:bg-black transition-colors text-sm font-medium"
+                        >
+                          <RotateCcw size={14} strokeWidth={1.5} />
+                          <span>{t('reflect.action_continue')}</span>
+                        </button>
+                        <button 
+                          onClick={handleClearContext}
+                          className="w-full py-2 rounded-lg text-gray-500 flex items-center justify-center space-x-1 hover:bg-gray-50 text-[11px]"
+                        >
+                          <Trash2 size={12} />
+                          <span>{t('reflect.action_clear_context')}</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button 
+                          onClick={handleContinueSession}
+                          className="w-full rounded-2xl bg-primary py-3 text-sm font-medium text-white transition-colors hover:bg-black"
+                        >
+                          {effectiveLanguage === 'zh' ? '继续表达' : 'Continue reflecting'}
+                        </button>
+                        <button 
+                          onClick={handleStartNewConversation}
+                          className="w-full rounded-2xl border border-gray-200 py-3 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+                        >
+                          {effectiveLanguage === 'zh' ? '开启新对话' : 'New conversation'}
+                        </button>
+                      </>
+                    )}
                   </>
                 ) : (
-                  <button 
-                    onClick={() => setStep(1)}
-                    className="w-full py-3 rounded-xl bg-primary text-white flex items-center justify-center space-x-2 hover:bg-black transition-colors text-sm font-medium"
-                  >
-                    <span>{t('reflect.action_write')}</span>
-                    <ChevronRight size={14} strokeWidth={2} />
-                  </button>
+                  <>
+                    {isDesktop ? (
+                      <button 
+                        onClick={() => setStep(1)}
+                        className="w-full py-3 rounded-xl bg-primary text-white flex items-center justify-center space-x-2 hover:bg-black transition-colors text-sm font-medium"
+                      >
+                        <span>{t('reflect.action_write')}</span>
+                        <ChevronRight size={14} strokeWidth={2} />
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => setStep(1)}
+                        className="w-full rounded-2xl bg-primary py-3 text-sm font-medium text-white transition-colors hover:bg-black"
+                      >
+                        {effectiveLanguage === 'zh' ? '开始表达' : 'Start reflecting'}
+                      </button>
+                    )}
+                  </>
                 )}
-                {justCleared && (
+                {isDesktop && justCleared && (
                   <p className="text-[10px] text-gray-500 font-light leading-relaxed text-center pt-2 px-2">
                     {effectiveLanguage === 'zh'
                       ? '你可以清除聊天内容，但不必从零开始。我们不会保留具体对话，只会留下关于你如何思考的一点点理解，用于更准确地发现与你同频的人。'
@@ -913,12 +963,14 @@ export default function Reflect() {
           <motion.div key="step1" {...fadeIn} className="flex-1 flex flex-col overflow-hidden">
             {/* Centered prompt — takes remaining space */}
             <div className="flex-1 flex flex-col justify-center items-center px-8">
-              <h2 className={`font-light leading-snug text-primary text-center ${isDesktop ? 'text-2xl' : 'text-xl'}`}>
+              <h2 className={`font-light leading-snug text-primary text-center ${isDesktop ? 'text-2xl' : 'text-[28px]'}`}>
                 {t('reflect.step0_title')}
               </h2>
-              <p className="text-sm text-gray-600 font-light mt-2 text-center">
-                {t('reflect.step0_subtitle')}
-              </p>
+              {isDesktop && (
+                <p className="text-sm text-gray-600 font-light mt-2 text-center">
+                  {t('reflect.step0_subtitle')}
+                </p>
+              )}
             </div>
 
             {/* Distress warning */}
@@ -1021,14 +1073,6 @@ export default function Reflect() {
                 footer={composerFooter}
               />
               <p className="text-[9px] text-gray-500 text-center mt-2">{t('reflect.mirror_footer')}</p>
-
-              {justCleared && messages.length === 0 && (
-                <p className="text-[10px] text-gray-500 font-light leading-relaxed text-center pt-1.5 px-2">
-                  {effectiveLanguage === 'zh'
-                    ? '你可以清除聊天内容，但不必从零开始。我们不会保留具体对话，只会留下关于你如何思考的一点点理解，用于更准确地发现与你同频的人。'
-                    : 'You can clear your chat, but you don\'t have to start from scratch. We don\'t keep the conversation — only a small understanding of how you think, to better find those who resonate with you.'}
-                </p>
-              )}
             </div>
           </motion.div>
         )}
