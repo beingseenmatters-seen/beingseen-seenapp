@@ -11,7 +11,8 @@ import { isWeb } from '../platform';
 const provider = new GoogleAuthProvider();
 
 export function isGoogleAvailable(): boolean {
-  return isWeb();
+  // We now support Google Sign-In on both Web and Native (iOS/Android)
+  return true;
 }
 
 /**
@@ -19,16 +20,22 @@ export function isGoogleAvailable(): boolean {
  * for environment reasons, fall back to redirect-based sign-in.
  */
 export async function signInWithGoogle(): Promise<User> {
-  if (!isGoogleAvailable()) {
-    throw new Error('Google Sign-In is only available on web.');
-  }
-
-  console.log('[auth] starting google popup sign-in');
+  console.log('[auth] starting google sign-in');
 
   try {
-    const result = await signInWithPopup(auth, provider);
-    console.log('[auth] google popup sign-in succeeded, uid:', result.user.uid);
-    return result.user;
+    if (isWeb()) {
+      const result = await signInWithPopup(auth, provider);
+      console.log('[auth] google popup sign-in succeeded, uid:', result.user.uid);
+      return result.user;
+    } else {
+      // Native iOS/Android Google Sign-In
+      const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+      const result = await FirebaseAuthentication.signInWithGoogle();
+      const credential = GoogleAuthProvider.credential(result.credential?.idToken);
+      const userCredential = await import('firebase/auth').then(m => m.signInWithCredential(auth, credential));
+      console.log('[auth] native google sign-in succeeded, uid:', userCredential.user.uid);
+      return userCredential.user;
+    }
   } catch (err) {
     const code = (err as { code?: string })?.code;
     const message = (err as Error)?.message ?? '';
