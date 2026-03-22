@@ -182,6 +182,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // --- Web email link handler (called once on app load) ---
   const handleWebEmailLink = async (href: string) => {
+    // If we are on web but the user is on a mobile device, try to redirect to the app first
+    if (isWeb() && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      console.log('[auth] Mobile browser detected on web load, attempting to redirect to app');
+      const urlObj = new URL(href);
+      const appSchemeUrl = `seenapp://auth/verify${urlObj.search}`;
+      
+      // Try to open the app via a hidden iframe (more reliable on iOS)
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = appSchemeUrl;
+      document.body.appendChild(iframe);
+      
+      // Also try location.href as fallback
+      setTimeout(() => {
+        window.location.href = appSchemeUrl;
+      }, 100);
+      
+      // Give it a moment to redirect before continuing with web auth
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
     const storedEmail = emailLink.getStoredEmail();
     console.log('[auth] handling web email link', { hasStoredEmail: !!storedEmail });
 
