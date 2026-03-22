@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mail, ChevronLeft } from 'lucide-react';
 import { useLanguage } from '../../i18n';
-import { useAuth, getPlatform, isGoogleAvailable, isAppleAvailable } from '../../auth';
+import { useAuth, isGoogleAvailable, isAppleAvailable } from '../../auth';
 
 function AppleIcon({ className }: { className?: string }) {
   return (
@@ -34,8 +34,7 @@ function ComingSoonBadge({ label }: { label: string }) {
 export default function AuthOptionsScreen() {
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const { signInWithGoogle, isLoading, error, clearError } = useAuth();
-  const platform = getPlatform();
+  const { signInWithGoogle, signInWithApple, isLoading, error, clearError } = useAuth();
 
   const googleActive = isGoogleAvailable();
   const appleActive = isAppleAvailable();
@@ -44,6 +43,15 @@ export default function AuthOptionsScreen() {
     clearError();
     try {
       await signInWithGoogle();
+    } catch {
+      // Error handled by context
+    }
+  };
+
+  const handleApple = async () => {
+    clearError();
+    try {
+      await signInWithApple();
     } catch {
       // Error handled by context
     }
@@ -85,28 +93,27 @@ export default function AuthOptionsScreen() {
           {t('auth.continue_email')}
         </button>
 
-        {/* Apple — only shown on iOS; active when configured, hidden otherwise */}
-        {platform === 'ios' && (
-          appleActive ? (
+        {/* Apple — available on both iOS and Web */}
+        {appleActive ? (
+          <button
+            onClick={handleApple}
+            disabled={isLoading}
+            className="w-full py-4 rounded-2xl border border-border text-primary text-base font-light flex items-center justify-center gap-3 hover:bg-highlight transition-colors disabled:opacity-50"
+          >
+            <AppleIcon />
+            {t('auth.continue_apple')}
+          </button>
+        ) : (
+          <div className="relative">
             <button
-              disabled={isLoading}
-              className="w-full py-4 rounded-2xl border border-border text-primary text-base font-light flex items-center justify-center gap-3 hover:bg-highlight transition-colors disabled:opacity-50"
+              disabled
+              className="w-full py-4 rounded-2xl bg-gray-50 text-gray-300 text-base font-light flex items-center justify-center gap-3 cursor-not-allowed"
             >
-              <AppleIcon />
+              <AppleIcon className="text-gray-300" />
               {t('auth.continue_apple')}
             </button>
-          ) : (
-            <div className="relative">
-              <button
-                disabled
-                className="w-full py-4 rounded-2xl bg-gray-50 text-gray-300 text-base font-light flex items-center justify-center gap-3 cursor-not-allowed"
-              >
-                <AppleIcon className="text-gray-300" />
-                {t('auth.continue_apple')}
-              </button>
-              <ComingSoonBadge label={t('common.feature_coming_soon')} />
-            </div>
-          )
+            <ComingSoonBadge label={t('common.feature_coming_soon')} />
+          </div>
         )}
 
         {/* Google — active on web, disabled on native with explanation */}
@@ -132,19 +139,6 @@ export default function AuthOptionsScreen() {
           </div>
         )}
 
-        {/* Apple — on web, show as coming soon */}
-        {platform === 'web' && (
-          <div className="relative">
-            <button
-              disabled
-              className="w-full py-4 rounded-2xl bg-gray-50 text-gray-300 text-base font-light flex items-center justify-center gap-3 cursor-not-allowed"
-            >
-              <AppleIcon className="text-gray-300" />
-              {t('auth.continue_apple')}
-            </button>
-            <ComingSoonBadge label={t('common.feature_coming_soon')} />
-          </div>
-        )}
 
         {error && (
           <motion.p

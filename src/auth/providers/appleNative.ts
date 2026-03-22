@@ -1,44 +1,60 @@
-/**
- * Apple Sign-In provider for iOS native.
- *
- * Status: SCAFFOLD — not yet functional.
- *
- * To activate:
- * 1. Install @capacitor-community/apple-sign-in (or similar plugin)
- * 2. Enable "Sign in with Apple" capability in Xcode
- * 3. Configure Apple Developer portal (Services IDs, Keys)
- * 4. Implement signInWithApple() below:
- *    - Call the native Apple Sign-In plugin to get an identityToken + nonce
- *    - Create a Firebase OAuthProvider credential:
- *        const credential = OAuthProvider.credentialFromJSON({
- *          providerId: 'apple.com',
- *          signInMethod: 'oauth',
- *          idToken: identityToken,
- *          rawNonce: nonce,
- *        });
- *    - Call signInWithCredential(auth, credential)
- *    - Return the Firebase User
- * 5. Set isAppleAvailable() to return true on iOS
- * 6. Enable the Apple button in AuthOptionsScreen
- */
-
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
+import { OAuthProvider, signInWithCredential } from 'firebase/auth';
+import type { User } from 'firebase/auth';
 import { isIOS } from '../platform';
-
-const APPLE_CONFIGURED = false;
+import { auth } from '../../services/firebase';
 
 export function isAppleAvailable(): boolean {
-  return isIOS() && APPLE_CONFIGURED;
+  // We allow Apple sign-in on web now (using Firebase JS SDK)
+  return true;
 }
 
-export async function signInWithApple(): Promise<never> {
-  // When implementing, this will:
-  // 1. Trigger native Apple Sign-In dialog via Capacitor plugin
-  // 2. Get identityToken + authorizationCode
-  // 3. Create Firebase OAuthCredential
-  // 4. Call signInWithCredential(auth, credential)
-  // 5. Return the Firebase User
-  throw new Error(
-    'Apple Sign-In is not yet configured. ' +
-    'See auth/providers/appleNative.ts for setup instructions.',
-  );
+export async function signInWithApple(): Promise<{ user: User; displayName?: string }> {
+  try {
+    if (isIOS()) {
+      // Use Capawesome's Firebase Authentication plugin on iOS.
+      const result = await FirebaseAuthentication.signInWithApple({
+        skipNativeAuth: true,
+      });
+
+      const idToken = result.credential?.idToken ?? undefined;
+      const rawNonce = result.credential?.nonce ?? undefined;
+
+      if (!idToken || !rawNonce) {
+        throw new Error('Apple sign-in did not return a Firebase credential.');
+      }
+
+      const provider = new OAuthProvider('apple.com');
+      const credential = provider.credential({
+        idToken,
+        rawNonce,
+      });
+
+      const userCredential = await signInWithCredential(auth, credential);
+      const displayName = result.user?.displayName ?? undefined;
+      return { user: userCredential.user, displayName };
+    } else {
+      // Web implementation
+      const provider = new OAuthProvider('apple.com');
+      provider.addScope('email');
+      provider.addScope('name');
+      
+      const result = await import('firebase/auth').then(m => m.signInWithPopup(auth, provider));
+      return { user: result.user, displayName: result.user.displayName || undefined };
+    }
+  } catch (error: unknown) {
+    const err = error as { message?: string; code?: string };
+    if (
+      err.code === '1001' ||
+      err.message?.includes('canceled') ||
+      err.message?.includes('cancelled')
+    ) {
+      const cancelError = new Error('User cancelled') as Error & { code?: string };
+      cancelError.code = 'auth/popup-closed-by-user';
+      throw cancelError;
+    }
+
+    console.error('[auth] signInWithApple error:', error);
+    throw error;
+  }
 }
