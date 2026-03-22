@@ -430,15 +430,11 @@ export default function Reflect() {
   };
 
   const roleOptions = [
-    { label: t('reflect.opt_listen'), hint: effectiveLanguage === 'zh' ? '照见你的想法，让你被理解' : 'Reflect your thinking so you feel understood' },
-    { label: t('reflect.opt_clarify'), hint: effectiveLanguage === 'zh' ? '提取逻辑链，帮你理清思路' : 'Extract the logic chain and clarify your thinking' },
-    { label: t('reflect.opt_blindspot'), hint: effectiveLanguage === 'zh' ? '提出更深问题，扩展思考' : 'Ask deeper questions and expand the thinking' },
-    { label: t('reflect.opt_polish'), hint: effectiveLanguage === 'zh' ? '优化语言，提供表达版本' : 'Refine language and offer better phrasing' }
+    { label: t('reflect.opt_listen') },
+    { label: t('reflect.opt_clarify') },
+    { label: t('reflect.opt_blindspot') },
+    { label: t('reflect.opt_polish') }
   ];
-
-  const guideWarning = effectiveLanguage === 'zh' 
-    ? '引导者会用问题推进思考，但不会替你下结论；你随时可以切换为「镜子」。'
-    : 'Guide deepens the thinking through questions, but never decides for you; you can switch to "Mirror" anytime.';
 
   const getStyleDisplayName = (mode: number | null): string => {
     if (mode === null) return effectiveLanguage === 'zh' ? '镜子' : 'Mirror';
@@ -499,12 +495,6 @@ export default function Reflect() {
                       <span className="text-xs font-medium">{opt.label}</span>
                       {isSelected && <span className="text-gray-400 text-[10px]">✓</span>}
                     </div>
-                    <span className="block text-[10px] text-gray-500 mt-0.5 leading-snug">{opt.hint}</span>
-                    {i === 2 && isSelected && (
-                      <span className="block text-[10px] text-amber-500 mt-1 leading-snug">
-                        {guideWarning}
-                      </span>
-                    )}
                   </button>
                 );
               })}
@@ -738,8 +728,8 @@ export default function Reflect() {
         {/* ==================== Step 0: Home ==================== */}
         {step === 0 && (
           <motion.div key="step0" {...fadeIn} className="flex-1 flex flex-col overflow-hidden">
-            <div className={`flex-1 flex flex-col ${isDesktop ? 'justify-center' : 'justify-end'} px-5`}>
-              <div className="space-y-2">
+            <div className="flex-1 flex flex-col justify-center items-center px-5">
+              <div className="space-y-2 text-center">
                 <h2 className={`font-light leading-snug text-primary ${isDesktop ? 'text-2xl' : 'text-xl'}`}>
                   {t('reflect.step0_title')}
                 </h2>
@@ -747,10 +737,12 @@ export default function Reflect() {
                   {t('reflect.step0_subtitle')}
                 </p>
               </div>
+            </div>
 
+            <div className="shrink-0 px-5">
               {/* Mobile: Recent Conversations (no sidebar on mobile) */}
               {!isDesktop && recentConversations.length > 0 && (
-                <div className="mt-5 mb-2">
+                <div className="mb-4">
                   <h3 className="text-[9px] font-semibold tracking-[0.15em] text-gray-500 uppercase mb-2">
                     {t('nav.recent_title')}
                   </h3>
@@ -788,9 +780,7 @@ export default function Reflect() {
                   </p>
                 </div>
               )}
-            </div>
 
-            <div className="shrink-0 px-5">
               {showUnderstandingBanner && (
                 <button
                   onClick={() => navigate('/me/questions')}
