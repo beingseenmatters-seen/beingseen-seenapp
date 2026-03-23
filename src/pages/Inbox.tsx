@@ -29,6 +29,8 @@ export default function Inbox() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
 
+  const selectedConnection = connections.find(c => c.id === selectedId);
+
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     
@@ -231,8 +233,17 @@ export default function Inbox() {
             <div className="px-6 py-4 bg-gray-50/50">
                <p className="text-xs text-muted mb-2">{t('inbox.connection_reason')}</p>
                <div className="flex flex-wrap gap-2">
-                 <span className="px-2 py-1 bg-white border border-gray-100 rounded text-xs text-secondary">{t('resonate.dim_conflict')}</span>
-                 <span className="px-2 py-1 bg-white border border-gray-100 rounded text-xs text-secondary">{t('resonate.dim_pace')}</span>
+                 {selectedConnection?.matchReasons && selectedConnection.matchReasons.length > 0 ? (
+                   selectedConnection.matchReasons.map((reasonKey, idx) => (
+                     <span key={idx} className="px-2 py-1 bg-white border border-gray-100 rounded text-xs text-secondary">
+                       {t(`match_reasons.${reasonKey}`)}
+                     </span>
+                   ))
+                 ) : (
+                   <span className="px-2 py-1 bg-white border border-gray-100 rounded text-xs text-secondary">
+                     {t('match_reasons.similar_frequency')}
+                   </span>
+                 )}
                </div>
             </div>
 

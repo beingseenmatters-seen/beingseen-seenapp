@@ -444,5 +444,18 @@
       "action_logout": "Log Out",
       "action_delete": "Request Account Deletion"
     }
+  },
+  "match_reasons": {
+    "decision_model": "Decision Model",
+    "behavior_pattern": "Behavior Pattern",
+    "core_conflict": "Core Conflict",
+    "relationship_need": "Relationship Need",
+    "motivation": "Inner Motivation",
+    "thinking_style": "Thinking Style",
+    "core_questions": "Core Questions",
+    "worldview": "Worldview",
+    "relationship_philosophy": "Relationship Philosophy",
+    "conversation_style": "Conversation Style",
+    "similar_frequency": "Similar Frequency"
   }
 }

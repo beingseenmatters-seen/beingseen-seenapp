@@ -444,5 +444,18 @@
       "action_logout": "退出登录",
       "action_delete": "申请删除账户"
     }
+  },
+  "match_reasons": {
+    "decision_model": "决策模式",
+    "behavior_pattern": "行为模式",
+    "core_conflict": "核心冲突",
+    "relationship_need": "关系需求",
+    "motivation": "内在动机",
+    "thinking_style": "思维方式",
+    "core_questions": "核心议题",
+    "worldview": "世界观",
+    "relationship_philosophy": "关系哲学",
+    "conversation_style": "沟通风格",
+    "similar_frequency": "同频共振"
   }
 }

@@ -22,6 +22,7 @@ export interface ConnectionRequest {
   status: 'pending' | 'accepted' | 'declined';
   reason: string;
   matchScore: number | null;
+  matchReasons?: string[];
   createdAt: any;
   updatedAt: any;
   // Hydrated fields for UI
@@ -34,6 +35,7 @@ export interface Connection {
   createdAt: any;
   createdFromRequestId: string;
   userMap: Record<string, boolean>;
+  matchReasons?: string[];
   lastMessage?: string;
   lastMessageAt?: any;
   // Hydrated fields for UI
@@ -55,11 +57,63 @@ export interface CandidateProfile {
   basic?: any;
   finalScore?: number;
   matchReason?: string;
+  matchReasons?: string[];
 }
 
 // ---------------------------------------------------------------------------
 // Candidate Selection
 // ---------------------------------------------------------------------------
+
+export function generateMatchReasons(mySoul: any, candidateSoul: any): string[] {
+  const reasons: string[] = [];
+  if (!mySoul || !candidateSoul) return reasons;
+  
+  const model1 = mySoul.reflectModel || mySoul.latestInsight;
+  const model2 = candidateSoul.reflectModel || candidateSoul.latestInsight;
+  
+  if (!model1 || !model2) return reasons;
+
+  // Simple exact match checks for string fields
+  if (model1.decisionModel && model1.decisionModel === model2.decisionModel) {
+    reasons.push('decision_model');
+  }
+  if (model1.behaviorPattern && model1.behaviorPattern === model2.behaviorPattern) {
+    reasons.push('behavior_pattern');
+  }
+  if (model1.coreConflict && model1.coreConflict === model2.coreConflict) {
+    reasons.push('core_conflict');
+  }
+  if (model1.relationshipNeed && model1.relationshipNeed === model2.relationshipNeed) {
+    reasons.push('relationship_need');
+  }
+  if (model1.motivation && model1.motivation === model2.motivation) {
+    reasons.push('motivation');
+  }
+
+  // Array overlap checks
+  const checkArrayOverlap = (field: string, reasonKey: string) => {
+    if (Array.isArray(model1[field]) && Array.isArray(model2[field])) {
+      const overlap = model1[field].filter((v: string) => model2[field].includes(v));
+      if (overlap.length > 0) {
+        reasons.push(reasonKey);
+      }
+    }
+  };
+
+  checkArrayOverlap('thinkingStyle', 'thinking_style');
+  checkArrayOverlap('coreQuestions', 'core_questions');
+  checkArrayOverlap('worldview', 'worldview');
+  checkArrayOverlap('relationshipPhilosophy', 'relationship_philosophy');
+  checkArrayOverlap('conversationStyle', 'conversation_style');
+
+  // If no specific reasons, provide some fallbacks
+  if (reasons.length === 0) {
+    reasons.push('similar_frequency');
+  }
+
+  // Return up to 3 reasons
+  return reasons.slice(0, 3);
+}
 
 export async function getResonateCandidate(currentUid: string): Promise<CandidateProfile | null> {
   if (!currentUid) return null;
@@ -159,13 +213,20 @@ export async function getResonateCandidate(currentUid: string): Promise<Candidat
         const bHasModel = b.soulProfile?.reflectModel ? 1 : 0;
         return bHasModel - aHasModel;
       });
-      return candidates[0];
+      const topCandidate = candidates[0];
+      topCandidate.matchReasons = generateMatchReasons(myData.soulProfile, topCandidate.soulProfile);
+      return topCandidate;
     }
 
     const result = await response.json();
     if (result.rankedCandidates && result.rankedCandidates.length > 0) {
-      console.log('[getResonateCandidate] Backend returned ranked candidate:', result.rankedCandidates[0].uid, 'Score:', result.rankedCandidates[0].finalScore);
-      return result.rankedCandidates[0];
+      const topCandidate = result.rankedCandidates[0];
+      console.log('[getResonateCandidate] Backend returned ranked candidate:', topCandidate.uid, 'Score:', topCandidate.finalScore);
+      
+      // Generate match reasons
+      topCandidate.matchReasons = generateMatchReasons(myData.soulProfile, topCandidate.soulProfile);
+      
+      return topCandidate;
     }
 
     return null;
@@ -183,9 +244,10 @@ export async function sendConnectionRequest(
   fromUid: string, 
   toUid: string, 
   reason: string = 'You both reflect deeply on similar themes.', 
-  matchScore: number | null = null
+  matchScore: number | null = null,
+  matchReasons: string[] = []
 ): Promise<boolean> {
-  console.log('[sendConnectionRequest] Called with:', { fromUid, toUid, reason, matchScore });
+  console.log('[sendConnectionRequest] Called with:', { fromUid, toUid, reason, matchScore, matchReasons });
   try {
     // Check for existing pending requests or connections
     const existingReqs = await getDocs(
@@ -237,6 +299,7 @@ export async function sendConnectionRequest(
       status: 'pending',
       reason,
       matchScore: matchScore === undefined ? null : matchScore, // Ensure no undefined values
+      matchReasons: matchReasons || [],
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
@@ -326,6 +389,7 @@ export async function acceptConnectionRequest(requestId: string): Promise<boolea
           [reqData.fromUid]: true,
           [reqData.toUid]: true
         },
+        matchReasons: reqData.matchReasons || [],
         createdAt: serverTimestamp(),
         createdFromRequestId: requestId
       });

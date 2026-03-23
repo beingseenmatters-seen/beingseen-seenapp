@@ -110,7 +110,13 @@ export default function Resonate() {
       return;
     }
     setIsSending(true);
-    const success = await sendConnectionRequest(firebaseUser.uid, candidate.uid);
+    const success = await sendConnectionRequest(
+      firebaseUser.uid, 
+      candidate.uid,
+      'You both reflect deeply on similar themes.',
+      candidate.finalScore || null,
+      candidate.matchReasons || []
+    );
     console.log('[Resonate] sendConnectionRequest returned:', success);
     setIsSending(false);
     if (success) {
