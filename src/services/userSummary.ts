@@ -24,7 +24,7 @@ const SESSION_INSIGHTS_STORAGE_KEY = 'seen_session_insights';
 const UNDERSTANDING_MODEL_STORAGE_KEY = 'seen_user_understanding_model';
 const LEGACY_PERSONALITY_MODEL_STORAGE_KEY = 'seen_user_personality_model';
 const LEGACY_SUMMARY_STORAGE_KEY = 'seen_user_summary';
-const MIN_INSIGHTS_FOR_MODEL = 5;
+const MIN_INSIGHTS_FOR_MODEL = 1;
 
 const TAG_LABELS: Record<string, { zh: string; en: string }> = {
   philosophical_reasoning: { zh: '哲学式推理', en: 'Philosophical reasoning' },
