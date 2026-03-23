@@ -124,6 +124,7 @@ export async function sendConnectionRequest(
   reason: string = 'You both reflect deeply on similar themes.', 
   matchScore: number | null = null
 ): Promise<boolean> {
+  console.log('[sendConnectionRequest] Called with:', { fromUid, toUid, reason, matchScore });
   try {
     // Check for existing pending requests or connections
     const existingReqs = await getDocs(
@@ -136,7 +137,7 @@ export async function sendConnectionRequest(
     );
     
     if (!existingReqs.empty) {
-      console.log('Request already exists');
+      console.log('[sendConnectionRequest] Request already exists. Aborting write.');
       return false;
     }
 
@@ -151,7 +152,7 @@ export async function sendConnectionRequest(
     );
 
     if (!reverseReqs.empty) {
-      console.log('Reverse request already exists');
+      console.log('[sendConnectionRequest] Reverse request already exists. Aborting write.');
       return false;
     }
 
@@ -165,23 +166,28 @@ export async function sendConnectionRequest(
     );
 
     if (!existingConnections.empty) {
-      console.log('Already connected');
+      console.log('[sendConnectionRequest] Already connected. Aborting write.');
       return false;
     }
 
-    await addDoc(collection(db, 'connectionRequests'), {
+    const payload = {
       fromUid,
       toUid,
       status: 'pending',
       reason,
-      matchScore,
+      matchScore: matchScore === undefined ? null : matchScore, // Ensure no undefined values
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
-    });
+    };
 
+    console.log('[sendConnectionRequest] Firestore write start. Collection: connectionRequests, Payload:', payload);
+
+    const docRef = await addDoc(collection(db, 'connectionRequests'), payload);
+
+    console.log('[sendConnectionRequest] Firestore write success! Document ID:', docRef.id);
     return true;
   } catch (error) {
-    console.error('Error sending connection request:', error);
+    console.error('[sendConnectionRequest] Firestore write failure! Full error:', error);
     return false;
   }
 }

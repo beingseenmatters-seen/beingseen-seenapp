@@ -89,13 +89,20 @@ export default function Resonate() {
   };
 
   const handleSendRequest = async () => {
-    if (!firebaseUser?.uid || !candidate) return;
+    console.log('[Resonate] handleSendRequest clicked. Current UID:', firebaseUser?.uid, 'Candidate UID:', candidate?.uid);
+    if (!firebaseUser?.uid || !candidate) {
+      console.warn('[Resonate] Missing UID or candidate. Aborting.');
+      return;
+    }
     setIsSending(true);
     const success = await sendConnectionRequest(firebaseUser.uid, candidate.uid);
+    console.log('[Resonate] sendConnectionRequest returned:', success);
     setIsSending(false);
     if (success) {
+      console.log('[Resonate] Transitioning to success state (step 3)');
       setStep(3);
     } else {
+      console.log('[Resonate] Request failed or duplicate. Resetting to step 0');
       // If failed or duplicate, just go back to empty for now
       setStep(0);
     }
