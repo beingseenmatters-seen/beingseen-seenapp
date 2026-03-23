@@ -7,6 +7,8 @@ import { formatInsightTag } from '../services/userSummary';
 import { useAuth } from '../auth/AuthContext';
 import { getResonateCandidate, sendConnectionRequest } from '../services/connections';
 import type { CandidateProfile } from '../services/connections';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../services/firebase';
 
 export default function Resonate() {
   const { t, effectiveLanguage } = useLanguage();
@@ -14,7 +16,7 @@ export default function Resonate() {
 
   const [candidate, setCandidate] = useState<CandidateProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [step, setStep] = useState(0); // 0: Not Ready / Empty, 1: Candidate, 2: Confirm, 3: Waiting
+  const [step, setStep] = useState(0); // 0: Need Reflect, 1: Candidate, 2: Confirm, 3: Waiting, 4: No other users
   const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
@@ -24,12 +26,25 @@ export default function Resonate() {
         return;
       }
       setIsLoading(true);
-      const found = await getResonateCandidate(firebaseUser.uid);
-      setCandidate(found);
-      if (found) {
-        setStep(1);
-      } else {
-        setStep(0);
+      try {
+        const found = await getResonateCandidate(firebaseUser.uid);
+        if (found) {
+          setCandidate(found);
+          setStep(1);
+        } else {
+          // Check if current user has their own profile
+          const myDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          const myData = myDoc.data();
+          const iHaveProfile = myData?.soulProfile?.reflectModel || myData?.soulProfile?.latestInsight;
+          if (iHaveProfile) {
+            setStep(4); // I have a profile, but no other users found
+          } else {
+            setStep(0); // I need to do reflect first
+          }
+        }
+      } catch (err) {
+        console.error('[Resonate] Error in fetchCandidate:', err);
+        setStep(4);
       }
       setIsLoading(false);
     }
@@ -232,6 +247,21 @@ export default function Resonate() {
             <Link to="/inbox" className="text-sm text-primary underline underline-offset-4 mt-8">
               {t('resonate.action_goto_inbox')}
             </Link>
+          </motion.div>
+        )}
+
+        {step === 4 && (
+          <motion.div key="step4" {...fadeIn} className="flex-1 flex flex-col justify-center items-center text-center space-y-8">
+            <div className="space-y-4">
+              <h2 className="text-2xl font-light text-primary whitespace-pre-line">
+                {effectiveLanguage === 'zh' ? '暂无同频推荐' : 'No Resonances Found'}
+              </h2>
+              <p className="text-secondary font-light max-w-xs whitespace-pre-line leading-relaxed">
+                {effectiveLanguage === 'zh' 
+                  ? '目前茫茫人海中，还没有找到与你同频的其他信号。\n\n这可能是因为目前还没有其他用户，或者大家都在潜水。' 
+                  : 'No matching signals found in the universe right now.\n\nEither there are no other users yet, or everyone is hiding.'}
+              </p>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

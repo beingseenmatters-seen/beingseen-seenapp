@@ -51,6 +51,7 @@ export async function getResonateCandidate(currentUid: string): Promise<Candidat
   if (!currentUid) return null;
 
   try {
+    console.log('[getResonateCandidate] Fetching users for candidate selection...');
     // For v1, we just query some users and pick one that isn't the current user 
     // and isn't already connected/requested.
     // In a real app, this would be a complex backend matching query.
@@ -60,6 +61,8 @@ export async function getResonateCandidate(currentUid: string): Promise<Candidat
     const q = query(usersRef);
     const snapshot = await getDocs(q);
     
+    console.log('[getResonateCandidate] Total users fetched:', snapshot.size);
+
     let candidates: CandidateProfile[] = [];
     
     snapshot.forEach(docSnap => {
@@ -73,6 +76,8 @@ export async function getResonateCandidate(currentUid: string): Promise<Candidat
         });
       }
     });
+
+    console.log('[getResonateCandidate] Candidates after filtering self:', candidates.length);
 
     // Filter out users we already have a connection or pending request with
     const existingRequests = await getDocs(
@@ -95,6 +100,7 @@ export async function getResonateCandidate(currentUid: string): Promise<Candidat
     });
 
     candidates = candidates.filter(c => !excludedUids.has(c.uid));
+    console.log('[getResonateCandidate] Candidates after filtering existing requests/connections:', candidates.length);
 
     // Prefer candidates with reflectModel
     candidates.sort((a, b) => {
@@ -104,12 +110,14 @@ export async function getResonateCandidate(currentUid: string): Promise<Candidat
     });
 
     if (candidates.length > 0) {
+      console.log('[getResonateCandidate] Selected candidate:', candidates[0].uid);
       return candidates[0];
     }
 
+    console.log('[getResonateCandidate] No candidates found.');
     return null;
   } catch (error) {
-    console.error('Error fetching candidate:', error);
+    console.error('[getResonateCandidate] Error fetching candidate. This might be a permissions issue:', error);
     return null;
   }
 }
