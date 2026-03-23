@@ -68,16 +68,20 @@ export async function getResonateCandidate(currentUid: string): Promise<Candidat
     snapshot.forEach(docSnap => {
       const data = docSnap.data() as SeenUser;
       if (data.uid !== currentUid) {
-        candidates.push({
-          uid: data.uid,
-          nickname: data.nickname || data.basic?.nickname || 'Anonymous User',
-          soulProfile: data.soulProfile,
-          basic: data.basic
-        });
+        // Only include candidates who actually have a reflect model or insight
+        const soulProfile: any = data.soulProfile;
+        if (soulProfile?.reflectModel || soulProfile?.latestInsight) {
+          candidates.push({
+            uid: data.uid,
+            nickname: data.nickname || data.basic?.nickname || 'Anonymous User',
+            soulProfile: data.soulProfile,
+            basic: data.basic
+          });
+        }
       }
     });
 
-    console.log('[getResonateCandidate] Candidates after filtering self:', candidates.length);
+    console.log('[getResonateCandidate] Candidates after filtering self and empty profiles:', candidates.length);
 
     // Filter out users we already have a connection or pending request with
     let excludedUids = new Set<string>();
