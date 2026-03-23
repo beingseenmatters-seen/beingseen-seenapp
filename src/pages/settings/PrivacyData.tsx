@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, FileText, FileJson, Printer } from 'lucide-react';
+import { ChevronLeft, FileText, Printer } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { useLanguage } from '../../i18n';
@@ -235,18 +235,6 @@ export default function PrivacyData() {
     setToast(t('settings.privacy.export_success'));
   };
 
-  const handleExportJson = () => {
-    const data = gatherExportData();
-    if (Object.keys(data.contents).length === 0) {
-      setToast(t('settings.privacy.export_empty'));
-      return;
-    }
-    const json = JSON.stringify(data, null, 2);
-    const filename = `seen-export-${new Date().toISOString().slice(0, 10)}.json`;
-    downloadFile(json, filename, 'application/json');
-    setToast(t('settings.privacy.export_success'));
-  };
-
   const handleExportPdf = () => {
     const data = gatherExportData();
     if (Object.keys(data.contents).length === 0) {
@@ -330,11 +318,6 @@ export default function PrivacyData() {
                  icon={<FileText size={18} />}
                  label={t('settings.privacy.action_export_text')} 
                  onClick={handleExportText}
-               />
-               <ExportButton 
-                 icon={<FileJson size={18} />}
-                 label={t('settings.privacy.action_export_json')} 
-                 onClick={handleExportJson}
                />
                <ExportButton 
                  icon={<Printer size={18} />}
