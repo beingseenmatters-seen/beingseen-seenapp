@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { useLanguage } from '../../i18n';
 import { useAuth } from '../../auth/AuthContext';
-import { SeenUser } from '../../types/user';
+import type { SeenUser } from '../../auth/providers/types';
 
 // Gather all exportable user data from Firestore (via AuthContext) and localStorage
 function gatherExportData(seenUser: SeenUser | null) {
@@ -21,8 +21,8 @@ function gatherExportData(seenUser: SeenUser | null) {
     }
 
     // Me - Understanding answers
-    if (seenUser.understandingAnswers) {
-      data.contents.understandingAnswers = seenUser.understandingAnswers;
+    if (seenUser.soulProfile?.understanding) {
+      data.contents.understandingAnswers = seenUser.soulProfile.understanding;
     }
 
     // Me - Basic profile
@@ -31,8 +31,8 @@ function gatherExportData(seenUser: SeenUser | null) {
     }
 
     // Me - Questions (About Me)
-    if (seenUser.meQuestions) {
-      data.contents.meQuestions = seenUser.meQuestions;
+    if (seenUser.soulProfile?.answers) {
+      data.contents.meQuestions = seenUser.soulProfile.answers;
     }
     
     // Reflect Model

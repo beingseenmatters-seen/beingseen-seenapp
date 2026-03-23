@@ -43,5 +43,6 @@ export interface SeenUser {
       intensity?: number;
       emotionHandling?: string;
     };
+    reflectModel?: any;
   };
 }
