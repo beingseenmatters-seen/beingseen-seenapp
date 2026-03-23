@@ -612,15 +612,22 @@ export async function saveApprovedSummary(
   }
 
   // Persist to Firestore if authenticated
+  console.log('[UserSummary] saveApprovedSummary called with uid:', uid, 'sessionId:', sessionId);
   if (uid) {
     try {
       // Use the provided sessionId, or generate a new one if it's missing
       const finalSessionId = sessionId || crypto.randomUUID();
       const insightRef = doc(db, 'users', uid, 'reflectInsights', finalSessionId);
+      
+      console.log('[UserSummary] Attempting to write to Firestore path:', `users/${uid}/reflectInsights/${finalSessionId}`);
+      console.log('[UserSummary] Insight payload:', insight);
+      
       await setDoc(insightRef, {
         ...insight,
         updatedAt: serverTimestamp()
       }, { merge: true });
+      
+      console.log('[UserSummary] Successfully wrote insight to reflectInsights subcollection.');
 
       // Always save the latest insight to soulProfile as the current snapshot
       // even if we don't have enough insights for a full aggregated model yet
@@ -642,11 +649,14 @@ export async function saveApprovedSummary(
         };
       }
 
+      console.log('[UserSummary] Attempting to update user document with soulProfileUpdate:', soulProfileUpdate);
       await setDoc(userRef, { soulProfile: soulProfileUpdate }, { merge: true });
       console.log('[UserSummary] Persisted to Firestore successfully with sessionId:', finalSessionId);
     } catch (error) {
-      console.error('[UserSummary] Failed to persist to Firestore:', error);
+      console.error('[UserSummary] Failed to persist to Firestore. Full error:', error);
     }
+  } else {
+    console.warn('[UserSummary] No uid provided, skipping Firestore persistence.');
   }
 
   console.log('[UserSummary] Approved summary saved:', {
