@@ -50,7 +50,7 @@ const STORAGE_KEY = 'seen_reflect_session';
 export default function Reflect() {
   const [step, setStep] = useState(0);
   const { t, language, setLanguage, effectiveLanguage } = useLanguage();
-  const { seenUser } = useAuth();
+  const { seenUser, firebaseUser } = useAuth();
   const { isDesktop } = usePlatform();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -238,7 +238,7 @@ export default function Reflect() {
       const extracted = await extractSummaryFromConversation(messages, {
         preferredResponseStyle: getStyleDisplayName(effectiveSelectedMode),
         language: effectiveLanguage === 'zh' ? 'zh' : 'en',
-        uid: seenUser?.uid || 'anonymous',
+        uid: firebaseUser?.uid || seenUser?.uid || 'anonymous',
         sessionId: sessionId || 'unknown'
       });
 
@@ -319,7 +319,7 @@ export default function Reflect() {
     if (pendingSummary) {
       await saveApprovedSummary(
         pendingSummary,
-        seenUser?.uid,
+        firebaseUser?.uid || seenUser?.uid,
         currentSessionId
       );
     }
