@@ -80,24 +80,28 @@ export async function getResonateCandidate(currentUid: string): Promise<Candidat
     console.log('[getResonateCandidate] Candidates after filtering self:', candidates.length);
 
     // Filter out users we already have a connection or pending request with
-    const existingRequests = await getDocs(
-      query(
-        collection(db, 'connectionRequests'),
-        or(
-          where('fromUid', '==', currentUid),
-          where('toUid', '==', currentUid)
+    let excludedUids = new Set<string>();
+    try {
+      const existingRequests = await getDocs(
+        query(
+          collection(db, 'connectionRequests'),
+          or(
+            where('fromUid', '==', currentUid),
+            where('toUid', '==', currentUid)
+          )
         )
-      )
-    );
-    
-    const excludedUids = new Set<string>();
-    existingRequests.forEach(docSnap => {
-      const req = docSnap.data() as ConnectionRequest;
-      if (req.status !== 'declined') { // If declined, maybe we don't show again, but let's exclude all for now
-        excludedUids.add(req.fromUid);
-        excludedUids.add(req.toUid);
-      }
-    });
+      );
+      
+      existingRequests.forEach(docSnap => {
+        const req = docSnap.data() as ConnectionRequest;
+        if (req.status !== 'declined') { // If declined, maybe we don't show again, but let's exclude all for now
+          excludedUids.add(req.fromUid);
+          excludedUids.add(req.toUid);
+        }
+      });
+    } catch (reqErr) {
+      console.warn('[getResonateCandidate] Could not fetch connectionRequests (might be missing index or rules), skipping exclusion:', reqErr);
+    }
 
     candidates = candidates.filter(c => !excludedUids.has(c.uid));
     console.log('[getResonateCandidate] Candidates after filtering existing requests/connections:', candidates.length);
