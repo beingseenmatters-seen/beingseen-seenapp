@@ -53,6 +53,8 @@ export interface CandidateProfile {
   nickname?: string;
   soulProfile?: any;
   basic?: any;
+  finalScore?: number;
+  matchReason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,6 +77,11 @@ export async function getResonateCandidate(currentUid: string): Promise<Candidat
     
     console.log('[getResonateCandidate] Total users fetched:', snapshot.size);
 
+    // Fetch current user to get their profile
+    const myDoc = await getDoc(doc(db, 'users', currentUid));
+    if (!myDoc.exists()) return null;
+    const myData = myDoc.data() as SeenUser;
+    
     let candidates: CandidateProfile[] = [];
     
     snapshot.forEach(docSnap => {
@@ -122,19 +129,45 @@ export async function getResonateCandidate(currentUid: string): Promise<Candidat
     candidates = candidates.filter(c => !excludedUids.has(c.uid));
     console.log('[getResonateCandidate] Candidates after filtering existing requests/connections:', candidates.length);
 
-    // Prefer candidates with reflectModel
-    candidates.sort((a, b) => {
-      const aHasModel = a.soulProfile?.reflectModel ? 1 : 0;
-      const bHasModel = b.soulProfile?.reflectModel ? 1 : 0;
-      return bHasModel - aHasModel;
+    if (candidates.length === 0) {
+      console.log('[getResonateCandidate] No candidates found.');
+      return null;
+    }
+
+    // Call Backend Lambda to rank candidates
+    console.log('[getResonateCandidate] Sending candidates to backend matching engine...');
+    const API_URL = import.meta.env.VITE_SEEN_API_URL || 'https://rtbzs3sjwe.execute-api.ap-southeast-2.amazonaws.com';
+    const API_KEY = import.meta.env.VITE_SEEN_APP_API_KEY || 'test_seen_app_key';
+
+    const response = await fetch(`${API_URL}/match/rank`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Seen-App-Key': API_KEY
+      },
+      body: JSON.stringify({
+        currentUser: myData,
+        candidates
+      })
     });
 
-    if (candidates.length > 0) {
-      console.log('[getResonateCandidate] Selected candidate:', candidates[0].uid);
+    if (!response.ok) {
+      console.error('[getResonateCandidate] Backend matching failed:', await response.text());
+      // Fallback to local sort if backend fails
+      candidates.sort((a, b) => {
+        const aHasModel = a.soulProfile?.reflectModel ? 1 : 0;
+        const bHasModel = b.soulProfile?.reflectModel ? 1 : 0;
+        return bHasModel - aHasModel;
+      });
       return candidates[0];
     }
 
-    console.log('[getResonateCandidate] No candidates found.');
+    const result = await response.json();
+    if (result.rankedCandidates && result.rankedCandidates.length > 0) {
+      console.log('[getResonateCandidate] Backend returned ranked candidate:', result.rankedCandidates[0].uid, 'Score:', result.rankedCandidates[0].finalScore);
+      return result.rankedCandidates[0];
+    }
+
     return null;
   } catch (error) {
     console.error('[getResonateCandidate] Error fetching candidate. This might be a permissions issue:', error);

@@ -54,8 +54,7 @@ function httpResponse(statusCode, body) {
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers":
-        "Content-Type,Authorization,X-Seen-App-Key",
+      "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Seen-App-Key,Accept,Origin",
       "Access-Control-Allow-Methods": "POST,OPTIONS",
     },
     body: JSON.stringify(body),
@@ -479,12 +478,87 @@ ${currentText.substring(0, 200)}`;
 }
 
 // ========================
+// Match Ranking Logic
+// ========================
+
+function getProfileWeight(reflectCount) {
+  if (reflectCount <= 2) {
+    return { stage: 'cold_start', me: 0.7, soul: 0.3 };
+  } else if (reflectCount <= 5) {
+    return { stage: 'early', me: 0.55, soul: 0.45 };
+  } else if (reflectCount <= 10) {
+    return { stage: 'stable', me: 0.4, soul: 0.6 };
+  } else {
+    return { stage: 'deep', me: 0.3, soul: 0.7 };
+  }
+}
+
+function calculateArraySimilarity(arr1, arr2) {
+  if (!arr1 || !arr2 || !Array.isArray(arr1) || !Array.isArray(arr2) || arr1.length === 0 || arr2.length === 0) return 0;
+  const set1 = new Set(arr1);
+  const set2 = new Set(arr2);
+  const intersection = new Set([...set1].filter(x => set2.has(x)));
+  const union = new Set([...set1, ...set2]);
+  return intersection.size / union.size;
+}
+
+function calculateMeSimilarity(me1, me2) {
+  if (!me1 || !me2) return 0;
+  let score = 0;
+  let maxScore = 0;
+
+  const fields = ['location', 'age', 'gender', 'zodiac'];
+  for (const field of fields) {
+    if (me1[field] && me2[field]) {
+      maxScore += 1;
+      if (me1[field] === me2[field]) {
+        score += 1;
+      }
+    }
+  }
+
+  return maxScore > 0 ? score / maxScore : 0;
+}
+
+function calculateSoulSimilarity(soul1, soul2) {
+  if (!soul1 || !soul2) return 0;
+  
+  const model1 = soul1.reflectModel || soul1.latestInsight;
+  const model2 = soul2.reflectModel || soul2.latestInsight;
+  
+  if (!model1 || !model2) return 0;
+
+  let score = 0;
+  let maxScore = 0;
+
+  const arrayFields = ['thinkingStyle', 'coreQuestions', 'worldview', 'relationshipPhilosophy', 'conversationStyle'];
+  for (const field of arrayFields) {
+    if (model1[field] && model2[field]) {
+      maxScore += 1;
+      score += calculateArraySimilarity(model1[field], model2[field]);
+    }
+  }
+
+  const stringFields = ['emotion', 'trigger', 'values', 'behaviorPattern', 'decisionModel', 'personalityTraits', 'relationshipNeed', 'motivation', 'coreConflict'];
+  for (const field of stringFields) {
+    if (model1[field] && model2[field]) {
+      maxScore += 0.5;
+      if (model1[field] === model2[field]) {
+        score += 0.5;
+      }
+    }
+  }
+
+  return maxScore > 0 ? score / maxScore : 0;
+}
+
+// ========================
 // Lambda Handler
 // ========================
 
 export const handler = async (event) => {
   // CORS preflight
-  if (event.requestContext?.http?.method === "OPTIONS") {
+  if (event.requestContext?.http?.method === "OPTIONS" || event.httpMethod === "OPTIONS" || event.routeKey === "OPTIONS /reflect/send" || event.routeKey === "OPTIONS /reflect/extract" || event.routeKey === "OPTIONS /match/rank") {
     return httpResponse(200, { ok: true });
   }
 
@@ -500,11 +574,209 @@ export const handler = async (event) => {
     return httpResponse(401, { error: "unauthorized" });
   }
 
-  // Parse body
+  // Parse body early to use in both routes
   let body = {};
   try {
     body = JSON.parse(event.body || "{}");
   } catch {}
+
+  // Route: /match/rank
+  const path = event.requestContext?.http?.path || event.rawPath || event.path;
+  
+  if (path === "/match/rank") {
+    console.log("Handling /match/rank request");
+    const { currentUser, candidates } = body;
+
+    if (!currentUser || !Array.isArray(candidates)) {
+      return httpResponse(400, { error: "missing_required_fields", detail: "Requires currentUser and candidates array" });
+    }
+
+    // 1. Determine current user's profile stage
+    const mySoulProfile = currentUser.soulProfile || {};
+    const myReflectCount = mySoulProfile.reflectModel?.sourceInsightCount || (mySoulProfile.latestInsight ? 1 : 0);
+    const { stage, me: meWeight, soul: soulWeight } = getProfileWeight(myReflectCount);
+
+    console.log(`[MatchEngine] Current user ${currentUser.uid} stage: ${stage} (count: ${myReflectCount}, meW: ${meWeight}, soulW: ${soulWeight})`);
+
+    // 2. Score each candidate
+    const rankedCandidates = candidates.map(candidate => {
+      let meSim = calculateMeSimilarity(currentUser.basic, candidate.basic);
+      let soulSim = calculateSoulSimilarity(mySoulProfile, candidate.soulProfile);
+
+      // Fallback rules
+      const candidateSoul = candidate.soulProfile || {};
+      if (!candidateSoul.reflectModel && !candidateSoul.latestInsight) {
+        soulSim = 0; // Ignore soul if missing
+      }
+      if (!candidate.basic || Object.keys(candidate.basic).length === 0) {
+        meSim = 0; // Ignore me if missing
+      }
+
+      // Final Score Calculation
+      let finalScore = (meWeight * meSim) + (soulWeight * soulSim);
+
+      return {
+        ...candidate,
+        finalScore,
+        matchMetrics: {
+          stage,
+          meWeight,
+          soulWeight,
+          meSimilarity: meSim,
+          soulSimilarity: soulSim,
+          finalScore
+        }
+      };
+    });
+
+    // 3. Sort by final score descending
+    rankedCandidates.sort((a, b) => b.finalScore - a.finalScore);
+
+    return httpResponse(200, {
+      success: true,
+      stage,
+      meWeight,
+      soulWeight,
+      rankedCandidates
+    });
+  }
+
+  // Route: /extract
+  if (path === "/reflect/extract") {
+    console.log("Handling /reflect/extract request");
+    
+    const conversation = body.conversation;
+    if (!Array.isArray(conversation) || conversation.length === 0) {
+      return httpResponse(400, { error: "conversation_required" });
+    }
+
+    const language = body.language === "en" ? "en" : "zh";
+    const openAIKey = await getOpenAIKey();
+    const model = process.env.OPENAI_MODEL || MODEL;
+
+    // Format conversation for extraction
+    const transcript = conversation
+      .filter(msg => msg.role === 'user' || msg.role === 'ai')
+      .map(msg => `${msg.role === 'user' ? 'User' : 'AI'}: ${msg.text}`)
+      .join('\n');
+
+    console.log(`[Extract] Processing conversation with ${conversation.length} turns, language: ${language}`);
+
+    const extractPrompt = `You are an expert psychological profiler and conversation analyst.
+Your task is to analyze the following conversation between a User and an AI, and extract a structured 10-layer psychological profile of the USER.
+
+RULES:
+1. Analyze the USER, not the AI.
+2. Base every layer STRICTLY on evidence from the user's words. Do not invent strong conclusions from one sentence.
+3. If evidence is limited (e.g., very short conversation), use cautious and tentative wording (e.g., "seems to", "might value").
+4. If evidence for a specific layer is weak or absent, say less rather than more. It is better to be minimal and accurate than rich but speculative.
+5. Avoid generic psychology-template phrasing. Prefer grounded, specific observations.
+6. Keep each field concise but meaningful.
+7. The 'summary' field should be one compact paragraph synthesizing the overall state.
+8. Output language: ${language === 'zh' ? 'Chinese (Simplified)' : 'English'}.
+9. Return strictly valid JSON matching the exact structure below. Do NOT wrap in markdown code blocks (\`\`\`json). Return ONLY the raw JSON object.
+
+REQUIRED JSON STRUCTURE:
+{
+  "layers": {
+    "contentSummary": "Brief summary of what was discussed",
+    "emotion": "Primary emotional state",
+    "trigger": "What triggered the user's current state or thoughts",
+    "values": "Underlying values or beliefs revealed",
+    "behaviorPattern": "Observed behavioral tendencies",
+    "decisionModel": "How the user seems to make decisions or process choices",
+    "personalityTraits": "Inferred personality characteristics",
+    "relationshipNeed": "What the user seems to need in relationships or interaction",
+    "motivation": "Deep underlying drive or motivation",
+    "coreConflict": "The central internal or external conflict"
+  },
+  "summary": "One compact paragraph synthesizing the above."
+}
+
+CONVERSATION TRANSCRIPT:
+${transcript}`;
+
+    try {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${openAIKey}`,
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: "system", content: extractPrompt }],
+          temperature: 0.2,
+          max_tokens: 1000,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("[Extract] OpenAI API error:", errorText);
+        return httpResponse(500, { error: "openai_api_error" });
+      }
+
+      const data = await response.json();
+      let rawContent = data.choices?.[0]?.message?.content || "";
+      
+      // Clean up potential markdown formatting
+      rawContent = rawContent.trim();
+      if (rawContent.startsWith('```json')) {
+        rawContent = rawContent.replace(/^```json\n/, '').replace(/\n```$/, '');
+      } else if (rawContent.startsWith('```')) {
+        rawContent = rawContent.replace(/^```\n/, '').replace(/\n```$/, '');
+      }
+
+      let parsedResult;
+      try {
+        parsedResult = JSON.parse(rawContent);
+      } catch (parseError) {
+        console.error("[Extract] Failed to parse JSON:", rawContent);
+        // Attempt recovery: find first { and last }
+        const startIdx = rawContent.indexOf('{');
+        const endIdx = rawContent.lastIndexOf('}');
+        if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+           try {
+             parsedResult = JSON.parse(rawContent.substring(startIdx, endIdx + 1));
+           } catch (e) {
+             return httpResponse(500, { error: "reflect_extract_parse_failed" });
+           }
+        } else {
+          return httpResponse(500, { error: "reflect_extract_parse_failed" });
+        }
+      }
+
+      // Validate required structure
+      if (!parsedResult.layers || !parsedResult.summary) {
+        console.error("[Extract] Missing required top-level fields:", parsedResult);
+        return httpResponse(500, { error: "reflect_extract_invalid_structure" });
+      }
+
+      console.log("[Extract] Successfully extracted 10-layer profile");
+
+      return httpResponse(200, {
+        layers: {
+          contentSummary: parsedResult.layers.contentSummary || "",
+          emotion: parsedResult.layers.emotion || "",
+          trigger: parsedResult.layers.trigger || "",
+          values: parsedResult.layers.values || "",
+          behaviorPattern: parsedResult.layers.behaviorPattern || "",
+          decisionModel: parsedResult.layers.decisionModel || "",
+          personalityTraits: parsedResult.layers.personalityTraits || "",
+          relationshipNeed: parsedResult.layers.relationshipNeed || "",
+          motivation: parsedResult.layers.motivation || "",
+          coreConflict: parsedResult.layers.coreConflict || ""
+        },
+        summary: parsedResult.summary || "",
+        model: model
+      });
+
+    } catch (error) {
+      console.error("[Extract] Error processing request:", error);
+      return httpResponse(500, { error: "internal_server_error" });
+    }
+  }
 
   const text = (body.text || "").trim();
   const language = body.language === "en" ? "en" : "zh";
@@ -615,5 +887,5 @@ export const handler = async (event) => {
       distressed: userState.isDistressed,
       historyTurns: routeInfo.historyTurns,
     },
-  });
+  }); 
 };
