@@ -11,6 +11,18 @@ export interface ConversationExtraction {
   conversationStyle: string[];
   thinkingPath: string[];
   preferredResponseStyle?: string;
+
+  // New 10-layer LLM extraction fields
+  contentSummary?: string;
+  emotion?: string;
+  trigger?: string;
+  values?: string;
+  behaviorPattern?: string;
+  decisionModel?: string;
+  personalityTraits?: string;
+  relationshipNeed?: string;
+  motivation?: string;
+  coreConflict?: string;
 }
 
 /**
@@ -37,6 +49,19 @@ export interface UserUnderstandingModel {
   conversationStyle: string[];
   thinkingPath: string[];
   preferredResponseStyle?: string;
+
+  // New 10-layer LLM extraction fields
+  contentSummary?: string;
+  emotion?: string;
+  trigger?: string;
+  values?: string;
+  behaviorPattern?: string;
+  decisionModel?: string;
+  personalityTraits?: string;
+  relationshipNeed?: string;
+  motivation?: string;
+  coreConflict?: string;
+
   sourceInsightCount: number;
   lastUpdated: number;
 }
