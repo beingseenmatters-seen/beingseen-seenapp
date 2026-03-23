@@ -622,17 +622,26 @@ export async function saveApprovedSummary(
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      if (model) {
-        const userRef = doc(db, 'users', uid);
-        await setDoc(userRef, {
-          soulProfile: {
-            reflectModel: {
-              ...model,
-              updatedAt: serverTimestamp()
-            }
+      // Always save the latest insight to soulProfile as the current snapshot
+      // even if we don't have enough insights for a full aggregated model yet
+      const userRef = doc(db, 'users', uid);
+      const soulProfileUpdate: any = {
+        reflectModel: {
+          latestInsight: {
+            ...insight,
+            updatedAt: serverTimestamp()
           }
-        }, { merge: true });
+        }
+      };
+
+      if (model) {
+        soulProfileUpdate.reflectModel.aggregated = {
+          ...model,
+          updatedAt: serverTimestamp()
+        };
       }
+
+      await setDoc(userRef, { soulProfile: soulProfileUpdate }, { merge: true });
       console.log('[UserSummary] Persisted to Firestore successfully with sessionId:', finalSessionId);
     } catch (error) {
       console.error('[UserSummary] Failed to persist to Firestore:', error);
