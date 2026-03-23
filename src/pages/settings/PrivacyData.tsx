@@ -3,48 +3,74 @@ import { ChevronLeft, FileText, Printer } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { useLanguage } from '../../i18n';
+import { useAuth } from '../../auth/AuthContext';
+import { SeenUser } from '../../types/user';
 
-// Gather all exportable user data from localStorage
-function gatherExportData() {
+// Gather all exportable user data from Firestore (via AuthContext) and localStorage
+function gatherExportData(seenUser: SeenUser | null) {
   const data: Record<string, any> = {
     exportedAt: new Date().toISOString(),
     appVersion: 'Seen App v1.0.3',
     contents: {}
   };
 
-  // Me - AI Preference
-  try {
-    const aiPref = localStorage.getItem('seen_ai_preference');
-    if (aiPref) {
-      data.contents.aiPreference = JSON.parse(aiPref);
+  if (seenUser) {
+    // Me - AI Preference
+    if (seenUser.soulProfile?.aiPreference) {
+      data.contents.aiPreference = seenUser.soulProfile.aiPreference;
     }
-  } catch { /* ignore */ }
 
-  // Me - Understanding answers
-  try {
-    const understanding = localStorage.getItem('seen_understanding_answers');
-    if (understanding) {
-      data.contents.understandingAnswers = JSON.parse(understanding);
+    // Me - Understanding answers
+    if (seenUser.understandingAnswers) {
+      data.contents.understandingAnswers = seenUser.understandingAnswers;
     }
-  } catch { /* ignore */ }
 
-  // Me - Basic profile
-  try {
-    const profile = localStorage.getItem('seen_profile');
-    if (profile) {
-      data.contents.profile = JSON.parse(profile);
+    // Me - Basic profile
+    if (seenUser.basic) {
+      data.contents.profile = seenUser.basic;
     }
-  } catch { /* ignore */ }
 
-  // Me - Questions (About Me)
-  try {
-    const questions = localStorage.getItem('seen_me_questions');
-    if (questions) {
-      data.contents.meQuestions = JSON.parse(questions);
+    // Me - Questions (About Me)
+    if (seenUser.meQuestions) {
+      data.contents.meQuestions = seenUser.meQuestions;
     }
-  } catch { /* ignore */ }
+    
+    // Reflect Model
+    if (seenUser.soulProfile?.reflectModel) {
+      data.contents.reflectModel = seenUser.soulProfile.reflectModel;
+    }
+  }
 
-  // Onboarding data
+  // Fallback/Legacy: Also check localStorage just in case
+  if (!data.contents.aiPreference) {
+    try {
+      const aiPref = localStorage.getItem('seen_ai_preference');
+      if (aiPref) data.contents.aiPreference = JSON.parse(aiPref);
+    } catch { /* ignore */ }
+  }
+
+  if (!data.contents.understandingAnswers) {
+    try {
+      const understanding = localStorage.getItem('seen_understanding_answers');
+      if (understanding) data.contents.understandingAnswers = JSON.parse(understanding);
+    } catch { /* ignore */ }
+  }
+
+  if (!data.contents.profile) {
+    try {
+      const profile = localStorage.getItem('seen_profile');
+      if (profile) data.contents.profile = JSON.parse(profile);
+    } catch { /* ignore */ }
+  }
+
+  if (!data.contents.meQuestions) {
+    try {
+      const questions = localStorage.getItem('seen_me_questions');
+      if (questions) data.contents.meQuestions = JSON.parse(questions);
+    } catch { /* ignore */ }
+  }
+
+  // Onboarding data (still mostly local)
   try {
     const onboarding = localStorage.getItem('seen_onboarding');
     if (onboarding) {
@@ -215,6 +241,7 @@ export default function PrivacyData() {
   const navigate = useNavigate();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { t, language } = useLanguage();
+  const { seenUser } = useAuth();
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -224,7 +251,7 @@ export default function PrivacyData() {
   }, [toast]);
 
   const handleExportText = () => {
-    const data = gatherExportData();
+    const data = gatherExportData(seenUser);
     if (Object.keys(data.contents).length === 0) {
       setToast(t('settings.privacy.export_empty'));
       return;
@@ -236,7 +263,7 @@ export default function PrivacyData() {
   };
 
   const handleExportPdf = () => {
-    const data = gatherExportData();
+    const data = gatherExportData(seenUser);
     if (Object.keys(data.contents).length === 0) {
       setToast(t('settings.privacy.export_empty'));
       return;
