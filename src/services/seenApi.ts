@@ -40,20 +40,23 @@ export async function sendReflect(
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
     
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Seen-App-Key': APP_KEY,
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        text,
-        language,
-        mode
-      }),
-      signal: controller.signal
-    });
+  // Create headers explicitly without undefined values
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Seen-App-Key': APP_KEY,
+    'Accept': 'application/json'
+  };
+
+  const response = await fetch(API_URL, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      text,
+      language,
+      mode
+    }),
+    signal: controller.signal
+  });
     
     clearTimeout(timeoutId);
 
@@ -149,16 +152,18 @@ export async function sendReflectWithGate(
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Seen-App-Key': APP_KEY,
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Seen-App-Key': APP_KEY,
+    'Accept': 'application/json'
+  };
+
+  const response = await fetch(API_URL, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+    signal: controller.signal
+  });
     
     clearTimeout(timeoutId);
     
@@ -285,16 +290,18 @@ export async function extractReflectSummary(
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout for LLM
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Seen-App-Key': APP_KEY,
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(request),
-      signal: controller.signal
-    });
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Seen-App-Key': APP_KEY,
+    'Accept': 'application/json'
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(request),
+    signal: controller.signal
+  });
 
     clearTimeout(timeoutId);
 
