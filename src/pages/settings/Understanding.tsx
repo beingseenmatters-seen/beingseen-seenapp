@@ -178,7 +178,16 @@ export default function Understanding() {
             <ChevronLeft size={24} strokeWidth={1.5} />
           </button>
           <span className="text-sm font-medium tracking-widest text-muted uppercase">{t('settings.understanding.header')}</span>
-          <div className="w-8" /> {/* Spacer */}
+          <button 
+            onClick={handleSave}
+            disabled={!isDirty || isSaving}
+            className={clsx(
+              'text-sm font-medium px-2 py-1 rounded-md transition-colors',
+              isDirty && !isSaving ? 'text-primary hover:bg-gray-100' : 'text-gray-300 cursor-not-allowed'
+            )}
+          >
+            {isSaving ? '...' : t('common.save')}
+          </button>
         </div>
 
         {/* Toast notification */}
@@ -191,7 +200,7 @@ export default function Understanding() {
         )}
 
         {/* Scrollable content area */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-12">
+        <div className="flex-1 overflow-y-auto px-6 pb-12 space-y-12">
           <div className="pt-2 pb-6">
              <h1 className="text-2xl font-light text-primary mb-3">{t('settings.understanding.title')}</h1>
              <p className="text-secondary font-light text-sm leading-relaxed whitespace-pre-line">
@@ -285,28 +294,12 @@ export default function Understanding() {
             );
           })}
 
-          {/* Footer note - now part of scrollable content */}
-          <div className="pb-24">
+          {/* Footer note */}
+          <div className="pb-12">
             <p className="text-[10px] text-center text-muted">
               {t('settings.understanding.footer')}
             </p>
           </div>
-        </div>
-
-        {/* Sticky Save Button at bottom - always visible */}
-        <div className="absolute bottom-0 left-0 right-0 px-6 py-4 bg-white/95 backdrop-blur-md border-t border-gray-100 z-50" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }}>
-          <button 
-            onClick={handleSave}
-            disabled={!isDirty || isSaving}
-            className={clsx(
-              "w-full py-4 rounded-2xl text-lg font-light transition-colors",
-              isDirty && !isSaving
-                ? "bg-primary text-white hover:bg-black" 
-                : "bg-gray-100 text-gray-400 cursor-not-allowed"
-            )}
-          >
-            {isSaving ? '...' : t('settings.understanding.action_save')}
-          </button>
         </div>
       </div>
     </div>
