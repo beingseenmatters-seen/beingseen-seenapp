@@ -635,9 +635,10 @@ export async function saveApprovedSummary(
       };
 
       if (model) {
-        soulProfileUpdate.reflectModel.aggregated = {
+        soulProfileUpdate.reflectModel = {
           ...model,
-          updatedAt: serverTimestamp()
+          updatedAt: serverTimestamp(),
+          latestInsight: soulProfileUpdate.reflectModel.latestInsight
         };
       }
 
