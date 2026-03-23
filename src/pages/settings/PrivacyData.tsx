@@ -7,6 +7,7 @@ import { useAuth } from '../../auth/AuthContext';
 import type { SeenUser } from '../../auth/providers/types';
 import { Capacitor } from '@capacitor/core';
 import { Share } from '@capacitor/share';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 
 // Gather all exportable user data from Firestore (via AuthContext) and localStorage
 function gatherExportData(seenUser: SeenUser | null) {
@@ -276,7 +277,7 @@ export default function PrivacyData() {
     setToast(t('settings.privacy.export_success'));
   };
 
-  const handleExportPdf = () => {
+  const handleExportPdf = async () => {
     const data = gatherExportData(seenUser);
     if (Object.keys(data.contents).length === 0) {
       setToast(t('settings.privacy.export_empty'));
@@ -285,28 +286,27 @@ export default function PrivacyData() {
     const html = generatePrintableHtml(data, language);
     
     if (Capacitor.isNativePlatform()) {
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = '0';
-      document.body.appendChild(iframe);
-      
-      const doc = iframe.contentWindow?.document;
-      if (doc) {
-        doc.open();
-        doc.write(html);
-        doc.close();
-        setTimeout(() => {
-          iframe.contentWindow?.print();
-          setTimeout(() => {
-            if (document.body.contains(iframe)) {
-              document.body.removeChild(iframe);
-            }
-          }, 5000);
-        }, 500);
+      try {
+        const filename = `seen-export-${new Date().toISOString().slice(0, 10)}.html`;
+        await Filesystem.writeFile({
+          path: filename,
+          data: html,
+          directory: Directory.Cache,
+          encoding: Encoding.UTF8
+        });
+        
+        const uriResult = await Filesystem.getUri({
+          path: filename,
+          directory: Directory.Cache
+        });
+        
+        await Share.share({
+          title: 'Export Data',
+          url: uriResult.uri
+        });
+      } catch (err) {
+        console.error('Failed to share HTML file', err);
+        setToast('Export failed');
       }
     } else {
       const printWindow = window.open('', '_blank');
