@@ -790,6 +790,19 @@ function buildUserUnderstandingModel(
         .filter((value): value is string => Boolean(value)),
       threshold
     ),
+    
+    // Aggregate new LLM layers (simple selection for now, could be enhanced later)
+    contentSummary: selectDominantValue(insights.map(i => i.contentSummary).filter((v): v is string => Boolean(v)), threshold),
+    emotion: selectDominantValue(insights.map(i => i.emotion).filter((v): v is string => Boolean(v)), threshold),
+    trigger: selectDominantValue(insights.map(i => i.trigger).filter((v): v is string => Boolean(v)), threshold),
+    values: selectDominantValue(insights.map(i => i.values).filter((v): v is string => Boolean(v)), threshold),
+    behaviorPattern: selectDominantValue(insights.map(i => i.behaviorPattern).filter((v): v is string => Boolean(v)), threshold),
+    decisionModel: selectDominantValue(insights.map(i => i.decisionModel).filter((v): v is string => Boolean(v)), threshold),
+    personalityTraits: selectDominantValue(insights.map(i => i.personalityTraits).filter((v): v is string => Boolean(v)), threshold),
+    relationshipNeed: selectDominantValue(insights.map(i => i.relationshipNeed).filter((v): v is string => Boolean(v)), threshold),
+    motivation: selectDominantValue(insights.map(i => i.motivation).filter((v): v is string => Boolean(v)), threshold),
+    coreConflict: selectDominantValue(insights.map(i => i.coreConflict).filter((v): v is string => Boolean(v)), threshold),
+
     sourceInsightCount: insights.length,
     lastUpdated: Date.now(),
   };
