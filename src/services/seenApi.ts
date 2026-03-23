@@ -18,7 +18,7 @@ export interface ReflectResponse {
 // In production (iOS App), use direct AWS API URL
 // In development, use proxy path to avoid CORS issues
 // On web (Vercel), we must also use direct AWS API URL because there is no Vite proxy
-const API_URL = import.meta.env.PROD || Capacitor.getPlatform() === 'web'
+const API_URL = import.meta.env.PROD || (Capacitor.getPlatform() === 'web' && !import.meta.env.DEV)
   ? 'https://rtbzs3sjwe.execute-api.ap-southeast-2.amazonaws.com/reflect/send'
   : '/api/reflect/send';
 const APP_KEY = 'test_seen_app_key';
@@ -239,4 +239,77 @@ export function getModeString(selectedMode: number | null): string {
   // Fallback to saved preference or default
   const savedPref = JSON.parse(localStorage.getItem('seen_ai_preference') || '{}');
   return savedPref.role || 'mirror';
+}
+
+export interface ExtractSummaryRequest {
+  uid: string;
+  sessionId: string;
+  conversation: Array<{ role: 'user' | 'ai' | 'system'; text: string }>;
+  module: 'reflect';
+  language: string;
+}
+
+export interface ExtractSummaryResponse {
+  layers: {
+    contentSummary?: string;
+    emotion?: string;
+    trigger?: string;
+    values?: string;
+    behaviorPattern?: string;
+    decisionModel?: string;
+    personalityTraits?: string;
+    relationshipNeed?: string;
+    motivation?: string;
+    coreConflict?: string;
+  };
+  summary: string;
+}
+
+/**
+ * Call backend to extract 10-layer structured summary from conversation
+ */
+export async function extractReflectSummary(
+  request: ExtractSummaryRequest
+): Promise<ExtractSummaryResponse> {
+  const url = import.meta.env.PROD || (Capacitor.getPlatform() === 'web' && !import.meta.env.DEV)
+    ? 'https://rtbzs3sjwe.execute-api.ap-southeast-2.amazonaws.com/reflect/extract'
+    : '/api/reflect/extract';
+
+  console.log('[SeenAPI] Sending extract request to:', url);
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout for LLM
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Seen-App-Key': APP_KEY,
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(request),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'No response body');
+      console.error('[SeenAPI] Extract error response:', errorText);
+      throw new Error(`API ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('[SeenAPI] Extract success:', data);
+    return data as ExtractSummaryResponse;
+  } catch (error: unknown) {
+    const err = error as Error & { name?: string };
+    console.error('[SeenAPI] Extract fetch error:', err);
+
+    if (err.name === 'AbortError') {
+      throw new Error('提取超时，请检查网络连接');
+    }
+    throw error;
+  }
 }

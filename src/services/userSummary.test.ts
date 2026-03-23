@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { extractSummaryFromConversation } from './userSummary';
 
 describe('extractSummaryFromConversation', () => {
-  it('extracts cognitive understanding instead of personality labels', () => {
-    const extraction = extractSummaryFromConversation(
+  it('extracts cognitive understanding instead of personality labels', async () => {
+    const extraction = await extractSummaryFromConversation(
       [
         {
           role: 'user',
@@ -42,8 +42,8 @@ describe('extractSummaryFromConversation', () => {
     expect(extraction.summaryText).toContain('思考方式');
   });
 
-  it('keeps explicit user questions when they carry the core inquiry', () => {
-    const extraction = extractSummaryFromConversation(
+  it('keeps explicit user questions when they carry the core inquiry', async () => {
+    const extraction = await extractSummaryFromConversation(
       [
         { role: 'user', text: '如果聚合最后一定会走向分散，那个体关系在里面到底还能留下什么？' },
         { role: 'user', text: '什么才算真实信任？' },
