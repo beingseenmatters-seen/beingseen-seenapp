@@ -1,16 +1,40 @@
-import { useMemo, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check } from 'lucide-react';
+import { Check, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '../i18n';
-import { formatInsightTag, readBestAvailableMatchingProfile } from '../services/userSummary';
+import { formatInsightTag } from '../services/userSummary';
+import { useAuth } from '../auth/AuthContext';
+import { getResonateCandidate, sendConnectionRequest } from '../services/connections';
+import type { CandidateProfile } from '../services/connections';
 
 export default function Resonate() {
   const { t, effectiveLanguage } = useLanguage();
+  const { firebaseUser } = useAuth();
 
-  const matchingProfile = useMemo(() => readBestAvailableMatchingProfile(), []);
-  const hasProfile = Boolean(matchingProfile.profile);
-  const [step, setStep] = useState(hasProfile ? 1 : 0); // 0: Not Ready / Empty, 1: Candidate, 2: Confirm, 3: Waiting
+  const [candidate, setCandidate] = useState<CandidateProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [step, setStep] = useState(0); // 0: Not Ready / Empty, 1: Candidate, 2: Confirm, 3: Waiting
+  const [isSending, setIsSending] = useState(false);
+
+  useEffect(() => {
+    async function fetchCandidate() {
+      if (!firebaseUser?.uid) {
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(true);
+      const found = await getResonateCandidate(firebaseUser.uid);
+      setCandidate(found);
+      if (found) {
+        setStep(1);
+      } else {
+        setStep(0);
+      }
+      setIsLoading(false);
+    }
+    fetchCandidate();
+  }, [firebaseUser?.uid]);
 
   const fadeIn = {
     initial: { opacity: 0, scale: 0.98 },
@@ -19,58 +43,74 @@ export default function Resonate() {
     transition: { duration: 0.5, ease: 'easeOut' as const }
   };
 
-  const profile = matchingProfile.profile;
-  const sourceTag = matchingProfile.source === 'aggregated_model'
-    ? (effectiveLanguage === 'zh' ? '长期理解模型' : 'Long-term Understanding')
-    : (effectiveLanguage === 'zh' ? '已确认总结' : 'Approved Insight');
+  const profile = candidate?.soulProfile?.reflectModel || candidate?.soulProfile?.latestInsight;
+  const hasProfile = Boolean(profile);
 
-  const profileTitle = matchingProfile.source === 'aggregated_model'
-    ? (effectiveLanguage === 'zh'
-        ? `基于 ${matchingProfile.insightCount} 次已认可总结，我们看见了一些更稳定的思考轮廓。`
-        : `Based on ${matchingProfile.insightCount} approved reflections, a more stable way of thinking is emerging.`)
-    : (effectiveLanguage === 'zh'
-        ? '你的思考轮廓，已经开始变得清晰。'
-        : 'The outline of how you think is beginning to come into focus.');
+  const sourceTag = effectiveLanguage === 'zh' ? '同频推荐' : 'Resonance Match';
 
-  const profileSubtitle = matchingProfile.source === 'aggregated_model'
-    ? (effectiveLanguage === 'zh'
-        ? '同频匹配会优先参考这些长期稳定的思考方式，而不是已清除的原始聊天内容。'
-        : 'Matching now prioritizes these longer-term thinking patterns, not cleared raw chats.')
-    : (effectiveLanguage === 'zh'
-        ? '目前仍以已确认的单次总结为主，随着更多总结累积，会形成更稳定的长期理解。'
-        : 'For now this is based on approved session summaries. As more are confirmed, a more stable long-term understanding model will form.');
+  const profileTitle = effectiveLanguage === 'zh'
+        ? `发现了一个与你思考频率相似的人。`
+        : `Found someone whose thinking resonates with yours.`;
+
+  const profileSubtitle = effectiveLanguage === 'zh'
+        ? '基于你们的 Reflect 总结，你们在某些深层认知上有着奇妙的共鸣。'
+        : 'Based on your Reflect summaries, you share a fascinating alignment in deeper cognition.';
 
   const formatValue = (value: string | undefined, fallback: string) => {
     if (!value) return fallback;
     return formatInsightTag(value, effectiveLanguage === 'zh' ? 'zh' : 'en');
   };
 
-  const dimensions = [
+  const dimensions = profile ? [
     {
       label: effectiveLanguage === 'zh' ? '思考方式' : 'Thinking Style',
-      value: formatValue(profile?.thinkingStyle[0], effectiveLanguage === 'zh' ? '哲学式推理' : 'Philosophical reasoning'),
+      value: formatValue(profile.thinkingStyle?.[0], effectiveLanguage === 'zh' ? '哲学式推理' : 'Philosophical reasoning'),
     },
     {
       label: effectiveLanguage === 'zh' ? '核心问题' : 'Core Question',
-      value: formatValue(profile?.coreQuestions[0], effectiveLanguage === 'zh' ? '什么决定关系能否长久' : 'What makes relationships endure'),
+      value: formatValue(profile.coreQuestions?.[0], effectiveLanguage === 'zh' ? '什么决定关系能否长久' : 'What makes relationships endure'),
     },
     {
       label: effectiveLanguage === 'zh' ? '世界观' : 'Worldview',
-      value: formatValue(profile?.worldview[0], effectiveLanguage === 'zh' ? '人心难以被精确测量' : 'Human hearts resist measurement'),
+      value: formatValue(profile.worldview?.[0], effectiveLanguage === 'zh' ? '人心难以被精确测量' : 'Human hearts resist measurement'),
     },
     {
       label: effectiveLanguage === 'zh' ? '关系哲学' : 'Relationship Philosophy',
-      value: formatValue(profile?.relationshipPhilosophy[0], effectiveLanguage === 'zh' ? '关系更依赖认知同频而非强烈情绪' : 'Alignment matters more than intensity'),
+      value: formatValue(profile.relationshipPhilosophy?.[0], effectiveLanguage === 'zh' ? '关系更依赖认知同频而非强烈情绪' : 'Alignment matters more than intensity'),
     },
     {
       label: effectiveLanguage === 'zh' ? '对话风格' : 'Conversation Style',
-      value: formatValue(profile?.conversationStyle[0], effectiveLanguage === 'zh' ? '概念驱动的对话' : 'Concept-driven dialogue'),
+      value: formatValue(profile.conversationStyle?.[0], effectiveLanguage === 'zh' ? '概念驱动的对话' : 'Concept-driven dialogue'),
     },
-  ];
+  ] : [];
 
   const handleNotNow = () => {
     setStep(0);
   };
+
+  const handleSendRequest = async () => {
+    if (!firebaseUser?.uid || !candidate) return;
+    setIsSending(true);
+    const success = await sendConnectionRequest(firebaseUser.uid, candidate.uid);
+    setIsSending(false);
+    if (success) {
+      setStep(3);
+    } else {
+      // If failed or duplicate, just go back to empty for now
+      setStep(0);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center">
+        <Loader2 className="animate-spin text-gray-300 mb-4" size={32} />
+        <p className="text-sm text-muted font-light">
+          {effectiveLanguage === 'zh' ? '正在寻找同频的人...' : 'Finding resonance...'}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col relative">
@@ -145,11 +185,6 @@ export default function Resonate() {
                 {t('common.not_now')}
               </button>
             </div>
-            <p className="text-[10px] text-center text-muted mt-4">
-              {effectiveLanguage === 'zh'
-                ? `当前理解来源：${matchingProfile.source === 'aggregated_model' ? '长期聚合模型' : '已确认单次总结'} · ${matchingProfile.insightCount} 条`
-                : `Current source: ${matchingProfile.source === 'aggregated_model' ? 'aggregated model' : 'approved summaries'} · ${matchingProfile.insightCount} insight(s)`}
-            </p>
           </motion.div>
         )}
 
@@ -162,15 +197,17 @@ export default function Resonate() {
             <div className="flex w-full space-x-4 pt-8">
               <button
                 onClick={() => setStep(1)}
-                className="flex-1 py-4 rounded-xl border border-gray-200 text-secondary hover:bg-gray-50 transition-colors"
+                disabled={isSending}
+                className="flex-1 py-4 rounded-xl border border-gray-200 text-secondary hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
                 {t('common.cancel')}
               </button>
               <button
-                onClick={() => setStep(3)}
-                className="flex-1 py-4 rounded-xl bg-primary text-white hover:bg-black transition-colors"
+                onClick={handleSendRequest}
+                disabled={isSending}
+                className="flex-1 py-4 rounded-xl bg-primary text-white hover:bg-black transition-colors disabled:opacity-50 flex justify-center items-center"
               >
-                {t('resonate.action_send_request')}
+                {isSending ? <Loader2 className="animate-spin" size={20} /> : t('resonate.action_send_request')}
               </button>
             </div>
           </motion.div>

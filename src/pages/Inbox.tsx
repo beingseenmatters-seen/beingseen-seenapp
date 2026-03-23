@@ -1,17 +1,72 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, MoreHorizontal, Send } from 'lucide-react';
+import { ChevronLeft, MoreHorizontal, Send, Check, X, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useLanguage } from '../i18n';
+import { useAuth } from '../auth/AuthContext';
+import { 
+  getInboxRequests, 
+  getUserConnections, 
+  acceptConnectionRequest, 
+  declineConnectionRequest
+} from '../services/connections';
+import type { ConnectionRequest, Connection } from '../services/connections';
 
 export default function Inbox() {
+  const { t, effectiveLanguage } = useLanguage();
+  const { firebaseUser } = useAuth();
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState("");
-  const { t } = useLanguage();
   
+  const [requests, setRequests] = useState<ConnectionRequest[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+
   const [messages, setMessages] = useState([
      { id: 1, text: t('inbox.system_msg'), system: true }
   ]);
+
+  useEffect(() => {
+    async function loadData() {
+      if (!firebaseUser?.uid) return;
+      setIsLoading(true);
+      const [reqs, conns] = await Promise.all([
+        getInboxRequests(firebaseUser.uid),
+        getUserConnections(firebaseUser.uid)
+      ]);
+      setRequests(reqs);
+      setConnections(conns);
+      setIsLoading(false);
+    }
+    loadData();
+  }, [firebaseUser?.uid]);
+
+  const handleAccept = async (req: ConnectionRequest) => {
+    if (!req.id) return;
+    setActionLoadingId(req.id);
+    const success = await acceptConnectionRequest(req.id);
+    if (success) {
+      setRequests(prev => prev.filter(r => r.id !== req.id));
+      // Refresh connections
+      if (firebaseUser?.uid) {
+        const conns = await getUserConnections(firebaseUser.uid);
+        setConnections(conns);
+      }
+    }
+    setActionLoadingId(null);
+  };
+
+  const handleDecline = async (req: ConnectionRequest) => {
+    if (!req.id) return;
+    setActionLoadingId(req.id);
+    const success = await declineConnectionRequest(req.id);
+    if (success) {
+      setRequests(prev => prev.filter(r => r.id !== req.id));
+    }
+    setActionLoadingId(null);
+  };
 
   const handleSend = () => {
     if (!inputValue.trim()) return;
@@ -36,27 +91,92 @@ export default function Inbox() {
             initial={{ opacity: 0, x: -20 }} 
             animate={{ opacity: 1, x: 0 }} 
             exit={{ opacity: 0, x: -20 }} 
-            className="px-6 pt-4 h-full flex flex-col"
+            className="px-6 pt-4 h-full flex flex-col overflow-y-auto no-scrollbar pb-8"
           >
             <div className="space-y-1 mb-6">
               <p className="text-secondary font-light text-sm">{t('inbox.subtitle')}</p>
             </div>
 
-            <div className="flex-1 space-y-4">
-              {/* Conversation Item */}
-              <button 
-                onClick={() => setSelectedId("1")}
-                className="w-full text-left p-6 rounded-2xl bg-gray-50 hover:bg-gray-100 transition-colors group"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="text-lg font-medium text-primary">{t('inbox.item_title')}</h3>
-                  <span className="text-xs text-muted">{t('inbox.time_ago')}</span>
+            {isLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="animate-spin text-gray-300" size={24} />
+              </div>
+            ) : (
+              <div className="flex-1 space-y-8">
+                
+                {/* Pending Requests */}
+                {requests.length > 0 && (
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-medium text-muted uppercase tracking-wider">
+                      {effectiveLanguage === 'zh' ? '新的连接请求' : 'New Requests'}
+                    </h4>
+                    {requests.map(req => (
+                      <div key={req.id} className="p-5 rounded-2xl bg-gray-50 border border-gray-100">
+                        <div className="flex justify-between items-start mb-3">
+                          <h3 className="text-base font-medium text-primary">
+                            {req.senderProfile?.nickname || 'Someone'}
+                          </h3>
+                          <span className="text-xs text-muted">
+                            {new Date(req.createdAt?.toMillis?.() || Date.now()).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <p className="text-sm text-secondary font-light mb-4">
+                          {req.reason}
+                        </p>
+                        <div className="flex space-x-3">
+                          <button 
+                            onClick={() => handleAccept(req)}
+                            disabled={actionLoadingId === req.id}
+                            className="flex-1 py-2.5 bg-primary text-white text-sm rounded-xl hover:bg-black transition-colors flex items-center justify-center"
+                          >
+                            {actionLoadingId === req.id ? <Loader2 className="animate-spin" size={16} /> : <><Check size={16} className="mr-1.5" /> {effectiveLanguage === 'zh' ? '接受' : 'Accept'}</>}
+                          </button>
+                          <button 
+                            onClick={() => handleDecline(req)}
+                            disabled={actionLoadingId === req.id}
+                            className="flex-1 py-2.5 border border-gray-200 text-secondary text-sm rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center"
+                          >
+                            {actionLoadingId === req.id ? <Loader2 className="animate-spin" size={16} /> : <><X size={16} className="mr-1.5" /> {effectiveLanguage === 'zh' ? '忽略' : 'Decline'}</>}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Connections */}
+                <div className="space-y-4">
+                  <h4 className="text-xs font-medium text-muted uppercase tracking-wider">
+                    {effectiveLanguage === 'zh' ? '已连接' : 'Connections'}
+                  </h4>
+                  {connections.length === 0 && requests.length === 0 && (
+                    <p className="text-sm text-muted font-light">
+                      {effectiveLanguage === 'zh' ? '暂无消息' : 'No messages yet'}
+                    </p>
+                  )}
+                  {connections.map(conn => (
+                    <button 
+                      key={conn.id}
+                      onClick={() => setSelectedId(conn.id || "1")}
+                      className="w-full text-left p-5 rounded-2xl bg-gray-50 hover:bg-gray-100 transition-colors group"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="text-base font-medium text-primary">
+                          {conn.otherUserProfile?.nickname || 'Someone'}
+                        </h3>
+                        <span className="text-xs text-muted">
+                          {new Date(conn.createdAt?.toMillis?.() || Date.now()).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <p className="text-sm text-secondary font-light line-clamp-1">
+                        {effectiveLanguage === 'zh' ? '点击开始对话...' : 'Tap to start conversation...'}
+                      </p>
+                    </button>
+                  ))}
                 </div>
-                <p className="text-sm text-secondary font-light line-clamp-2">
-                  {t('inbox.item_desc')}
-                </p>
-              </button>
-            </div>
+
+              </div>
+            )}
           </motion.div>
         )}
 
