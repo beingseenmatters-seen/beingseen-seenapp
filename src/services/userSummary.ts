@@ -171,37 +171,82 @@ const MICRO_KEYWORDS = ['关系', '忠诚', '信任', '亲密', '真实', 'relat
 const STRUCTURED_PATTERNS = [/\d+[.、:：)）]/, /首先|其次|然后|最后|一方面|另一方面/, /first|second|third|finally|on the one hand|on the other hand/i];
 const COMPARATIVE_PATTERNS = ['不是', '而是', '相比', '对照', 'rather than', 'instead of', 'compare', 'contrast'];
 
-export function extractSummaryFromConversation(
+import { extractReflectSummary } from './seenApi';
+
+export async function extractSummaryFromConversation(
   messages: ConversationMessage[],
-  options: { preferredResponseStyle?: string; language?: InsightLanguage } = {}
-): ConversationExtraction {
+  options: { preferredResponseStyle?: string; language?: InsightLanguage; uid?: string; sessionId?: string } = {}
+): Promise<ConversationExtraction> {
   const language = options.language ?? 'zh';
-  const userMessages = messages.filter(message => message.role === 'user' && message.text.trim());
-  const allMessages = messages.filter(message => message.role !== 'system' && message.text.trim());
-  const userText = userMessages.map(message => message.text).join('\n');
-  const userTextLower = userText.toLowerCase();
-  const allTextLower = allMessages.map(message => message.text).join('\n').toLowerCase();
+  const uid = options.uid || 'anonymous';
+  const sessionId = options.sessionId || 'unknown';
 
-  const thinkingPath = extractThinkingPath(userMessages);
-  const thinkingStyle = inferThinkingStyle(userTextLower, thinkingPath);
-  const coreQuestions = inferCoreQuestions(userMessages, userTextLower, language);
-  const worldview = inferWorldview(userTextLower, allTextLower);
-  const relationshipPhilosophy = inferRelationshipPhilosophy(userTextLower);
-  const conversationStyle = inferConversationStyle(userMessages, userTextLower, thinkingPath);
+  try {
+    const response = await extractReflectSummary({
+      uid,
+      sessionId,
+      conversation: messages,
+      module: 'reflect',
+      language
+    });
 
-  const extraction: ConversationExtraction = {
-    summaryText: '',
-    thinkingStyle: thinkingStyle.slice(0, 4),
-    coreQuestions: coreQuestions.slice(0, 4),
-    worldview: worldview.slice(0, 4),
-    relationshipPhilosophy: relationshipPhilosophy.slice(0, 4),
-    conversationStyle: conversationStyle.slice(0, 4),
-    thinkingPath: thinkingPath.slice(0, 6),
-    preferredResponseStyle: options.preferredResponseStyle,
-  };
+    const extraction: ConversationExtraction = {
+      summaryText: response.summary || '',
+      thinkingStyle: [],
+      coreQuestions: [],
+      worldview: [],
+      relationshipPhilosophy: [],
+      conversationStyle: [],
+      thinkingPath: [],
+      preferredResponseStyle: options.preferredResponseStyle,
+      contentSummary: response.layers?.contentSummary,
+      emotion: response.layers?.emotion,
+      trigger: response.layers?.trigger,
+      values: response.layers?.values,
+      behaviorPattern: response.layers?.behaviorPattern,
+      decisionModel: response.layers?.decisionModel,
+      personalityTraits: response.layers?.personalityTraits,
+      relationshipNeed: response.layers?.relationshipNeed,
+      motivation: response.layers?.motivation,
+      coreConflict: response.layers?.coreConflict,
+    };
 
-  extraction.summaryText = buildSummaryText(extraction, language);
-  return extraction;
+    // Fallback to local logic if summaryText is empty
+    if (!extraction.summaryText) {
+      throw new Error('Empty summary from backend');
+    }
+
+    return extraction;
+  } catch (error) {
+    console.error('[UserSummary] Backend extraction failed, falling back to local:', error);
+    
+    const userMessages = messages.filter(message => message.role === 'user' && message.text.trim());
+    const allMessages = messages.filter(message => message.role !== 'system' && message.text.trim());
+    const userText = userMessages.map(message => message.text).join('\n');
+    const userTextLower = userText.toLowerCase();
+    const allTextLower = allMessages.map(message => message.text).join('\n').toLowerCase();
+
+    const thinkingPath = extractThinkingPath(userMessages);
+    const thinkingStyle = inferThinkingStyle(userTextLower, thinkingPath);
+    const coreQuestions = inferCoreQuestions(userMessages, userTextLower, language);
+    const worldview = inferWorldview(userTextLower, allTextLower);
+    const relationshipPhilosophy = inferRelationshipPhilosophy(userTextLower);
+    const conversationStyle = inferConversationStyle(userMessages, userTextLower, thinkingPath);
+
+    const extraction: ConversationExtraction = {
+      summaryText: '',
+      thinkingStyle: thinkingStyle.slice(0, 4),
+      coreQuestions: coreQuestions.slice(0, 4),
+      worldview: worldview.slice(0, 4),
+      relationshipPhilosophy: relationshipPhilosophy.slice(0, 4),
+      conversationStyle: conversationStyle.slice(0, 4),
+      thinkingPath: thinkingPath.slice(0, 6),
+      preferredResponseStyle: options.preferredResponseStyle,
+    };
+
+    extraction.summaryText = buildSummaryText(extraction, language);
+    return extraction;
+  }
 }
 
 export function formatInsightTag(key: string, language: InsightLanguage): string {
@@ -542,11 +587,18 @@ export function hasMeaningfulExtraction(extraction: ConversationExtraction): boo
   return hasMeaningfulUnderstanding(extraction);
 }
 
-export function saveApprovedSummary(extraction: ConversationExtraction): {
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from './firebase';
+
+export async function saveApprovedSummary(
+  extraction: ConversationExtraction,
+  uid?: string,
+  sessionId?: string
+): Promise<{
   insight: SessionInsight;
   model: UserUnderstandingModel | null;
   insightCount: number;
-} {
+}> {
   const insight = createSessionInsight(extraction);
   const insights = [...readSessionInsights(), insight];
   saveSessionInsights(insights);
@@ -557,6 +609,34 @@ export function saveApprovedSummary(extraction: ConversationExtraction): {
   if (insights.length >= MIN_INSIGHTS_FOR_MODEL) {
     model = buildUserUnderstandingModel(insights);
     saveUserUnderstandingModel(model);
+  }
+
+  // Persist to Firestore if authenticated
+  if (uid) {
+    try {
+      // Use the provided sessionId, or generate a new one if it's missing
+      const finalSessionId = sessionId || crypto.randomUUID();
+      const insightRef = doc(db, 'users', uid, 'reflectInsights', finalSessionId);
+      await setDoc(insightRef, {
+        ...insight,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      if (model) {
+        const userRef = doc(db, 'users', uid);
+        await setDoc(userRef, {
+          soulProfile: {
+            reflectModel: {
+              ...model,
+              updatedAt: serverTimestamp()
+            }
+          }
+        }, { merge: true });
+      }
+      console.log('[UserSummary] Persisted to Firestore successfully with sessionId:', finalSessionId);
+    } catch (error) {
+      console.error('[UserSummary] Failed to persist to Firestore:', error);
+    }
   }
 
   console.log('[UserSummary] Approved summary saved:', {

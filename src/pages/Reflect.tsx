@@ -95,6 +95,7 @@ export default function Reflect() {
 
   const [pendingSummary, setPendingSummary] = useState<ConversationExtraction | null>(null);
   const [showSummaryConfirmation, setShowSummaryConfirmation] = useState(false);
+  const [isExtractingSummary, setIsExtractingSummary] = useState(false);
   const [pendingInsightAction, setPendingInsightAction] = useState<'clear' | 'finish' | 'leave' | 'new' | null>(null);
 
   // TODO (Spec §九): Lightweight calibration after conversation end
@@ -231,34 +232,46 @@ export default function Reflect() {
     return userTurns >= 2 && aiTurns >= 1 && meaningfulTurns >= 3;
   };
 
-  const openSummaryConfirmation = (action: 'clear' | 'finish' | 'leave' | 'new') => {
-    const extracted = extractSummaryFromConversation(messages, {
-      preferredResponseStyle: getStyleDisplayName(effectiveSelectedMode),
-      language: effectiveLanguage === 'zh' ? 'zh' : 'en',
-    });
+  const openSummaryConfirmation = async (action: 'clear' | 'finish' | 'leave' | 'new') => {
+    setIsExtractingSummary(true);
+    try {
+      const extracted = await extractSummaryFromConversation(messages, {
+        preferredResponseStyle: getStyleDisplayName(effectiveSelectedMode),
+        language: effectiveLanguage === 'zh' ? 'zh' : 'en',
+        uid: seenUser?.uid || 'anonymous',
+        sessionId: sessionId || 'unknown'
+      });
 
-    if (!hasMeaningfulExtraction(extracted)) {
+      if (!hasMeaningfulExtraction(extracted)) {
+        return false;
+      }
+
+      setPendingSummary(extracted);
+      setPendingInsightAction(action);
+      setShowSummaryConfirmation(true);
+      return true;
+    } catch (error) {
+      console.error('[Reflect] Failed to extract summary:', error);
       return false;
+    } finally {
+      setIsExtractingSummary(false);
     }
-
-    setPendingSummary(extracted);
-    setPendingInsightAction(action);
-    setShowSummaryConfirmation(true);
-    return true;
   };
 
-  const handleClearContext = () => {
+  const handleClearContext = async () => {
     if (messages.length > 0 && hasMeaningfulExchange()) {
-      if (openSummaryConfirmation('clear')) {
+      const opened = await openSummaryConfirmation('clear');
+      if (opened) {
         return;
       }
     }
     performClear();
   };
 
-  const handleStartNewConversation = () => {
+  const handleStartNewConversation = async () => {
     if ((messages.length > 0 || hasSavedSession) && hasMeaningfulExchange()) {
-      if (openSummaryConfirmation('new')) {
+      const opened = await openSummaryConfirmation('new');
+      if (opened) {
         return;
       }
     }
@@ -267,9 +280,10 @@ export default function Reflect() {
     setStep(1);
   };
 
-  const handleEndConversation = () => {
+  const handleEndConversation = async () => {
     if (messages.length > 0 && hasMeaningfulExchange()) {
-      if (openSummaryConfirmation('finish')) {
+      const opened = await openSummaryConfirmation('finish');
+      if (opened) {
         return;
       }
     }
@@ -298,9 +312,16 @@ export default function Reflect() {
     console.log('[Reflect] cleared_context (raw chat deleted)');
   };
 
-  const handleConfirmSummary = () => {
+  const handleConfirmSummary = async () => {
+    // Capture the current sessionId before it might get cleared
+    const currentSessionId = sessionId;
+    
     if (pendingSummary) {
-      saveApprovedSummary(pendingSummary);
+      await saveApprovedSummary(
+        pendingSummary,
+        seenUser?.uid,
+        currentSessionId
+      );
     }
     if (pendingInsightAction === 'new') {
       performClear();
@@ -485,12 +506,24 @@ export default function Reflect() {
 
   const summarySections = pendingSummary
     ? [
+        // Legacy local extraction fields
         { key: 'thinkingPath', label: effectiveLanguage === 'zh' ? '你的思考路径' : 'Your Thinking Path', values: pendingSummary.thinkingPath },
         { key: 'thinkingStyle', label: effectiveLanguage === 'zh' ? '你的思考方式' : 'Your Thinking Style', values: pendingSummary.thinkingStyle },
         { key: 'coreQuestions', label: effectiveLanguage === 'zh' ? '你的核心问题' : 'Your Core Questions', values: pendingSummary.coreQuestions },
         { key: 'worldview', label: effectiveLanguage === 'zh' ? '你的世界观' : 'Your Worldview', values: pendingSummary.worldview },
         { key: 'relationshipPhilosophy', label: effectiveLanguage === 'zh' ? '你的关系哲学' : 'Your Relationship Philosophy', values: pendingSummary.relationshipPhilosophy },
         { key: 'conversationStyle', label: effectiveLanguage === 'zh' ? '你的对话风格' : 'Your Conversation Style', values: pendingSummary.conversationStyle },
+        
+        // New 10-layer LLM extraction fields
+        { key: 'emotion', label: effectiveLanguage === 'zh' ? '情绪状态' : 'Emotion', values: pendingSummary.emotion ? [pendingSummary.emotion] : [] },
+        { key: 'trigger', label: effectiveLanguage === 'zh' ? '核心触发点' : 'Trigger', values: pendingSummary.trigger ? [pendingSummary.trigger] : [] },
+        { key: 'values', label: effectiveLanguage === 'zh' ? '底层价值观' : 'Values', values: pendingSummary.values ? [pendingSummary.values] : [] },
+        { key: 'behaviorPattern', label: effectiveLanguage === 'zh' ? '行为模式' : 'Behavior Pattern', values: pendingSummary.behaviorPattern ? [pendingSummary.behaviorPattern] : [] },
+        { key: 'decisionModel', label: effectiveLanguage === 'zh' ? '决策模型' : 'Decision Model', values: pendingSummary.decisionModel ? [pendingSummary.decisionModel] : [] },
+        { key: 'personalityTraits', label: effectiveLanguage === 'zh' ? '性格特质' : 'Personality Traits', values: pendingSummary.personalityTraits ? [pendingSummary.personalityTraits] : [] },
+        { key: 'relationshipNeed', label: effectiveLanguage === 'zh' ? '关系需求' : 'Relationship Need', values: pendingSummary.relationshipNeed ? [pendingSummary.relationshipNeed] : [] },
+        { key: 'motivation', label: effectiveLanguage === 'zh' ? '深层动机' : 'Motivation', values: pendingSummary.motivation ? [pendingSummary.motivation] : [] },
+        { key: 'coreConflict', label: effectiveLanguage === 'zh' ? '核心冲突' : 'Core Conflict', values: pendingSummary.coreConflict ? [pendingSummary.coreConflict] : [] },
       ].filter(section => section.values.length > 0)
     : [];
 
@@ -885,6 +918,23 @@ export default function Reflect() {
             </div>
           </motion.div>
         )}
+
+        {/* ==================== Extracting Summary Overlay ==================== */}
+        <AnimatePresence>
+          {isExtractingSummary && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center px-6"
+            >
+              <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mb-4" />
+              <p className="text-sm text-gray-500 font-light">
+                {effectiveLanguage === 'zh' ? '正在提取对话洞察...' : 'Extracting insights...'}
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* ==================== Summary Confirmation Overlay ==================== */}
         <AnimatePresence>
