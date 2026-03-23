@@ -590,6 +590,16 @@ export function hasMeaningfulExtraction(extraction: ConversationExtraction): boo
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
+// Helper to remove undefined values before saving to Firestore
+function removeUndefined<T extends Record<string, any>>(obj: T): T {
+  return Object.entries(obj).reduce((acc, [key, value]) => {
+    if (value !== undefined) {
+      acc[key as keyof T] = value;
+    }
+    return acc;
+  }, {} as T);
+}
+
 export async function saveApprovedSummary(
   extraction: ConversationExtraction,
   uid?: string,
@@ -619,11 +629,14 @@ export async function saveApprovedSummary(
       const finalSessionId = sessionId || crypto.randomUUID();
       const insightRef = doc(db, 'users', uid, 'reflectInsights', finalSessionId);
       
+      const cleanInsight = removeUndefined(insight);
+      const cleanModel = model ? removeUndefined(model) : null;
+
       console.log('[UserSummary] Attempting to write to Firestore path:', `users/${uid}/reflectInsights/${finalSessionId}`);
-      console.log('[UserSummary] Insight payload:', insight);
+      console.log('[UserSummary] Insight payload:', cleanInsight);
       
       await setDoc(insightRef, {
-        ...insight,
+        ...cleanInsight,
         updatedAt: serverTimestamp()
       }, { merge: true });
       
@@ -635,15 +648,15 @@ export async function saveApprovedSummary(
       const soulProfileUpdate: any = {
         reflectModel: {
           latestInsight: {
-            ...insight,
+            ...cleanInsight,
             updatedAt: serverTimestamp()
           }
         }
       };
 
-      if (model) {
+      if (cleanModel) {
         soulProfileUpdate.reflectModel = {
-          ...model,
+          ...cleanModel,
           updatedAt: serverTimestamp(),
           latestInsight: soulProfileUpdate.reflectModel.latestInsight
         };
