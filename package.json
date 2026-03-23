@@ -17,6 +17,7 @@
     "@capacitor/core": "^8.0.1",
     "@capacitor/device": "^8.0.1",
     "@capacitor/ios": "^8.0.1",
+    "@capacitor/share": "^8.0.1",
     "clsx": "^2.1.1",
     "firebase": "^12.10.0",
     "framer-motion": "^12.24.10",

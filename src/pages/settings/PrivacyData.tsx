@@ -5,6 +5,8 @@ import clsx from 'clsx';
 import { useLanguage } from '../../i18n';
 import { useAuth } from '../../auth/AuthContext';
 import type { SeenUser } from '../../auth/providers/types';
+import { Capacitor } from '@capacitor/core';
+import { Share } from '@capacitor/share';
 
 // Gather all exportable user data from Firestore (via AuthContext) and localStorage
 function gatherExportData(seenUser: SeenUser | null) {
@@ -151,16 +153,28 @@ function dataToText(data: Record<string, any>, language: string): string {
 }
 
 // Download file helper
-function downloadFile(content: string, filename: string, mimeType: string) {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+async function downloadFile(content: string, filename: string, mimeType: string) {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await Share.share({
+        title: filename,
+        text: content,
+        dialogTitle: 'Export Data'
+      });
+    } catch (err) {
+      console.error('Share failed', err);
+    }
+  } else {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 }
 
 // Generate printable HTML
@@ -250,7 +264,7 @@ export default function PrivacyData() {
     return () => clearTimeout(id);
   }, [toast]);
 
-  const handleExportText = () => {
+  const handleExportText = async () => {
     const data = gatherExportData(seenUser);
     if (Object.keys(data.contents).length === 0) {
       setToast(t('settings.privacy.export_empty'));
@@ -258,7 +272,7 @@ export default function PrivacyData() {
     }
     const text = dataToText(data, language);
     const filename = `seen-export-${new Date().toISOString().slice(0, 10)}.txt`;
-    downloadFile(text, filename, 'text/plain;charset=utf-8');
+    await downloadFile(text, filename, 'text/plain;charset=utf-8');
     setToast(t('settings.privacy.export_success'));
   };
 
@@ -269,18 +283,43 @@ export default function PrivacyData() {
       return;
     }
     const html = generatePrintableHtml(data, language);
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(html);
-      printWindow.document.close();
-      // Trigger print dialog after content loads
-      printWindow.onload = () => {
-        printWindow.print();
-      };
-      // Fallback for browsers that don't fire onload
-      setTimeout(() => {
-        printWindow.print();
-      }, 500);
+    
+    if (Capacitor.isNativePlatform()) {
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      document.body.appendChild(iframe);
+      
+      const doc = iframe.contentWindow?.document;
+      if (doc) {
+        doc.open();
+        doc.write(html);
+        doc.close();
+        setTimeout(() => {
+          iframe.contentWindow?.print();
+          setTimeout(() => {
+            if (document.body.contains(iframe)) {
+              document.body.removeChild(iframe);
+            }
+          }, 5000);
+        }, 500);
+      }
+    } else {
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(html);
+        printWindow.document.close();
+        printWindow.onload = () => {
+          printWindow.print();
+        };
+        setTimeout(() => {
+          printWindow.print();
+        }, 500);
+      }
     }
     setToast(t('settings.privacy.export_success'));
   };
