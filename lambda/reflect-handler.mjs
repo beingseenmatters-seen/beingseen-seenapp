@@ -643,6 +643,8 @@ export const handler = async (event) => {
       // Final Score Calculation
       let finalScore = (meWeight * meSim) + (soulWeight * soulSim);
 
+      console.log(`[Match] ${currentUser.uid} -> ${candidate.uid} | count:${myReflectCount} stage:${stage} | meSim:${meSim.toFixed(2)} soulSim:${soulSim.toFixed(2)} | final:${finalScore.toFixed(2)}`);
+
       return {
         ...candidate,
         finalScore,
