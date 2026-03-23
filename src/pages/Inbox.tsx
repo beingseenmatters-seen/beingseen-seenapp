@@ -8,9 +8,11 @@ import {
   getInboxRequests, 
   getUserConnections, 
   acceptConnectionRequest, 
-  declineConnectionRequest
+  declineConnectionRequest,
+  sendMessage,
+  subscribeToMessages
 } from '../services/connections';
-import type { ConnectionRequest, Connection } from '../services/connections';
+import type { ConnectionRequest, Connection, ChatMessage } from '../services/connections';
 
 export default function Inbox() {
   const { t, effectiveLanguage } = useLanguage();
@@ -24,9 +26,24 @@ export default function Inbox() {
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
-  const [messages, setMessages] = useState([
-     { id: 1, text: t('inbox.system_msg'), system: true }
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isSending, setIsSending] = useState(false);
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    
+    if (selectedId) {
+      unsubscribe = subscribeToMessages(selectedId, (newMessages) => {
+        setMessages(newMessages);
+      });
+    } else {
+      setMessages([]);
+    }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [selectedId]);
 
   useEffect(() => {
     async function loadData() {
@@ -68,10 +85,18 @@ export default function Inbox() {
     setActionLoadingId(null);
   };
 
-  const handleSend = () => {
-    if (!inputValue.trim()) return;
-    setMessages([...messages, { id: Date.now(), text: inputValue, system: false }]);
-    setInputValue("");
+  const handleSend = async () => {
+    if (!inputValue.trim() || !selectedId || !firebaseUser?.uid || isSending) return;
+    setIsSending(true);
+    const text = inputValue;
+    setInputValue(""); // Optimistic clear
+    
+    const success = await sendMessage(selectedId, firebaseUser.uid, text);
+    if (!success) {
+      // Revert if failed
+      setInputValue(text);
+    }
+    setIsSending(false);
   };
 
   return (
@@ -165,11 +190,11 @@ export default function Inbox() {
                           {conn.otherUserProfile?.nickname || 'Someone'}
                         </h3>
                         <span className="text-xs text-muted">
-                          {new Date(conn.createdAt?.toMillis?.() || Date.now()).toLocaleDateString()}
+                          {new Date(conn.lastMessageAt?.toMillis?.() || conn.createdAt?.toMillis?.() || Date.now()).toLocaleDateString()}
                         </span>
                       </div>
                       <p className="text-sm text-secondary font-light line-clamp-1">
-                        {effectiveLanguage === 'zh' ? '点击开始对话...' : 'Tap to start conversation...'}
+                        {conn.lastMessage || (effectiveLanguage === 'zh' ? '点击开始对话...' : 'Tap to start conversation...')}
                       </p>
                     </button>
                   ))}
@@ -213,17 +238,28 @@ export default function Inbox() {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {messages.map((msg) => (
-                <div key={msg.id} className={clsx("flex", msg.system ? "justify-center" : "justify-end")}>
-                  {msg.system ? (
-                     <p className="text-xs text-muted text-center max-w-[80%] whitespace-pre-wrap leading-relaxed">{msg.text}</p>
-                  ) : (
-                    <div className="bg-primary text-white px-5 py-3 rounded-2xl rounded-tr-none max-w-[85%]">
+              {messages.length === 0 && (
+                <div className="flex justify-center">
+                  <p className="text-xs text-muted text-center max-w-[80%] whitespace-pre-wrap leading-relaxed">
+                    {t('inbox.system_msg')}
+                  </p>
+                </div>
+              )}
+              {messages.map((msg) => {
+                const isMe = msg.senderUid === firebaseUser?.uid;
+                return (
+                  <div key={msg.id} className={clsx("flex", isMe ? "justify-end" : "justify-start")}>
+                    <div className={clsx(
+                      "px-5 py-3 rounded-2xl max-w-[85%]",
+                      isMe 
+                        ? "bg-primary text-white rounded-tr-none" 
+                        : "bg-gray-100 text-primary rounded-tl-none"
+                    )}>
                        <p className="text-base font-light leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                     </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Input */}

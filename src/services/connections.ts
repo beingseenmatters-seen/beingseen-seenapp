@@ -8,7 +8,9 @@ import {
   query,
   where,
   serverTimestamp,
-  or
+  or,
+  orderBy,
+  onSnapshot
 } from 'firebase/firestore';
 import { db } from './firebase';
 import type { SeenUser } from '../auth/providers/types';
@@ -32,8 +34,18 @@ export interface Connection {
   createdAt: any;
   createdFromRequestId: string;
   userMap: Record<string, boolean>;
+  lastMessage?: string;
+  lastMessageAt?: any;
   // Hydrated fields for UI
   otherUserProfile?: CandidateProfile;
+}
+
+export interface ChatMessage {
+  id?: string;
+  connectionId: string;
+  senderUid: string;
+  text: string;
+  createdAt: any;
 }
 
 export interface CandidateProfile {
@@ -343,12 +355,71 @@ export async function getUserConnections(currentUid: string): Promise<Connection
     }
     
     return connections.sort((a, b) => {
-      const timeA = a.createdAt?.toMillis?.() || 0;
-      const timeB = b.createdAt?.toMillis?.() || 0;
+      // Sort by lastMessageAt first, then createdAt
+      const timeA = a.lastMessageAt?.toMillis?.() || a.createdAt?.toMillis?.() || 0;
+      const timeB = b.lastMessageAt?.toMillis?.() || b.createdAt?.toMillis?.() || 0;
       return timeB - timeA;
     });
   } catch (error) {
     console.error('Error fetching user connections:', error);
     return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Chat Messages
+// ---------------------------------------------------------------------------
+
+export function subscribeToMessages(
+  connectionId: string, 
+  callback: (messages: ChatMessage[]) => void
+) {
+  const q = query(
+    collection(db, 'connections', connectionId, 'messages'),
+    orderBy('createdAt', 'asc')
+  );
+
+  return onSnapshot(q, (snapshot) => {
+    const msgs: ChatMessage[] = [];
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data();
+      msgs.push({
+        id: docSnap.id,
+        connectionId: data.connectionId,
+        senderUid: data.senderUid,
+        text: data.text,
+        createdAt: data.createdAt
+      });
+    });
+    callback(msgs);
+  }, (error) => {
+    console.error('Error subscribing to messages:', error);
+  });
+}
+
+export async function sendMessage(connectionId: string, senderUid: string, text: string): Promise<boolean> {
+  if (!text.trim()) return false;
+  
+  try {
+    // 1. Add message to subcollection
+    const messagesRef = collection(db, 'connections', connectionId, 'messages');
+    await addDoc(messagesRef, {
+      connectionId,
+      senderUid,
+      text: text.trim(),
+      createdAt: serverTimestamp()
+    });
+
+    // 2. Update connection's lastMessage for the list view
+    const connRef = doc(db, 'connections', connectionId);
+    await updateDoc(connRef, {
+      lastMessage: text.trim(),
+      lastMessageAt: serverTimestamp()
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Error sending message:', error);
+    return false;
   }
 }
