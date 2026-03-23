@@ -504,20 +504,48 @@ function calculateArraySimilarity(arr1, arr2) {
 
 function calculateMeSimilarity(me1, me2) {
   if (!me1 || !me2) return 0;
-  let score = 0;
-  let maxScore = 0;
+  
+  let totalScore = 0;
+  let totalWeight = 0;
 
-  const fields = ['location', 'age', 'gender', 'zodiac'];
-  for (const field of fields) {
-    if (me1[field] && me2[field]) {
-      maxScore += 1;
-      if (me1[field] === me2[field]) {
-        score += 1;
-      }
-    }
+  // 1. interests (array) - 30% weight
+  if (Array.isArray(me1.interests) && Array.isArray(me2.interests) && me1.interests.length > 0 && me2.interests.length > 0) {
+    const sim = calculateArraySimilarity(me1.interests, me2.interests);
+    totalScore += sim * 0.30;
+    totalWeight += 0.30;
   }
 
-  return maxScore > 0 ? score / maxScore : 0;
+  // 2. values (array) - 25% weight
+  if (Array.isArray(me1.values) && Array.isArray(me2.values) && me1.values.length > 0 && me2.values.length > 0) {
+    const sim = calculateArraySimilarity(me1.values, me2.values);
+    totalScore += sim * 0.25;
+    totalWeight += 0.25;
+  }
+
+  // 3. lifeStage (string) - 20% weight
+  if (me1.lifeStage && me2.lifeStage) {
+    const sim = me1.lifeStage === me2.lifeStage ? 1 : 0;
+    totalScore += sim * 0.20;
+    totalWeight += 0.20;
+  }
+
+  // 4. goals (array) - 15% weight
+  if (Array.isArray(me1.goals) && Array.isArray(me2.goals) && me1.goals.length > 0 && me2.goals.length > 0) {
+    const sim = calculateArraySimilarity(me1.goals, me2.goals);
+    totalScore += sim * 0.15;
+    totalWeight += 0.15;
+  }
+
+  // 5. communicationPreference (string) - 10% weight
+  if (me1.communicationPreference && me2.communicationPreference) {
+    const sim = me1.communicationPreference === me2.communicationPreference ? 1 : 0;
+    totalScore += sim * 0.10;
+    totalWeight += 0.10;
+  }
+
+  // Normalize score based on available data
+  // If totalWeight is 0 (meaning none of the meaningful fields were present in both), return 0
+  return totalWeight > 0 ? totalScore / totalWeight : 0;
 }
 
 function calculateSoulSimilarity(soul1, soul2) {
