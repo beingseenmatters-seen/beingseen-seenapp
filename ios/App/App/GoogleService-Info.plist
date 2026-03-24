@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleIdentifier</key>
 	<string></string>
+	<key>CFBundleExecutable</key>
+	<string></string>
 	<key>CLIENT_ID</key>
 	<string>219057410128-jt5phseu2hdg41rsh9aecppit3gmmp8g.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>

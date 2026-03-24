@@ -70,6 +70,12 @@ export default function EmailInputScreen() {
               {t(error)}
             </motion.p>
           )}
+
+          <div className="pt-4">
+            <p className="text-xs text-muted font-light leading-relaxed">
+              {t('auth.email_warning')}
+            </p>
+          </div>
         </div>
 
         <button

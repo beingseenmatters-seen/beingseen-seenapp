@@ -29,27 +29,6 @@ export default function EmailLinkWaitingScreen() {
     const href = window.location.href;
     const isLink = isEmailLink(href);
     
-    // If we are on web but the user is on a mobile device, try to redirect to the app
-    if (isLink && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-      console.log('[EmailLinkWaiting] Mobile browser detected, attempting to redirect to app');
-      const urlParams = new URLSearchParams(window.location.search);
-      const appSchemeUrl = `seenapp://auth/verify?${urlParams.toString()}`;
-      
-      // Try to open the app via a hidden iframe (more reliable on iOS)
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = appSchemeUrl;
-      document.body.appendChild(iframe);
-      
-      // Also try location.href as fallback
-      setTimeout(() => {
-        window.location.href = appSchemeUrl;
-      }, 100);
-      
-      // We still continue with the web sign-in flow just in case the app isn't installed
-      // or the redirect fails. The web app will sign the user in.
-    }
-
     const email = getStoredEmail();
 
     console.log('[EmailLinkWaiting] Mount check', { isLink, storedEmail: email ?? '(none)', href });
@@ -128,10 +107,18 @@ export default function EmailLinkWaitingScreen() {
                 {t('auth.verify_enter_email')}
               </p>
             ) : (
-              <p className="text-base font-light text-secondary">
-                {t('auth.verify_subtitle')}{' '}
-                <span className="text-primary">{storedEmail}</span>
-              </p>
+              <div className="flex flex-col items-center justify-center space-y-2">
+                <p className="text-base font-light text-secondary">
+                  {t('auth.verify_subtitle')}{' '}
+                  <span className="text-primary">{storedEmail}</span>
+                </p>
+                {isLoading && (
+                  <div className="flex items-center space-x-2 text-sm text-muted mt-2">
+                    <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    <span>{t('common.loading') || 'Completing sign in...'}</span>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

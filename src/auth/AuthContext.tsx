@@ -131,6 +131,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // --- Auth state listener + startup checks ---
   useEffect(() => {
+    let isHandlingRedirect = false;
+
     // 1. On web: detect email sign-in link in the current URL BEFORE
     //    onAuthStateChanged fires, so we don't accidentally redirect away.
     if (isWeb() && !emailLinkHandledRef.current) {
@@ -138,29 +140,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (emailLink.isEmailLink(href)) {
         console.log('[auth] detected email sign-in link on app load');
         emailLinkHandledRef.current = true;
-        handleWebEmailLink(href);
+        isHandlingRedirect = true;
+        handleWebEmailLink(href).finally(() => {
+          isHandlingRedirect = false;
+        });
       }
     }
 
-    // 2. On web: pick up any pending Google redirect sign-in.
-    if (isWeb()) {
-      googleWeb.completeGoogleRedirect().then(async (user) => {
-        if (user) {
-          console.log('[auth] completed pending google redirect sign-in');
-          await firestoreOps.ensureUserDocument(user, 'google');
+    // 2. On web: pick up any pending redirect sign-ins (Google/Apple).
+    if (isWeb() && !isHandlingRedirect) {
+      isHandlingRedirect = true;
+      const handleRedirects = async () => {
+        try {
+          const googleUser = await googleWeb.completeGoogleRedirect();
+          if (googleUser) {
+            console.log('[auth] completed pending google redirect sign-in');
+            await firestoreOps.ensureUserDocument(googleUser, 'google');
+            return;
+          }
+          const appleResult = await appleNative.completeAppleRedirect();
+          if (appleResult?.user) {
+            console.log('[auth] completed pending apple redirect sign-in');
+            await firestoreOps.ensureUserDocument(appleResult.user, 'apple', appleResult.displayName);
+            return;
+          }
+        } catch (err) {
+          console.error('[auth] redirect completion error:', err);
+        } finally {
+          isHandlingRedirect = false;
         }
-      });
+      };
+      handleRedirects();
     }
 
     // 3. Standard Firebase auth state listener.
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       console.log('[auth] onAuthStateChanged:', user ? `uid=${user.uid}` : 'null');
+      
+      // If we are currently handling a redirect or email link, we should wait
+      // for that to finish creating the user document before we fetch it.
+      if (user && isHandlingRedirect) {
+        console.log('[auth] waiting for redirect handler to finish ensureUserDocument...');
+        // Simple polling wait
+        for (let i = 0; i < 20; i++) {
+          if (!isHandlingRedirect) break;
+          await new Promise(r => setTimeout(r, 200));
+        }
+      }
+
       if (user) {
         try {
-          const seenUser = await firestoreOps.getUserDocument(user.uid);
+          let seenUser = await firestoreOps.getUserDocument(user.uid);
+          // If still null, maybe it's a brand new user that didn't go through our wrappers?
+          // Let's ensure it exists just in case.
+          if (!seenUser) {
+             console.log('[auth] seenUser not found in onAuthStateChanged, ensuring doc exists');
+             seenUser = await firestoreOps.ensureUserDocument(user, 'email'); // fallback method
+          }
           dispatch({ type: 'SET_USER', firebaseUser: user, seenUser });
           syncLocalStorage(seenUser);
-        } catch {
+        } catch (err) {
+          console.error('[auth] error fetching user document:', err);
           dispatch({ type: 'SET_USER', firebaseUser: user, seenUser: null });
         }
       } else {
@@ -186,27 +226,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // --- Web email link handler (called once on app load) ---
   const handleWebEmailLink = async (href: string) => {
-    // If we are on web but the user is on a mobile device, try to redirect to the app first
-    if (isWeb() && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-      console.log('[auth] Mobile browser detected on web load, attempting to redirect to app');
-      const urlObj = new URL(href);
-      const appSchemeUrl = `seenapp://auth/verify${urlObj.search}`;
-      
-      // Try to open the app via a hidden iframe (more reliable on iOS)
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = appSchemeUrl;
-      document.body.appendChild(iframe);
-      
-      // Also try location.href as fallback
-      setTimeout(() => {
-        window.location.href = appSchemeUrl;
-      }, 100);
-      
-      // Give it a moment to redirect before continuing with web auth
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-
     const storedEmail = emailLink.getStoredEmail();
     console.log('[auth] handling web email link', { hasStoredEmail: !!storedEmail });
 

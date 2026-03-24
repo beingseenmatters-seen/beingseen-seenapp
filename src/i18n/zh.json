@@ -61,7 +61,8 @@
     "error_missing_email": "找不到你的邮箱，请在下方输入以继续。",
     "verify_enter_email": "输入邮箱以完成登录",
     "verify_submit_email": "继续",
-    "google_web_only": "仅网页端"
+    "google_web_only": "仅网页端",
+    "email_warning": "部分地区邮箱可能收不到登录链接，建议尝试 Gmail/Outlook。若已收到链接但未成功登录，请返回应用重新发起。"
   },
   "onboarding": {
     "seen_title": "你，被看见了。",

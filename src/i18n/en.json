@@ -61,7 +61,8 @@
     "error_missing_email": "We couldn't find your email. Please enter it below to continue.",
     "verify_enter_email": "Enter your email to complete sign-in",
     "verify_submit_email": "Continue",
-    "google_web_only": "Web only"
+    "google_web_only": "Web only",
+    "email_warning": "Some email providers may block login links. We recommend Gmail or Outlook. If you received a link but login failed, please try requesting a new one."
   },
   "onboarding": {
     "seen_title": "You are seen.",
