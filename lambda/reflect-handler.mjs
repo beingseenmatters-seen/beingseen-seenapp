@@ -16,6 +16,8 @@ import {
   SecretsManagerClient,
   GetSecretValueCommand,
 } from "@aws-sdk/client-secrets-manager";
+import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
+import admin from "firebase-admin";
 
 // ========================
 // Version & Constants
@@ -28,12 +30,36 @@ const MAX_OUTPUT_TOKENS = 600;
 const REWRITE_MAX_TOKENS = 500;
 
 // ========================
-// AWS Secrets
+// AWS Secrets & Clients
 // ========================
 
 const secrets = new SecretsManagerClient({
-  region: process.env.AWS_REGION,
+  region: process.env.AWS_REGION || "ap-southeast-2",
 });
+
+const sesClient = new SESClient({
+  region: process.env.AWS_REGION || "ap-southeast-2",
+});
+
+// Initialize Firebase Admin if not already initialized
+if (!admin.apps.length) {
+  try {
+    // If FIREBASE_SERVICE_ACCOUNT is provided as an env var (JSON string)
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+      });
+      console.log("[FirebaseAdmin] Initialized with service account from env");
+    } else {
+      // Fallback to default application credentials (e.g. if running in an environment with IAM roles that have access, though usually requires service account for Auth)
+      admin.initializeApp();
+      console.log("[FirebaseAdmin] Initialized with default credentials");
+    }
+  } catch (error) {
+    console.error("[FirebaseAdmin] Initialization error:", error);
+  }
+}
 
 async function getOpenAIKey() {
   const sid = process.env.OPENAI_SECRET_ID;
@@ -586,7 +612,14 @@ function calculateSoulSimilarity(soul1, soul2) {
 
 export const handler = async (event) => {
   // CORS preflight
-  if (event.requestContext?.http?.method === "OPTIONS" || event.httpMethod === "OPTIONS" || event.routeKey === "OPTIONS /reflect/send" || event.routeKey === "OPTIONS /reflect/extract" || event.routeKey === "OPTIONS /match/rank") {
+  if (
+    event.requestContext?.http?.method === "OPTIONS" || 
+    event.httpMethod === "OPTIONS" || 
+    event.routeKey === "OPTIONS /reflect/send" || 
+    event.routeKey === "OPTIONS /reflect/extract" || 
+    event.routeKey === "OPTIONS /match/rank" ||
+    event.routeKey === "OPTIONS /auth/email-link/send"
+  ) {
     return httpResponse(200, { ok: true });
   }
 
@@ -608,6 +641,8 @@ export const handler = async (event) => {
     body = JSON.parse(event.body || "{}");
   } catch {}
 
+  const path = event.requestContext?.http?.path || event.rawPath || event.path;
+
   // Route: /auth/email-link/send
   if (path === "/auth/email-link/send") {
     console.log("Handling /auth/email-link/send request");
@@ -619,34 +654,78 @@ export const handler = async (event) => {
 
     try {
       // 1. Generate the email link using Firebase Admin SDK
-      // Note: This requires Firebase Admin SDK to be initialized in the Lambda
-      // For now, we stub this out and log it, preparing for the actual implementation
       console.log(`[Auth] Generating email link for ${email} with continueUrl ${continueUrl}`);
       
-      // const link = await admin.auth().generateSignInWithEmailLink(email, actionCodeSettings);
-      const mockLink = `https://seen-matters.firebaseapp.com/__/auth/action?mode=signIn&email=${encodeURIComponent(email)}&continueUrl=${encodeURIComponent(continueUrl)}`;
+      const settings = actionCodeSettings || {
+        url: continueUrl,
+        handleCodeInApp: true,
+      };
       
-      // 2. Send the email using a transactional email service (SES/SendGrid)
-      // For now, we stub this out
-      console.log(`[Auth] Sending transactional email to ${email} with link: ${mockLink}`);
+      let link;
+      try {
+        link = await admin.auth().generateSignInWithEmailLink(email, settings);
+        console.log(`[Auth] Firebase action link generated successfully`);
+      } catch (err) {
+        console.error("[Auth] Failed to generate Firebase email link:", err);
+        throw new Error(`Firebase link generation failed: ${err.message}`);
+      }
       
-      // await sendTransactionalEmail({ to: email, subject: 'Sign in to Seen', link });
+      // 2. Send the email using AWS SES
+      const sourceEmail = process.env.SES_FROM_EMAIL || "support@beingseenmatters.com";
+      console.log(`[Auth] Sending transactional email to ${email} via SES (From: ${sourceEmail})`);
+      
+      const emailParams = {
+        Source: sourceEmail,
+        Destination: {
+          ToAddresses: [email],
+        },
+        Message: {
+          Subject: {
+            Data: "Sign in to Seen",
+            Charset: "UTF-8"
+          },
+          Body: {
+            Html: {
+              Data: `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                  <h2 style="color: #333; font-weight: 300;">Welcome to Seen</h2>
+                  <p style="color: #666; font-size: 16px; line-height: 1.5;">Click the button below to sign in to your account.</p>
+                  <div style="margin: 30px 0;">
+                    <a href="${link}" style="background-color: #000; color: #fff; padding: 14px 28px; text-decoration: none; border-radius: 12px; font-size: 16px; display: inline-block;">Login to Seen</a>
+                  </div>
+                  <p style="color: #999; font-size: 14px; margin-top: 30px;">If the button doesn't work, copy and paste this link into your browser:</p>
+                  <p style="color: #999; font-size: 12px; word-break: break-all;"><a href="${link}" style="color: #666;">${link}</a></p>
+                </div>
+              `,
+              Charset: "UTF-8"
+            },
+            Text: {
+              Data: `Welcome to Seen\n\nClick this link to sign in: ${link}`,
+              Charset: "UTF-8"
+            }
+          }
+        }
+      };
+
+      try {
+        await sesClient.send(new SendEmailCommand(emailParams));
+        console.log(`[Auth] SES email sent successfully to ${email}`);
+      } catch (err) {
+        console.error("[Auth] Failed to send email via SES:", err);
+        throw new Error(`SES email sending failed: ${err.message}`);
+      }
 
       return httpResponse(200, {
         success: true,
-        message: "Email link generated and sent (mocked)",
-        // In production, NEVER return the link in the response body!
-        // This is just for debugging the stub.
-        debug_link: mockLink 
+        message: "Email link generated and sent successfully"
       });
     } catch (error) {
-      console.error("[Auth] Failed to generate/send email link:", error);
+      console.error("[Auth] /auth/email-link/send error:", error);
       return httpResponse(500, { error: "internal_server_error", detail: error.message });
     }
   }
 
   // Route: /match/rank
-  const path = event.requestContext?.http?.path || event.rawPath || event.path;
   
   if (path === "/match/rank") {
     console.log("Handling /match/rank request");
