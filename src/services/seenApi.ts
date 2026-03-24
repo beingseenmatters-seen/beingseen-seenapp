@@ -1,4 +1,4 @@
-import { Capacitor } from '@capacitor/core';
+import { apiClient } from './apiClient';
 import { 
   ResponseStyle,
   type ResponseStyleType,
@@ -15,16 +15,6 @@ export interface ReflectResponse {
   response_id: string;
 }
 
-// In production (iOS App), use direct AWS API URL
-// In development, use proxy path to avoid CORS issues
-// On web (Vercel), we must also use direct AWS API URL because there is no Vite proxy
-const API_URL = import.meta.env.PROD
-  ? 'https://rtbzs3sjwe.execute-api.ap-southeast-2.amazonaws.com/reflect/send'
-  : Capacitor.getPlatform() === 'web'
-    ? '/api/reflect/send'
-    : 'https://rtbzs3sjwe.execute-api.ap-southeast-2.amazonaws.com/reflect/send';
-const APP_KEY = 'test_seen_app_key';
-
 /**
  * 发送 Reflect 请求 - 基础版本（兼容旧代码）
  */
@@ -33,42 +23,24 @@ export async function sendReflect(
   language: string = 'zh', 
   mode: string = 'mirror'
 ): Promise<ReflectResponse> {
-  console.log('[SeenAPI] Sending request to:', API_URL);
+  console.log('[SeenAPI] Sending request to /reflect/send');
   console.log('[SeenAPI] Payload:', { text, language, mode });
   
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
     
-  // Create headers explicitly without undefined values
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-Seen-App-Key': APP_KEY,
-    'Accept': 'application/json'
-  };
-
-  const response = await fetch(API_URL, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      text,
-      language,
-      mode
-    }),
-    signal: controller.signal
-  });
+    const data = await apiClient('/reflect/send', {
+      method: 'POST',
+      data: {
+        text,
+        language,
+        mode
+      },
+      signal: controller.signal
+    });
     
     clearTimeout(timeoutId);
-
-    console.log('[SeenAPI] Response status:', response.status);
-    
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'No response body');
-      console.error('[SeenAPI] Error response:', errorText);
-      throw new Error(`API ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json();
     console.log('[SeenAPI] Success:', data);
     return data as ReflectResponse;
   } catch (error: unknown) {
@@ -89,12 +61,6 @@ export async function sendReflect(
 
 /**
  * 发送 Reflect 请求 - 带 Question Gate 增强版本
- * 
- * 新增功能：
- * 1. 前端分析用户状态（情绪、深挖授权）
- * 2. 自动决定 responseStyle 和 questionLevel
- * 3. 传递完整参数给后端
- * 4. 返回 debug 信息（开发环境）
  */
 export async function sendReflectWithGate(
   text: string,
@@ -152,28 +118,13 @@ export async function sendReflectWithGate(
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-Seen-App-Key': APP_KEY,
-    'Accept': 'application/json'
-  };
-
-  const response = await fetch(API_URL, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-    signal: controller.signal
-  });
+    const data = await apiClient('/reflect/send', {
+      method: 'POST',
+      data: payload,
+      signal: controller.signal
+    });
     
     clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'No response body');
-      console.error('[SeenAPI] Error response:', errorText);
-      throw new Error(`API ${response.status}: ${errorText}`);
-    }
-    
-    const data = await response.json();
     console.log('[SeenAPI] Success with gate:', data);
     
     // Dev: normalize debug shape (questionGate + reflect)
@@ -278,40 +229,19 @@ export interface ExtractSummaryResponse {
 export async function extractReflectSummary(
   request: ExtractSummaryRequest
 ): Promise<ExtractSummaryResponse> {
-  const url = import.meta.env.PROD
-    ? 'https://rtbzs3sjwe.execute-api.ap-southeast-2.amazonaws.com/reflect/extract'
-    : Capacitor.getPlatform() === 'web'
-      ? '/api/reflect/extract'
-      : 'https://rtbzs3sjwe.execute-api.ap-southeast-2.amazonaws.com/reflect/extract';
-
-  console.log('[SeenAPI] Sending extract request to:', url);
+  console.log('[SeenAPI] Sending extract request to /reflect/extract');
 
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout for LLM
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-Seen-App-Key': APP_KEY,
-    'Accept': 'application/json'
-  };
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(request),
-    signal: controller.signal
-  });
+    const data = await apiClient('/reflect/extract', {
+      method: 'POST',
+      data: request,
+      signal: controller.signal
+    });
 
     clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'No response body');
-      console.error('[SeenAPI] Extract error response:', errorText);
-      throw new Error(`API ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json();
     console.log('[SeenAPI] Extract success:', data);
     return data as ExtractSummaryResponse;
   } catch (error: unknown) {

@@ -608,6 +608,43 @@ export const handler = async (event) => {
     body = JSON.parse(event.body || "{}");
   } catch {}
 
+  // Route: /auth/email-link/send
+  if (path === "/auth/email-link/send") {
+    console.log("Handling /auth/email-link/send request");
+    
+    const { email, continueUrl, actionCodeSettings } = body;
+    if (!email || !continueUrl) {
+      return httpResponse(400, { error: "missing_required_fields", detail: "Requires email and continueUrl" });
+    }
+
+    try {
+      // 1. Generate the email link using Firebase Admin SDK
+      // Note: This requires Firebase Admin SDK to be initialized in the Lambda
+      // For now, we stub this out and log it, preparing for the actual implementation
+      console.log(`[Auth] Generating email link for ${email} with continueUrl ${continueUrl}`);
+      
+      // const link = await admin.auth().generateSignInWithEmailLink(email, actionCodeSettings);
+      const mockLink = `https://seen-matters.firebaseapp.com/__/auth/action?mode=signIn&email=${encodeURIComponent(email)}&continueUrl=${encodeURIComponent(continueUrl)}`;
+      
+      // 2. Send the email using a transactional email service (SES/SendGrid)
+      // For now, we stub this out
+      console.log(`[Auth] Sending transactional email to ${email} with link: ${mockLink}`);
+      
+      // await sendTransactionalEmail({ to: email, subject: 'Sign in to Seen', link });
+
+      return httpResponse(200, {
+        success: true,
+        message: "Email link generated and sent (mocked)",
+        // In production, NEVER return the link in the response body!
+        // This is just for debugging the stub.
+        debug_link: mockLink 
+      });
+    } catch (error) {
+      console.error("[Auth] Failed to generate/send email link:", error);
+      return httpResponse(500, { error: "internal_server_error", detail: error.message });
+    }
+  }
+
   // Route: /match/rank
   const path = event.requestContext?.http?.path || event.rawPath || event.path;
   
