@@ -91,6 +91,11 @@ function friendlyErrorKey(error: unknown): string {
       return 'auth.error_credential_already_in_use';
     case 'auth/provider-already-linked':
       return 'auth.error_provider_already_linked';
+    case 'auth/operation-not-allowed':
+      return 'auth.error_operation_not_allowed';
+    case 'auth/unauthorized-continue-uri':
+    case 'auth/invalid-continue-uri':
+      return 'auth.error_invalid_continue_uri';
     default:
       return 'auth.error_generic';
   }

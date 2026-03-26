@@ -59,6 +59,8 @@
     "error_disabled": "这个账户已被停用，如有疑问请联系我们。",
     "error_link_expired": "链接已过期或已被使用，请重新发送。",
     "error_missing_email": "找不到你的邮箱，请在下方输入以继续。",
+    "error_operation_not_allowed": "邮箱链接登录未启用，请检查 Firebase 控制台设置。",
+    "error_invalid_continue_uri": "登录跳转地址未授权，请将此域名添加到 Firebase 授权域名列表。",
     "verify_enter_email": "输入邮箱以完成登录",
     "verify_submit_email": "继续",
     "google_web_only": "仅网页端",

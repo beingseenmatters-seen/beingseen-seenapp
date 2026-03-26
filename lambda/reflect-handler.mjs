@@ -675,11 +675,59 @@ export const handler = async (event) => {
       const resend = new Resend(resendApiKey);
       const fromEmail = "Seen <noreply@beingseenmatters.com>";
       const emailHtml = `
-        <p>Hi,</p>
-        <p>Click the link below to log in:</p>
-        <p><a href="${link}">${link}</a></p>
-        <p>If you did not request this email, you can ignore it.</p>
+        <div style="font-family: Arial, Helvetica, sans-serif; line-height: 1.6; color: #222; max-width: 560px; margin: 0 auto; padding: 24px;">
+          <h2 style="margin: 0 0 20px; font-size: 28px; font-weight: 700; color: #111;">
+            Welcome to Seen
+          </h2>
+
+          <p style="margin: 0 0 16px; font-size: 16px;">Hi,</p>
+
+          <p style="margin: 0 0 16px; font-size: 16px;">
+            Thank you for signing in to <strong>Seen</strong>.
+          </p>
+
+          <p style="margin: 0 0 24px; font-size: 16px;">
+            Please click the button below to continue.
+          </p>
+
+          <p style="margin: 0 0 28px;">
+            <a
+              href="${link}"
+              style="display: inline-block; background: #111; color: #fff; text-decoration: none; padding: 12px 20px; border-radius: 8px; font-size: 16px; font-weight: 600;"
+            >
+              Log in to Seen
+            </a>
+          </p>
+
+          <p style="margin: 0 0 10px; font-size: 14px; color: #555;">
+            If the button does not work, you can use the link below:
+          </p>
+
+          <p style="margin: 0 0 24px; font-size: 14px; word-break: break-all;">
+            <a href="${link}" style="color: #2563eb; text-decoration: underline;">${link}</a>
+          </p>
+
+          <p style="margin: 0 0 24px; font-size: 14px; color: #555;">
+            If you did not request this email, you can safely ignore it.
+          </p>
+
+          <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+
+          <p style="margin: 0; font-size: 12px; color: #888;">
+            Seen · Being seen matters
+          </p>
+        </div>
       `;
+      const emailText = `Hi,
+
+Thank you for signing in to Seen.
+
+Please use the link below to continue:
+${link}
+
+If you did not request this email, you can safely ignore it.
+
+Seen · Being seen matters`;
 
       console.log(`[Auth] Sending login email to ${email} via Resend`);
 
@@ -689,7 +737,7 @@ export const handler = async (event) => {
           to: [email],
           subject: "Your login link",
           html: emailHtml,
-          text: `Hi,\n\nClick the link below to log in:\n${link}\n\nIf you did not request this email, you can ignore it.`,
+          text: emailText,
         });
 
         if (resendResponse.error) {

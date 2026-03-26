@@ -59,6 +59,8 @@
     "error_disabled": "This account has been disabled. Please reach out if this seems wrong.",
     "error_link_expired": "This link has expired or was already used. Please request a new one.",
     "error_missing_email": "We couldn't find your email. Please enter it below to continue.",
+    "error_operation_not_allowed": "Email link sign-in is not enabled. Please check Firebase Console settings.",
+    "error_invalid_continue_uri": "The sign-in redirect URL is not authorized. Please add this domain to Firebase's authorized domains.",
     "verify_enter_email": "Enter your email to complete sign-in",
     "verify_submit_email": "Continue",
     "google_web_only": "Web only",
