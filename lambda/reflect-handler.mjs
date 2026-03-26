@@ -16,8 +16,8 @@ import {
   SecretsManagerClient,
   GetSecretValueCommand,
 } from "@aws-sdk/client-secrets-manager";
-import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 import admin from "firebase-admin";
+import { Resend } from "resend";
 
 // ========================
 // Version & Constants
@@ -34,10 +34,6 @@ const REWRITE_MAX_TOKENS = 500;
 // ========================
 
 const secrets = new SecretsManagerClient({
-  region: process.env.AWS_REGION || "ap-southeast-2",
-});
-
-const sesClient = new SESClient({
   region: process.env.AWS_REGION || "ap-southeast-2",
 });
 
@@ -670,49 +666,52 @@ export const handler = async (event) => {
         throw new Error(`Firebase link generation failed: ${err.message}`);
       }
       
-      // 2. Send the email using AWS SES
-      const sourceEmail = process.env.SES_FROM_EMAIL || "support@beingseenmatters.com";
-      console.log(`[Auth] Sending transactional email to ${email} via SES (From: ${sourceEmail})`);
-      
-      const emailParams = {
-        Source: sourceEmail,
-        Destination: {
-          ToAddresses: [email],
-        },
-        Message: {
-          Subject: {
-            Data: "Sign in to Seen",
-            Charset: "UTF-8"
-          },
-          Body: {
-            Html: {
-              Data: `
-                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                  <h2 style="color: #333; font-weight: 300;">Welcome to Seen</h2>
-                  <p style="color: #666; font-size: 16px; line-height: 1.5;">Click the button below to sign in to your account.</p>
-                  <div style="margin: 30px 0;">
-                    <a href="${link}" style="background-color: #000; color: #fff; padding: 14px 28px; text-decoration: none; border-radius: 12px; font-size: 16px; display: inline-block;">Login to Seen</a>
-                  </div>
-                  <p style="color: #999; font-size: 14px; margin-top: 30px;">If the button doesn't work, copy and paste this link into your browser:</p>
-                  <p style="color: #999; font-size: 12px; word-break: break-all;"><a href="${link}" style="color: #666;">${link}</a></p>
-                </div>
-              `,
-              Charset: "UTF-8"
-            },
-            Text: {
-              Data: `Welcome to Seen\n\nClick this link to sign in: ${link}`,
-              Charset: "UTF-8"
-            }
-          }
-        }
-      };
+      // 2. Send the email using Resend
+      const resendApiKey = process.env.RESEND_API_KEY;
+      if (!resendApiKey) {
+        throw new Error("RESEND_API_KEY is not configured");
+      }
+
+      const resend = new Resend(resendApiKey);
+      const fromEmail = "Seen <noreply@beingseenmatters.com>";
+      const emailHtml = `
+        <p>Hi,</p>
+        <p>Click the link below to log in:</p>
+        <p><a href="${link}">${link}</a></p>
+        <p>If you did not request this email, you can ignore it.</p>
+      `;
+
+      console.log(`[Auth] Sending login email to ${email} via Resend`);
 
       try {
-        await sesClient.send(new SendEmailCommand(emailParams));
-        console.log(`[Auth] SES email sent successfully to ${email}`);
+        const resendResponse = await resend.emails.send({
+          from: fromEmail,
+          to: [email],
+          subject: "Your login link",
+          html: emailHtml,
+          text: `Hi,\n\nClick the link below to log in:\n${link}\n\nIf you did not request this email, you can ignore it.`,
+        });
+
+        if (resendResponse.error) {
+          console.error("[Auth] Resend returned an email send error", {
+            email,
+            message: resendResponse.error.message,
+            name: resendResponse.error.name,
+          });
+          throw new Error(`Resend email sending failed: ${resendResponse.error.message}`);
+        }
+
+        console.log("[Auth] Resend email sent successfully", {
+          email,
+          emailId: resendResponse.data?.id || null,
+        });
       } catch (err) {
-        console.error("[Auth] Failed to send email via SES:", err);
-        throw new Error(`SES email sending failed: ${err.message}`);
+        console.error("[Auth] Failed to send email via Resend", {
+          email,
+          message: err?.message,
+          name: err?.name,
+        });
+        throw new Error(`Resend email sending failed: ${err.message}`);
       }
 
       return httpResponse(200, {

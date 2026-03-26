@@ -1,5 +1,4 @@
 import {
-  sendSignInLinkToEmail,
   isSignInWithEmailLink,
   signInWithEmailLink,
   linkWithCredential,
@@ -10,41 +9,31 @@ import { auth } from '../../services/firebase';
 import { AUTH_APP_URL } from '../config';
 import { EMAIL_LINK_CONFIG } from '../emailLinkConfig';
 import { apiClient } from '../../services/apiClient';
-import { USE_BACKEND_EMAIL_LINK } from '../../config/api';
 
 const EMAIL_KEY = 'seen_email_for_signin';
 
 export async function sendEmailLink(email: string): Promise<void> {
   const callbackUrl = `${AUTH_APP_URL}/auth/verify`;
 
-  console.log('[auth] sending email link', { email, callbackUrl, useBackend: USE_BACKEND_EMAIL_LINK });
+  console.log('[auth] sending email link via backend', { email, callbackUrl });
 
   try {
-    if (USE_BACKEND_EMAIL_LINK) {
-      // New flow: Call our backend to generate and send the email
-      await apiClient('/auth/email-link/send', {
-        method: 'POST',
-        data: {
-          email,
-          continueUrl: callbackUrl,
-          actionCodeSettings: {
-            url: callbackUrl,
-            ...EMAIL_LINK_CONFIG
-          }
+    await apiClient('/auth/email-link/send', {
+      method: 'POST',
+      data: {
+        email,
+        continueUrl: callbackUrl,
+        actionCodeSettings: {
+          url: callbackUrl,
+          ...EMAIL_LINK_CONFIG
         }
-      });
-    } else {
-      // Old flow: Direct Firebase client SDK
-      await sendSignInLinkToEmail(auth, email, {
-        url: callbackUrl,
-        ...EMAIL_LINK_CONFIG
-      });
-    }
+      }
+    });
 
     localStorage.setItem(EMAIL_KEY, email);
     console.log('[auth] email link sent, email saved to localStorage');
   } catch (err) {
-    console.error('[auth] sendSignInLinkToEmail raw error:', err);
+    console.error('[auth] backend email link send failed:', err);
     throw err;
   }
 }
