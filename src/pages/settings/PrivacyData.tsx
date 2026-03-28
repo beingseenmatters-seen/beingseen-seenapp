@@ -13,7 +13,7 @@ import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 function gatherExportData(seenUser: SeenUser | null) {
   const data: Record<string, any> = {
     exportedAt: new Date().toISOString(),
-    appVersion: 'Seen App v1.0.4',
+    appVersion: 'Seen App v1.0.5',
     contents: {}
   };
 
