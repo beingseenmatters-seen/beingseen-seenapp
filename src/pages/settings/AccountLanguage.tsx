@@ -208,25 +208,6 @@ export default function AccountLanguage() {
             </div>
           </section>
 
-          {/* Advanced Actions */}
-          <section className="space-y-4">
-            <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider pl-1">Advanced</h3>
-            <div className="bg-gray-50 rounded-2xl p-4 space-y-1">
-              <button 
-                onClick={() => alert('This feature is currently under development.')}
-                className="w-full text-left py-3 text-sm text-primary hover:text-blue-600 transition-colors flex items-center justify-between"
-              >
-                {t('settings.account.action_view_devices')}
-              </button>
-              <button 
-                onClick={() => alert('This feature is currently under development.')}
-                className="w-full text-left py-3 text-sm text-primary hover:text-blue-600 transition-colors flex items-center justify-between"
-              >
-                {t('settings.account.action_logout_devices')}
-              </button>
-            </div>
-          </section>
-
           {/* Actions */}
           <section className="space-y-4 pt-4">
             <button
