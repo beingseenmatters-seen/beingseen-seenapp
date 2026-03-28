@@ -613,6 +613,7 @@ export const handler = async (event) => {
     event.httpMethod === "OPTIONS" || 
     event.routeKey === "OPTIONS /reflect/send" || 
     event.routeKey === "OPTIONS /reflect/extract" || 
+    event.routeKey === "OPTIONS /voice/transcribe" ||
     event.routeKey === "OPTIONS /match/rank" ||
     event.routeKey === "OPTIONS /auth/email-link/send"
   ) {
@@ -968,6 +969,80 @@ ${transcript}`;
     } catch (error) {
       console.error("[Extract] Error processing request:", error);
       return httpResponse(500, { error: "internal_server_error" });
+    }
+  }
+
+  // Route: /voice/transcribe
+  if (path === "/voice/transcribe") {
+    console.log("Handling /voice/transcribe request");
+
+    const { audio, mimeType, language: voiceLang } = body;
+    if (!audio) {
+      return httpResponse(400, { error: "audio_required", detail: "Base64 audio data is required" });
+    }
+
+    const lang = voiceLang === "en" ? "en" : "zh";
+
+    try {
+      const openAIKey = await getOpenAIKey();
+
+      const audioBuffer = Buffer.from(audio, "base64");
+
+      const extMap = {
+        "audio/aac": "m4a",
+        "audio/mp4": "m4a",
+        "audio/x-m4a": "m4a",
+        "audio/mpeg": "mp3",
+        "audio/wav": "wav",
+        "audio/webm": "webm",
+        "audio/ogg": "ogg",
+      };
+      const ext = extMap[mimeType] || "m4a";
+      const fileName = `audio.${ext}`;
+
+      const boundary = "----SeenVoiceBoundary" + Date.now();
+      const CRLF = "\r\n";
+
+      const preamble =
+        `--${boundary}${CRLF}` +
+        `Content-Disposition: form-data; name="model"${CRLF}${CRLF}` +
+        `whisper-1${CRLF}` +
+        `--${boundary}${CRLF}` +
+        `Content-Disposition: form-data; name="language"${CRLF}${CRLF}` +
+        `${lang}${CRLF}` +
+        `--${boundary}${CRLF}` +
+        `Content-Disposition: form-data; name="file"; filename="${fileName}"${CRLF}` +
+        `Content-Type: ${mimeType || "audio/mp4"}${CRLF}${CRLF}`;
+
+      const epilogue = `${CRLF}--${boundary}--${CRLF}`;
+
+      const preambleBuf = Buffer.from(preamble, "utf-8");
+      const epilogueBuf = Buffer.from(epilogue, "utf-8");
+      const multipartBody = Buffer.concat([preambleBuf, audioBuffer, epilogueBuf]);
+
+      const whisperResp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${openAIKey}`,
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        },
+        body: multipartBody,
+      });
+
+      if (!whisperResp.ok) {
+        const errText = await whisperResp.text();
+        console.error("[Voice] Whisper API error:", whisperResp.status, errText);
+        return httpResponse(500, { error: "transcription_failed", detail: errText });
+      }
+
+      const whisperData = await whisperResp.json();
+      const transcribedText = (whisperData.text || "").trim();
+
+      console.log(`[Voice] Transcription complete (${lang}), length: ${transcribedText.length}`);
+      return httpResponse(200, { text: transcribedText });
+    } catch (error) {
+      console.error("[Voice] Transcription error:", error);
+      return httpResponse(500, { error: "internal_server_error", detail: error.message });
     }
   }
 

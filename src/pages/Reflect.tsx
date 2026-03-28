@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, ChevronRight, Info, Menu, RotateCcw, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -6,8 +6,11 @@ import { useLanguage } from '../i18n';
 import { useAuth } from '../auth';
 import { usePlatform } from '../hooks/usePlatform';
 import ChatInput from '../components/ChatInput';
+import VoiceOverlay from '../components/VoiceOverlay';
 import ReflectHistoryDrawer from '../components/ReflectHistoryDrawer';
 import { sendReflectWithGate } from '../services/seenApi';
+import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
+import { transcribeAudio } from '../services/voiceApi';
 import { analyzeUserState } from '../services/questionGate';
 import { ResponseStyle, type ReflectDebug, type ResponseStyleType } from '../types/responseStyle';
 import type { RetentionOption } from '../types/insight';
@@ -51,7 +54,7 @@ export default function Reflect() {
   const [step, setStep] = useState(0);
   const { t, language, setLanguage, effectiveLanguage } = useLanguage();
   const { seenUser, firebaseUser } = useAuth();
-  const { isDesktop } = usePlatform();
+  const { isDesktop, isNative } = usePlatform();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const understandingProgress = seenUser?.understandingProgress ?? 0;
@@ -78,6 +81,40 @@ export default function Reflect() {
 
   // Recent conversations for desktop sidebar + mobile drawer
   const { conversations: recentConversations } = useRecentConversations();
+
+  // Voice input (mobile native only)
+  const voice = useVoiceRecorder();
+  const showMic = isNative && !isDesktop;
+
+  const handleMicPress = useCallback(() => {
+    voice.startRecording();
+  }, [voice]);
+
+  const handleMicRelease = useCallback(async () => {
+    const result = await voice.stopRecording();
+    if (!result) return; // error already set by hook (too short, etc.)
+    try {
+      const { text } = await transcribeAudio(
+        result.base64,
+        result.mimeType,
+        effectiveLanguage === 'zh' ? 'zh' : 'en'
+      );
+      if (text) setInputValue(prev => prev ? `${prev} ${text}` : text);
+      voice.resetToIdle();
+    } catch (err) {
+      console.error('[Voice] transcription error:', err);
+      voice.setError('voice.error_transcribe');
+    }
+  }, [voice, effectiveLanguage]);
+
+  const handleMicCancel = useCallback(() => {
+    voice.cancelRecording();
+  }, [voice]);
+
+  const handleVoiceRetry = useCallback(() => {
+    voice.resetToIdle();
+    voice.startRecording();
+  }, [voice]);
 
   const [userStatePreview, setUserStatePreview] = useState<{ isDistressed: boolean; isAskingForDeepDive: boolean }>({
     isDistressed: false,
@@ -1041,6 +1078,10 @@ export default function Reflect() {
                 placeholder={effectiveLanguage === 'zh' ? '在这里输入...' : 'Type here...'}
                 autoFocus
                 footer={composerFooter}
+                showMic={showMic}
+                onMicPress={handleMicPress}
+                onMicRelease={handleMicRelease}
+                onMicCancel={handleMicCancel}
               />
             </div>
           </motion.div>
@@ -1121,6 +1162,10 @@ export default function Reflect() {
                 placeholder={effectiveLanguage === 'zh' ? '继续说...' : 'Continue...'}
                 disabled={isLoading}
                 footer={composerFooter}
+                showMic={showMic}
+                onMicPress={handleMicPress}
+                onMicRelease={handleMicRelease}
+                onMicCancel={handleMicCancel}
               />
               <p className="text-[9px] text-gray-500 text-center mt-2">{t('reflect.mirror_footer')}</p>
             </div>
@@ -1191,6 +1236,18 @@ export default function Reflect() {
 
       </AnimatePresence>
       </div>
+
+      {/* Voice recording overlay (mobile native only) */}
+      {showMic && (
+        <VoiceOverlay
+          state={voice.state}
+          elapsedMs={voice.elapsedMs}
+          errorKey={voice.errorKey}
+          t={t}
+          onCancel={handleMicCancel}
+          onRetry={handleVoiceRetry}
+        />
+      )}
     </div>
   );
 }

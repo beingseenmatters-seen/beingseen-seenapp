@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, type ReactNode } from 'react';
-import { ArrowUp } from 'lucide-react';
+import { ArrowUp, Mic } from 'lucide-react';
 
 interface ChatInputProps {
   value: string;
@@ -10,6 +10,10 @@ interface ChatInputProps {
   maxRows?: number;
   autoFocus?: boolean;
   footer?: ReactNode;
+  showMic?: boolean;
+  onMicPress?: () => void;
+  onMicRelease?: () => void;
+  onMicCancel?: () => void;
 }
 
 export default function ChatInput({
@@ -21,6 +25,10 @@ export default function ChatInput({
   maxRows = 6,
   autoFocus = false,
   footer,
+  showMic = false,
+  onMicPress,
+  onMicRelease,
+  onMicCancel,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -52,6 +60,26 @@ export default function ChatInput({
     }
   };
 
+  // Push-to-talk: track touch start Y to detect slide-up cancel
+  const touchStartY = useRef<number>(0);
+  const SLIDE_CANCEL_THRESHOLD = 80;
+
+  const handleMicTouchStart = (e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+    onMicPress?.();
+  };
+
+  const handleMicTouchEnd = (e: React.TouchEvent) => {
+    const dy = touchStartY.current - e.changedTouches[0].clientY;
+    if (dy > SLIDE_CANCEL_THRESHOLD) {
+      onMicCancel?.();
+    } else {
+      onMicRelease?.();
+    }
+  };
+
+  const showMicButton = showMic && !value.trim();
+
   return (
     <div className="w-full rounded-xl border border-gray-200 bg-gray-50 focus-within:border-gray-300 focus-within:bg-white transition-all">
       <div className="flex items-end gap-2 px-3 pt-2.5 pb-1.5">
@@ -65,13 +93,24 @@ export default function ChatInput({
           rows={1}
           className="flex-1 resize-none bg-transparent text-sm leading-[22px] text-gray-800 placeholder:text-gray-400 focus:outline-none disabled:opacity-50"
         />
-        <button
-          onClick={onSend}
-          disabled={!value.trim() || disabled}
-          className="shrink-0 p-1.5 rounded-lg bg-gray-800 text-white disabled:bg-gray-200 disabled:text-gray-400 transition-colors hover:bg-black mb-px"
-        >
-          <ArrowUp size={14} strokeWidth={2.5} />
-        </button>
+        {showMicButton ? (
+          <button
+            onTouchStart={handleMicTouchStart}
+            onTouchEnd={handleMicTouchEnd}
+            disabled={disabled}
+            className="shrink-0 p-1.5 rounded-lg bg-gray-100 text-gray-500 active:bg-red-50 active:text-red-500 disabled:opacity-40 transition-colors mb-px touch-none select-none"
+          >
+            <Mic size={14} strokeWidth={2.5} />
+          </button>
+        ) : (
+          <button
+            onClick={onSend}
+            disabled={!value.trim() || disabled}
+            className="shrink-0 p-1.5 rounded-lg bg-gray-800 text-white disabled:bg-gray-200 disabled:text-gray-400 transition-colors hover:bg-black mb-px"
+          >
+            <ArrowUp size={14} strokeWidth={2.5} />
+          </button>
+        )}
       </div>
       {footer && (
         <div className="px-3 pb-2">
