@@ -60,22 +60,39 @@ export default function ChatInput({
     }
   };
 
-  // Push-to-talk: track touch start Y to detect slide-up cancel
+  // Voice recording: touch-hold with slide-up cancel, plus tap fallback
   const touchStartY = useRef<number>(0);
+  const isTouchHold = useRef(false);
   const SLIDE_CANCEL_THRESHOLD = 80;
 
   const handleMicTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault();
     touchStartY.current = e.touches[0].clientY;
+    isTouchHold.current = true;
     onMicPress?.();
   };
 
   const handleMicTouchEnd = (e: React.TouchEvent) => {
+    e.preventDefault();
+    if (!isTouchHold.current) return;
+    isTouchHold.current = false;
     const dy = touchStartY.current - e.changedTouches[0].clientY;
     if (dy > SLIDE_CANCEL_THRESHOLD) {
       onMicCancel?.();
     } else {
       onMicRelease?.();
     }
+  };
+
+  const handleMicTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault();
+  };
+
+  // Tap fallback if touch events don't fire (e.g. some WebView quirks)
+  const handleMicClick = () => {
+    if (isTouchHold.current) return; // already handled by touch events
+    onMicPress?.();
+    // In tap mode, user will use the overlay cancel or it auto-stops
   };
 
   const showMicButton = showMic && !value.trim();
@@ -97,10 +114,12 @@ export default function ChatInput({
           <button
             onTouchStart={handleMicTouchStart}
             onTouchEnd={handleMicTouchEnd}
+            onTouchMove={handleMicTouchMove}
+            onClick={handleMicClick}
             disabled={disabled}
-            className="shrink-0 p-1.5 rounded-lg bg-gray-100 text-gray-500 active:bg-red-50 active:text-red-500 disabled:opacity-40 transition-colors mb-px touch-none select-none"
+            className="shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 active:bg-red-50 active:text-red-500 disabled:opacity-40 transition-colors select-none"
           >
-            <Mic size={14} strokeWidth={2.5} />
+            <Mic size={20} strokeWidth={2} />
           </button>
         ) : (
           <button
