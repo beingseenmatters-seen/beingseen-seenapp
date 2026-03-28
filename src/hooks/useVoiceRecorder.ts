@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { VoiceRecorder } from 'capacitor-voice-recorder';
+import { VoiceRecorder } from '@independo/capacitor-voice-recorder';
 import { isNative } from '../auth/platform';
 
 export type VoiceState = 'idle' | 'recording' | 'cancelling' | 'processing' | 'error';

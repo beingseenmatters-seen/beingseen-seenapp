@@ -74,5 +74,7 @@
 	</array>
 	<key>GoogleSigninClientId</key>
 	<string>219057410128-jt5phseu2hdg41rsh9aecppit3gmmp8g.apps.googleusercontent.com</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Seen needs microphone access for voice input</string>
 </dict>
 </plist>

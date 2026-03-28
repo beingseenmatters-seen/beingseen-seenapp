@@ -986,8 +986,10 @@ ${transcript}`;
     try {
       const openAIKey = await getOpenAIKey();
 
+      // Decode base64 to binary buffer
       const audioBuffer = Buffer.from(audio, "base64");
 
+      // Determine file extension from mimeType
       const extMap = {
         "audio/aac": "m4a",
         "audio/mp4": "m4a",
@@ -1000,6 +1002,7 @@ ${transcript}`;
       const ext = extMap[mimeType] || "m4a";
       const fileName = `audio.${ext}`;
 
+      // Build multipart/form-data manually for Whisper API
       const boundary = "----SeenVoiceBoundary" + Date.now();
       const CRLF = "\r\n";
 
