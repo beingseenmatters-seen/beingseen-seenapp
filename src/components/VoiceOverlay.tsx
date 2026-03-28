@@ -1,12 +1,12 @@
-import { Mic, Loader2, X } from 'lucide-react';
+import { Mic, Square, Loader2 } from 'lucide-react';
 import type { VoiceState } from '../hooks/useVoiceRecorder';
 
 interface VoiceOverlayProps {
   state: VoiceState;
   elapsedMs: number;
   errorKey: string | null;
-  debugMsg?: string | null;
   t: (key: string) => string;
+  onStop: () => void;
   onCancel: () => void;
   onRetry: () => void;
 }
@@ -18,16 +18,12 @@ function formatTimer(ms: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export default function VoiceOverlay({ state, elapsedMs, errorKey, debugMsg, t, onCancel, onRetry }: VoiceOverlayProps) {
+export default function VoiceOverlay({ state, elapsedMs, errorKey, t, onStop, onCancel, onRetry }: VoiceOverlayProps) {
   if (state === 'idle' || state === 'cancelling') return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl p-8 mx-6 max-w-xs w-full text-center shadow-2xl space-y-4">
-        {/* Debug info — remove after testing */}
-        {debugMsg && (
-          <p className="text-[10px] text-gray-400 font-mono break-all bg-gray-50 rounded p-2">{debugMsg}</p>
-        )}
+      <div className="bg-white rounded-2xl p-8 mx-6 max-w-xs w-full text-center shadow-2xl space-y-5">
         {state === 'recording' && (
           <>
             <div className="mx-auto w-16 h-16 rounded-full bg-red-50 flex items-center justify-center animate-pulse">
@@ -35,12 +31,12 @@ export default function VoiceOverlay({ state, elapsedMs, errorKey, debugMsg, t, 
             </div>
             <p className="text-sm font-medium text-gray-800">{t('voice.recording')}</p>
             <p className="text-2xl font-light text-gray-600 tabular-nums">{formatTimer(elapsedMs)}</p>
-            <p className="text-xs text-gray-400">{t('voice.slide_cancel')}</p>
             <button
-              onClick={onCancel}
-              className="mt-2 p-2 rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors mx-auto flex items-center justify-center"
+              onClick={onStop}
+              className="w-full py-3.5 rounded-xl bg-gray-900 text-white text-sm font-medium active:bg-black transition-colors flex items-center justify-center gap-2"
             >
-              <X size={20} />
+              <Square size={14} fill="currentColor" />
+              {t('voice.stop')}
             </button>
           </>
         )}
@@ -62,16 +58,16 @@ export default function VoiceOverlay({ state, elapsedMs, errorKey, debugMsg, t, 
             <p className="text-sm font-medium text-gray-800">
               {errorKey ? t(errorKey) : t('voice.error_generic')}
             </p>
-            <div className="flex gap-3 justify-center pt-2">
+            <div className="flex gap-3 justify-center pt-1">
               <button
                 onClick={onCancel}
-                className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                className="flex-1 py-3 rounded-xl border border-gray-200 text-sm text-gray-500 active:bg-gray-50 transition-colors"
               >
                 {t('common.cancel')}
               </button>
               <button
                 onClick={onRetry}
-                className="px-4 py-2 text-sm font-medium text-white bg-gray-800 rounded-lg hover:bg-black transition-colors"
+                className="flex-1 py-3 rounded-xl bg-gray-900 text-white text-sm font-medium active:bg-black transition-colors"
               >
                 {t('voice.retry')}
               </button>

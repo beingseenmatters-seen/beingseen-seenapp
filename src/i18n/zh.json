@@ -464,7 +464,7 @@
   "voice": {
     "recording": "录音中…",
     "transcribing": "正在转写…",
-    "slide_cancel": "向上滑动取消",
+    "stop": "完成录音",
     "error_permission": "需要麦克风权限",
     "error_too_short": "录音太短了",
     "error_generic": "录音出了点问题，请重试",

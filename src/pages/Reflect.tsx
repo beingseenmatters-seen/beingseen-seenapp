@@ -1243,8 +1243,8 @@ export default function Reflect() {
           state={voice.state}
           elapsedMs={voice.elapsedMs}
           errorKey={voice.errorKey}
-          debugMsg={voice.debugMsg}
           t={t}
+          onStop={handleMicRelease}
           onCancel={handleMicCancel}
           onRetry={handleVoiceRetry}
         />

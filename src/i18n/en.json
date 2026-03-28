@@ -464,7 +464,7 @@
   "voice": {
     "recording": "Recording...",
     "transcribing": "Transcribing...",
-    "slide_cancel": "Slide up to cancel",
+    "stop": "Done",
     "error_permission": "Microphone access required",
     "error_too_short": "Recording too short",
     "error_generic": "Something went wrong, please try again",
