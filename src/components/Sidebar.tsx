@@ -153,7 +153,12 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   {effectiveLanguage === 'zh' ? '默认角色' : 'Default Role'}
                 </span>
               </div>
-              {t(`settings.ai_response.roles.${roleKey}.desc`)}
+              <div className="font-medium text-gray-600 mb-0.5">
+                {t(`settings.ai_response.roles.${roleKey}.title`)}
+              </div>
+              <div className="text-gray-400">
+                {t(`settings.ai_response.roles.${roleKey}.desc`)}
+              </div>
             </div>
           );
         })()}
