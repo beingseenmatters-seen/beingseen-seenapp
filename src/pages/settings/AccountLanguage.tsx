@@ -30,7 +30,7 @@ function getLoginMethodLabel(
 export default function AccountLanguage() {
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const { firebaseUser, seenUser, signOut, isLoading } = useAuth();
+  const { firebaseUser, seenUser, isLoading } = useAuth();
 
   const loginMethod = getLoginMethodLabel(
     seenUser?.loginMethod,
@@ -87,15 +87,6 @@ export default function AccountLanguage() {
       setLinkError(err.message || 'Failed to send email link');
     } finally {
       setIsLinking(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    try {
-      await signOut();
-      console.log('[Account] User signed out successfully');
-    } catch (err) {
-      console.error('[Account] Sign out failed:', err);
     }
   };
 
@@ -208,23 +199,6 @@ export default function AccountLanguage() {
             </div>
           </section>
 
-          {/* Actions */}
-          <section className="space-y-4 pt-4">
-            <button
-              onClick={handleSignOut}
-              disabled={isLoading}
-              className="w-full py-4 bg-gray-50 rounded-xl text-sm text-primary hover:bg-gray-100 transition-colors disabled:opacity-50"
-            >
-              {isLoading ? t('common.loading') : t('settings.account.action_logout')}
-            </button>
-            <button
-              disabled
-              className="w-full py-4 text-sm text-gray-300 cursor-not-allowed"
-            >
-              {t('settings.account.action_delete')}
-              <span className="ml-2 text-[10px] uppercase tracking-wide text-muted">{t('common.feature_coming_soon')}</span>
-            </button>
-          </section>
 
         </div>
       </div>
