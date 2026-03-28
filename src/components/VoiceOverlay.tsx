@@ -5,6 +5,7 @@ interface VoiceOverlayProps {
   state: VoiceState;
   elapsedMs: number;
   errorKey: string | null;
+  debugMsg?: string | null;
   t: (key: string) => string;
   onCancel: () => void;
   onRetry: () => void;
@@ -17,12 +18,16 @@ function formatTimer(ms: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export default function VoiceOverlay({ state, elapsedMs, errorKey, t, onCancel, onRetry }: VoiceOverlayProps) {
+export default function VoiceOverlay({ state, elapsedMs, errorKey, debugMsg, t, onCancel, onRetry }: VoiceOverlayProps) {
   if (state === 'idle' || state === 'cancelling') return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-2xl p-8 mx-6 max-w-xs w-full text-center shadow-2xl space-y-4">
+        {/* Debug info — remove after testing */}
+        {debugMsg && (
+          <p className="text-[10px] text-gray-400 font-mono break-all bg-gray-50 rounded p-2">{debugMsg}</p>
+        )}
         {state === 'recording' && (
           <>
             <div className="mx-auto w-16 h-16 rounded-full bg-red-50 flex items-center justify-center animate-pulse">

@@ -11,6 +11,7 @@ interface UseVoiceRecorderReturn {
   state: VoiceState;
   elapsedMs: number;
   errorKey: string | null;
+  debugMsg: string | null;
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<{ base64: string; mimeType: string } | null>;
   cancelRecording: () => Promise<void>;
@@ -23,6 +24,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
   const [state, setState] = useState<VoiceState>('idle');
   const [elapsedMs, setElapsedMs] = useState(0);
   const [errorKey, setErrorKey] = useState<string | null>(null);
+  const [debugMsg, setDebugMsg] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
   const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -35,21 +37,50 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
   useEffect(() => clearTimers, [clearTimers]);
 
   const startRecording = useCallback(async () => {
-    if (!isNative()) return;
+    setState('processing');
+    setDebugMsg('startRecording called');
+
+    if (!isNative()) {
+      setDebugMsg('SKIP: isNative() = false');
+      setState('error');
+      setErrorKey('voice.error_generic');
+      return;
+    }
+
     setErrorKey(null);
+    setDebugMsg('checking permission...');
 
     try {
-      const perm = await VoiceRecorder.hasAudioRecordingPermission();
-      if (!perm.value) {
-        const req = await VoiceRecorder.requestAudioRecordingPermission();
-        if (!req.value) {
+      let permGranted = false;
+      try {
+        const perm = await VoiceRecorder.hasAudioRecordingPermission();
+        permGranted = perm.value;
+        setDebugMsg(`hasPermission: ${perm.value}`);
+      } catch (permErr: any) {
+        setDebugMsg(`hasPermission error: ${permErr?.message || permErr}, requesting...`);
+      }
+
+      if (!permGranted) {
+        setDebugMsg('requesting permission...');
+        try {
+          const req = await VoiceRecorder.requestAudioRecordingPermission();
+          setDebugMsg(`requestPermission result: ${req.value}`);
+          if (!req.value) {
+            setState('error');
+            setErrorKey('voice.error_permission');
+            return;
+          }
+        } catch (reqErr: any) {
+          setDebugMsg(`requestPermission error: ${reqErr?.message || reqErr}`);
           setState('error');
           setErrorKey('voice.error_permission');
           return;
         }
       }
 
+      setDebugMsg('calling VoiceRecorder.startRecording()...');
       await VoiceRecorder.startRecording();
+      setDebugMsg('recording started!');
       setState('recording');
       startTimeRef.current = Date.now();
       setElapsedMs(0);
@@ -65,8 +96,9 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
         } catch { /* ignore */ }
         setState('idle');
       }, MAX_DURATION_MS);
-    } catch (err) {
+    } catch (err: any) {
       console.error('[VoiceRecorder] startRecording error:', err);
+      setDebugMsg(`startRecording error: ${err?.message || err?.code || JSON.stringify(err)}`);
       setState('error');
       setErrorKey('voice.error_generic');
     }
@@ -92,8 +124,9 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
         base64: result.value.recordDataBase64 || '',
         mimeType: result.value.mimeType || 'audio/aac',
       };
-    } catch (err) {
+    } catch (err: any) {
       console.error('[VoiceRecorder] stopRecording error:', err);
+      setDebugMsg(`stopRecording error: ${err?.message || err}`);
       setState('error');
       setErrorKey('voice.error_generic');
       return null;
@@ -126,10 +159,11 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     setState('idle');
     setElapsedMs(0);
     setErrorKey(null);
+    setDebugMsg(null);
   }, []);
 
   return {
-    state, elapsedMs, errorKey,
+    state, elapsedMs, errorKey, debugMsg,
     startRecording, stopRecording, cancelRecording,
     setProcessing, setError, resetToIdle,
   };
