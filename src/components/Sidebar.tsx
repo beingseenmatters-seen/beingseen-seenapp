@@ -141,20 +141,22 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* Bottom section — AI role + user + logout */}
       <div className="shrink-0 px-2 pb-3 space-y-1">
-        {/* AI style subtle note */}
-        {!collapsed && (
-          <div className="px-3 py-2 text-[10px] text-gray-500 leading-relaxed">
-            <div className="flex items-center gap-1.5 mb-0.5">
-              <Sparkles size={11} className="text-gray-400" />
-              <span className="uppercase tracking-wider font-medium text-gray-400">
-                {effectiveLanguage === 'zh' ? '默认角色' : 'Default Role'}
-              </span>
+        {/* AI style subtle note — bound to saved aiPreference.role */}
+        {!collapsed && (() => {
+          const savedRole = seenUser?.soulProfile?.aiPreference?.role || 'mirror';
+          const roleKey = ['mirror', 'organizer', 'helper', 'guide'].includes(savedRole) ? savedRole : 'mirror';
+          return (
+            <div className="px-3 py-2 text-[10px] text-gray-500 leading-relaxed">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <Sparkles size={11} className="text-gray-400" />
+                <span className="uppercase tracking-wider font-medium text-gray-400">
+                  {effectiveLanguage === 'zh' ? '默认角色' : 'Default Role'}
+                </span>
+              </div>
+              {t(`settings.ai_response.roles.${roleKey}.desc`)}
             </div>
-            {effectiveLanguage === 'zh'
-              ? '一位帮助你更深入理解自己的倾听者'
-              : 'A thoughtful listener who helps you understand yourself'}
-          </div>
-        )}
+          );
+        })()}
 
         {/* User area */}
         <div

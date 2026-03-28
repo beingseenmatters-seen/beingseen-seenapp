@@ -26,7 +26,7 @@ export default function Me() {
           {t('nav.me')}
         </span>
       </div>
-      <div className={`flex-1 min-h-0 overflow-y-auto no-scrollbar ${isDesktop ? 'max-w-2xl mx-auto px-8 pb-12' : 'px-6 pb-8'}`}>
+      <div className={`flex-1 min-h-0 overflow-y-auto no-scrollbar ${isDesktop ? 'max-w-3xl mx-auto w-full px-8 pb-12' : 'px-6 pb-8'}`}>
       {/* Page header */}
       <div className="mb-10 pt-4">
         <div className="flex items-baseline space-x-3 mb-4">
