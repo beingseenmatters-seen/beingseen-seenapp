@@ -17,6 +17,7 @@ import PrivacyData from './pages/settings/PrivacyData';
 import AccountLanguage from './pages/settings/AccountLanguage';
 import MyQuestions from './pages/settings/MyQuestions';
 import BasicProfile from './pages/settings/BasicProfile';
+import DeleteAccount from './pages/DeleteAccount';
 
 function SplashScreen() {
   return (
@@ -97,6 +98,7 @@ function AppRoutes() {
   if (!isAuthenticated) {
     return (
       <Routes>
+        <Route path="/delete-account" element={<DeleteAccount />} />
         <Route path="/welcome" element={<WelcomeScreen />} />
         <Route path="/auth" element={<AuthOptionsScreen />} />
         <Route path="/auth/email" element={<EmailInputScreen />} />
@@ -115,6 +117,7 @@ function AppRoutes() {
   if (!isOnboarded) {
     return (
       <Routes>
+        <Route path="/delete-account" element={<DeleteAccount />} />
         <Route path="/onboarding" element={<Onboarding />} />
         <Route path="*" element={<Navigate to="/onboarding" replace />} />
       </Routes>
@@ -137,6 +140,7 @@ function AppRoutes() {
       <Route path="/me/privacy" element={<PrivacyData />} />
       <Route path="/me/account" element={<AccountLanguage />} />
       <Route path="/me/questions" element={<MyQuestions />} />
+      <Route path="/delete-account" element={<DeleteAccount />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
