@@ -1,7 +1,7 @@
 {
   "name": "seen-app",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.7",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@capacitor-firebase/authentication": "^8.1.0",
+    "@capacitor/android": "^8.3.0",
     "@capacitor/app": "^8.0.1",
     "@capacitor/cli": "^8.0.1",
     "@capacitor/core": "^8.0.1",
