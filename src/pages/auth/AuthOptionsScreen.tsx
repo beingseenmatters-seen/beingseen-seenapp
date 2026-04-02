@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Mail, ChevronLeft } from 'lucide-react';
 import { useLanguage } from '../../i18n';
 import { useAuth, isGoogleAvailable, isAppleAvailable } from '../../auth';
+import { usePlatform } from '../../hooks/usePlatform';
 
 function AppleIcon({ className }: { className?: string }) {
   return (
@@ -35,6 +36,7 @@ export default function AuthOptionsScreen() {
   const navigate = useNavigate();
   const { t } = useLanguage();
   const { signInWithGoogle, signInWithApple, isLoading, error, clearError } = useAuth();
+  const { isAndroid } = usePlatform();
 
   const googleActive = isGoogleAvailable();
   const appleActive = isAppleAvailable();
@@ -93,27 +95,29 @@ export default function AuthOptionsScreen() {
           {t('auth.continue_email')}
         </button>
 
-        {/* Apple — available on both iOS and Web */}
-        {appleActive ? (
-          <button
-            onClick={handleApple}
-            disabled={isLoading}
-            className="w-full py-4 rounded-2xl border border-border text-primary text-base font-light flex items-center justify-center gap-3 hover:bg-highlight transition-colors disabled:opacity-50"
-          >
-            <AppleIcon />
-            {t('auth.continue_apple')}
-          </button>
-        ) : (
-          <div className="relative">
+        {/* Apple — available on iOS and Web, hidden on Android */}
+        {!isAndroid && (
+          appleActive ? (
             <button
-              disabled
-              className="w-full py-4 rounded-2xl bg-gray-50 text-gray-300 text-base font-light flex items-center justify-center gap-3 cursor-not-allowed"
+              onClick={handleApple}
+              disabled={isLoading}
+              className="w-full py-4 rounded-2xl border border-border text-primary text-base font-light flex items-center justify-center gap-3 hover:bg-highlight transition-colors disabled:opacity-50"
             >
-              <AppleIcon className="text-gray-300" />
+              <AppleIcon />
               {t('auth.continue_apple')}
             </button>
-            <ComingSoonBadge label={t('common.feature_coming_soon')} />
-          </div>
+          ) : (
+            <div className="relative">
+              <button
+                disabled
+                className="w-full py-4 rounded-2xl bg-gray-50 text-gray-300 text-base font-light flex items-center justify-center gap-3 cursor-not-allowed"
+              >
+                <AppleIcon className="text-gray-300" />
+                {t('auth.continue_apple')}
+              </button>
+              <ComingSoonBadge label={t('common.feature_coming_soon')} />
+            </div>
+          )
         )}
 
         {/* Google — active on web, disabled on native with explanation */}
