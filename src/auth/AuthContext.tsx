@@ -389,25 +389,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (data: Partial<SeenUser>) => {
       if (!state.firebaseUser) throw new Error('No authenticated user');
       
-      // Optimistic update to prevent UI hangs
+      // 1. Optimistic update for instant UI response
       if (state.seenUser) {
         const optimisticUser = { ...state.seenUser, ...data };
         dispatch({ type: 'UPDATE_SEEN_USER', seenUser: optimisticUser });
         syncLocalStorage(optimisticUser);
       }
 
-      // Fire and forget background sync
-      firestoreOps.updateUserDocument(state.firebaseUser.uid, data)
-        .then(() => firestoreOps.getUserDocument(state.firebaseUser!.uid))
-        .then((updated) => {
-          if (updated) {
-            dispatch({ type: 'UPDATE_SEEN_USER', seenUser: updated });
-            syncLocalStorage(updated);
-          }
-        })
-        .catch(err => {
-          console.error('[auth] updateProfile background sync failed:', err);
-        });
+      // 2. Perform network request
+      // We intentionally DO NOT refetch getUserDocument here to avoid race conditions
+      // where an older background sync overwrites a newer optimistic update.
+      await firestoreOps.updateUserDocument(state.firebaseUser.uid, data);
     },
     [state.firebaseUser, state.seenUser],
   );
