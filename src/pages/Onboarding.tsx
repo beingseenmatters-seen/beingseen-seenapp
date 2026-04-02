@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
@@ -32,6 +33,7 @@ function getAiResponse(lifeStory: string, lang: string): string {
 }
 
 export default function Onboarding() {
+  const navigate = useNavigate();
   const { t, effectiveLanguage } = useLanguage();
   const { updateProfile, seenUser } = useAuth();
   const lang = effectiveLanguage === 'zh' ? 'zh' : 'en';
@@ -102,6 +104,7 @@ export default function Onboarding() {
     console.log('[Onboarding] skip clicked (maybe later)');
     await saveField({ onboardingCompleted: true });
     console.log('[Onboarding] navigation target: main app (via context)');
+    navigate('/', { replace: true });
   };
 
   const handleQuestionSubmit = async (skipped: boolean) => {
@@ -138,12 +141,14 @@ export default function Onboarding() {
     console.log('[Onboarding] stop here clicked');
     await saveField({ onboardingCompleted: true });
     console.log('[Onboarding] navigation target: main app (via context)');
+    navigate('/', { replace: true });
   };
 
   const handleComplete = async () => {
     console.log('[Onboarding] complete clicked');
     await saveField({ onboardingCompleted: true });
     console.log('[Onboarding] navigation target: main app (via context)');
+    navigate('/', { replace: true });
   };
 
   const fade = {
