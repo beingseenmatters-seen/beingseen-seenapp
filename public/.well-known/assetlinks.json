@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.beingseenmatters.seen",
+      "sha256_cert_fingerprints": [
+        "35:E2:23:0A:7F:63:1C:03:E1:D9:D3:83:C3:EB:32:5C:0B:D4:29:B6:4F:20:07:FC:EF:E3:37:D4:1E:07:4C:5C",
+        "DE:AB:03:88:2A:10:EE:B8:B6:BC:46:82:E2:D3:CF:31:5D:E3:F4:61:39:6C:5A:D4:6D:3A:A5:95:5B:B9:64:CF"
+      ]
+    }
+  }
+]
