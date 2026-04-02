@@ -388,16 +388,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateProfile = useCallback(
     async (data: Partial<SeenUser>) => {
       if (!state.firebaseUser) throw new Error('No authenticated user');
-      await firestoreOps.updateUserDocument(state.firebaseUser.uid, data);
-      const updated = await firestoreOps.getUserDocument(state.firebaseUser.uid);
-      if (updated) {
-        dispatch({ type: 'UPDATE_SEEN_USER', seenUser: updated });
-        syncLocalStorage(updated);
-      } else {
-        throw new Error('Failed to read back updated profile');
+      
+      // Optimistic update to prevent UI hangs
+      if (state.seenUser) {
+        const optimisticUser = { ...state.seenUser, ...data };
+        dispatch({ type: 'UPDATE_SEEN_USER', seenUser: optimisticUser });
+        syncLocalStorage(optimisticUser);
       }
+
+      // Fire and forget background sync
+      firestoreOps.updateUserDocument(state.firebaseUser.uid, data)
+        .then(() => firestoreOps.getUserDocument(state.firebaseUser!.uid))
+        .then((updated) => {
+          if (updated) {
+            dispatch({ type: 'UPDATE_SEEN_USER', seenUser: updated });
+            syncLocalStorage(updated);
+          }
+        })
+        .catch(err => {
+          console.error('[auth] updateProfile background sync failed:', err);
+        });
     },
-    [state.firebaseUser],
+    [state.firebaseUser, state.seenUser],
   );
 
   const signOutAction = useCallback(async () => {

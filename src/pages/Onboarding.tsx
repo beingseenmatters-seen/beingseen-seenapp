@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
@@ -50,14 +50,25 @@ export default function Onboarding() {
 
   const questionTitleKey = (idx: number) => `onboarding.uq_${idx + 1}`;
 
+  useEffect(() => {
+    console.log('[Onboarding] mounted, existing progress:', existingProgress);
+    return () => console.log('[Onboarding] unmounted');
+  }, []);
+
   const saveField = useCallback(
     async (data: Record<string, unknown>) => {
+      console.log('[Onboarding] request started:', Object.keys(data));
       setSaving(true);
       try {
-        await updateProfile(data as any);
+        await Promise.race([
+          updateProfile(data as any),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+        ]);
+        console.log('[Onboarding] request success');
       } catch (err) {
-        console.error('[Onboarding] save failed:', err);
+        console.error('[Onboarding] request failed:', err);
       } finally {
+        console.log('[Onboarding] clearing loading state');
         setSaving(false);
       }
     },
@@ -65,29 +76,36 @@ export default function Onboarding() {
   );
 
   const handleLifeStorySubmit = async (skipped: boolean) => {
+    console.log('[Onboarding] life story submit clicked, skipped:', skipped);
     const story = skipped ? '' : lifeStory.trim();
     await saveField({
       lifeStory: story,
       onboardingStarted: true,
     });
     if (skipped) {
+      console.log('[Onboarding] navigation target: invite');
       setStep('invite');
     } else {
+      console.log('[Onboarding] navigation target: aiResponse');
       setStep('aiResponse');
     }
   };
 
   const handleContinueToQuestions = () => {
+    console.log('[Onboarding] continue to questions clicked');
     const key = QUESTION_KEYS[questionIndex];
     setCurrentAnswer(answers[key] ?? '');
     setStep('question');
   };
 
   const handleMaybeLater = async () => {
+    console.log('[Onboarding] skip clicked (maybe later)');
     await saveField({ onboardingCompleted: true });
+    console.log('[Onboarding] navigation target: main app (via context)');
   };
 
   const handleQuestionSubmit = async (skipped: boolean) => {
+    console.log(`[Onboarding] question submit clicked (index ${questionIndex}), skipped:`, skipped);
     const key = QUESTION_KEYS[questionIndex];
     const value = skipped ? '' : currentAnswer.trim();
 
@@ -105,9 +123,11 @@ export default function Onboarding() {
     });
 
     if (newProgress >= totalQuestions) {
+      console.log('[Onboarding] navigation target: complete');
       await saveField({ onboardingCompleted: true });
       setStep('complete');
     } else {
+      console.log(`[Onboarding] navigation target: question ${newProgress}`);
       setQuestionIndex(newProgress);
       const nextKey = QUESTION_KEYS[newProgress];
       setCurrentAnswer(updatedAnswers[nextKey] ?? '');
@@ -115,11 +135,15 @@ export default function Onboarding() {
   };
 
   const handleQuestionStop = async () => {
+    console.log('[Onboarding] stop here clicked');
     await saveField({ onboardingCompleted: true });
+    console.log('[Onboarding] navigation target: main app (via context)');
   };
 
   const handleComplete = async () => {
+    console.log('[Onboarding] complete clicked');
     await saveField({ onboardingCompleted: true });
+    console.log('[Onboarding] navigation target: main app (via context)');
   };
 
   const fade = {
