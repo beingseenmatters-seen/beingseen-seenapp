@@ -8,7 +8,7 @@ import {
   type ReflectResponseWithDebug 
 } from '../types/responseStyle';
 import { analyzeUserState, resolveStyleAndLevel } from './questionGate';
-import { mapStyleToSelectedMode } from './reflectStyle';
+import { buildGateSavedPreference, getReflectDefaultStyle, mapStyleToSelectedMode } from './reflectStyle';
 
 export interface ReflectResponse {
   reply: string;
@@ -69,15 +69,21 @@ export async function sendReflectWithGate(
   recentTurns: Array<{ role: 'user' | 'ai'; text: string }> = [],
   keepContext: boolean = false,
   sessionId?: string,
-  meta?: { isNewSession?: boolean; action?: ReflectAction; resolvedStyle?: ResponseStyleType }
+  meta?: {
+    isNewSession?: boolean;
+    action?: ReflectAction;
+    resolvedStyle?: ResponseStyleType;
+    /** Firestore `soulProfile.aiPreference` — profile > localStorage for gate fallback */
+    aiPreference?: { role?: string; responseStyle?: string } | null;
+  }
 ): Promise<ReflectResponseWithDebug> {
   
   // 1. 分析用户状态
   const userState = analyzeUserState(text, recentTurns);
   console.log('[SeenAPI] User state analysis:', userState);
   
-  // 2. 获取存储的偏好
-  const savedPreference = JSON.parse(localStorage.getItem('seen_ai_preference') || '{}');
+  // 2. 与 Reflect UI 一致的默认偏好：profile > localStorage（供 selectedMode 无效时）
+  const savedPreference = buildGateSavedPreference(meta?.aiPreference);
 
   // If caller provides a resolvedStyle, force it via selectedMode mapping
   const selectedModeForGate = meta?.resolvedStyle ? mapStyleToSelectedMode(meta.resolvedStyle) : selectedMode;
@@ -184,7 +190,10 @@ export async function sendReflectWithGate(
  * 辅助函数：从 selectedMode 获取 ResponseStyle 字符串
  * 用于兼容旧的 sendReflect 函数
  */
-export function getModeString(selectedMode: number | null): string {
+export function getModeString(
+  selectedMode: number | null,
+  aiPreference?: { role?: string; responseStyle?: string } | null,
+): string {
   const modeMapping: ResponseStyleType[] = [
     ResponseStyle.MIRROR, 
     ResponseStyle.ORGANIZER, 
@@ -194,9 +203,7 @@ export function getModeString(selectedMode: number | null): string {
   if (selectedMode !== null && selectedMode >= 0 && selectedMode < modeMapping.length) {
     return modeMapping[selectedMode];
   }
-  // Fallback to saved preference or default
-  const savedPref = JSON.parse(localStorage.getItem('seen_ai_preference') || '{}');
-  return savedPref.role || 'mirror';
+  return getReflectDefaultStyle(aiPreference) || ResponseStyle.MIRROR;
 }
 
 export interface ExtractSummaryRequest {

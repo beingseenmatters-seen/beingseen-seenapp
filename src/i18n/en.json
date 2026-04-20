@@ -70,6 +70,35 @@
     "seen_title": "You are seen.",
     "seen_subtitle": "The more we understand you,\nthe better we can resonate with you.",
     "seen_hint": "You can stop anytime and continue later.",
+    "step_of_total": "Step {{n}} of 3",
+    "basic_info_title": "Basic Info",
+    "basic_info_subtitle": "Help Seen know you a little before we begin.",
+    "age_range": "Age range",
+    "gender": "Gender",
+    "gender_optional_hint": "Optional",
+    "current_state": "Current state",
+    "current_state_prompt": "What brings you here right now?",
+    "gender_female": "Female",
+    "gender_male": "Male",
+    "gender_non_binary": "Non-binary",
+    "gender_prefer_not": "Prefer not to say",
+    "state_connection": "Looking for connection",
+    "state_healing": "Healing or moving through something",
+    "state_talk": "Just want a space to talk",
+    "state_unsure": "Not sure yet",
+    "basic_info_incomplete": "Choose an age range and what brings you here to continue.",
+    "understanding_style_title": "My Understanding Style",
+    "understanding_style_subtitle": "Help Seen understand how you naturally take things in, process them, and feel understood.",
+    "ai_style_title": "How AI Responds to Me",
+    "ai_style_subtitle": "Choose the kind of response that feels more natural to you.",
+    "ai_listener": "A quiet listener",
+    "ai_listener_desc": "Listens without interrupting.\nFocuses on understanding you first.",
+    "ai_organizer": "Someone who helps me think clearly",
+    "ai_organizer_desc": "Organizes thoughts.\nHelps you see things more clearly.",
+    "ai_challenger": "Someone who challenges me",
+    "ai_challenger_desc": "Points out blind spots.\nDoesn't just agree.",
+    "ai_supporter": "Someone who gives me strength",
+    "ai_supporter_desc": "Encouraging.\nHelps you move forward.",
     "life_story_title": "Could you briefly describe\nyour life journey so far?",
     "life_story_placeholder": "Write anything...",
     "skip_for_now": "Skip for now",
@@ -281,52 +310,52 @@
       "desc": "This is not a test, there are no right answers.\nThese answers help AI understand you better,\nand help you meet those who truly resonate.",
       "cards": {
         "value_orientation": {
-          "title": "When facing a choice, what are you more responsible to?",
+          "title": "When something matters, where do you usually start?",
           "labels": [
-            "Current Reality",
-            "Long-term Meaning"
+            "What fits right now",
+            "What fits in the long run"
           ],
-          "desc": "No right or wrong, just where you lean when deciding."
+          "desc": "Just your usual tilt — not a test."
         },
         "self_vs_relationship": {
-          "title": "When your wants conflict with others' expectations?",
+          "title": "If what you want clashes with what others expect, you tend to…",
           "labels": [
-            "Prioritize Self",
-            "Prioritize Relationship"
+            "Lean toward your own needs",
+            "Lean toward keeping things smooth"
           ],
-          "desc": "Your basic stance when facing the world."
+          "desc": "Neither side is better — it's what feels more natural."
         },
         "conflict_handling": {
-          "title": "Your first reaction to disagreement?",
+          "title": "When someone disagrees with you, you usually start by…",
           "labels": [
-            "Understand Emotion",
-            "Clarify Logic"
+            "Noticing feelings first",
+            "Sorting facts first"
           ],
-          "desc": "Not 'who is right', but where you start understanding."
+          "desc": "Where your attention goes first, not who is right."
         },
         "life_pace": {
-          "title": "Your life pace leans towards?",
+          "title": "In everyday life, your pace feels more…",
           "labels": [
-            "Fast",
-            "Slow"
+            "Faster / fuller",
+            "Slower / more spacious"
           ],
-          "desc": "Some walk fast, some walk deep. Neither is better."
+          "desc": "Fast or slow — both are fine."
         },
         "connection_depth": {
-          "title": "What kind of connection do you enjoy?",
+          "title": "You connect more easily through…",
           "labels": [
-            "Relaxed Company",
-            "Deep Dialogue"
+            "Light, easy company",
+            "Deep one-on-one"
           ],
-          "desc": "Some need proximity, some need understanding."
+          "desc": "What tends to feel natural for you."
         },
         "money_view": {
-          "title": "What is money to you?",
+          "title": "For you, money is more often…",
           "labels": [
-            "Source of Security",
-            "Tool for Growth"
+            "Stability / safety",
+            "Fuel for growth"
           ],
-          "desc": "The role of money affects almost every choice."
+          "desc": "Rough sense is enough."
         },
         "risk_attitude": {
           "title": "When basic needs are met, you likely?",
@@ -348,12 +377,12 @@
           "desc": "What you deem 'worthy' decides who gets your time."
         },
         "expression_style": {
-          "title": "How do you naturally express yourself?",
+          "title": "When you explain yourself, you more naturally lead with…",
           "labels": [
-            "Feelings",
-            "Structure & Logic"
+            "Tone and feeling",
+            "Order and logic"
           ],
-          "desc": "Not 'skill', but your natural language."
+          "desc": "Your default way of putting things — not good or bad."
         },
         "connection_intent": {
           "title": "What connection do you seek here?",

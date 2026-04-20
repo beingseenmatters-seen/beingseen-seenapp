@@ -34,7 +34,8 @@ type AuthAction =
   | { type: 'SET_USER'; firebaseUser: User | null; seenUser: SeenUser | null }
   | { type: 'SET_ERROR'; error: string }
   | { type: 'CLEAR_ERROR' }
-  | { type: 'UPDATE_SEEN_USER'; seenUser: SeenUser };
+  | { type: 'UPDATE_SEEN_USER'; seenUser: SeenUser }
+  | { type: 'MERGE_SEEN_USER'; data: Partial<SeenUser> };
 
 function authReducer(state: AuthState, action: AuthAction): AuthState {
   switch (action.type) {
@@ -54,6 +55,18 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
       return { ...state, error: null };
     case 'UPDATE_SEEN_USER':
       return { ...state, seenUser: action.seenUser };
+    case 'MERGE_SEEN_USER': {
+      if (!state.firebaseUser) return state;
+      const baseUser = state.seenUser || {
+        uid: state.firebaseUser.uid,
+        email: state.firebaseUser.email || '',
+        onboardingCompleted: false,
+        understandingProgress: 0
+      } as SeenUser;
+      const updatedUser = { ...baseUser, ...action.data };
+      syncLocalStorage(updatedUser);
+      return { ...state, seenUser: updatedUser };
+    }
     default:
       return state;
   }
@@ -390,18 +403,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!state.firebaseUser) throw new Error('No authenticated user');
       
       // 1. Optimistic update for instant UI response
-      if (state.seenUser) {
-        const optimisticUser = { ...state.seenUser, ...data };
-        dispatch({ type: 'UPDATE_SEEN_USER', seenUser: optimisticUser });
-        syncLocalStorage(optimisticUser);
-      }
+      dispatch({ type: 'MERGE_SEEN_USER', data });
 
       // 2. Perform network request
       // We intentionally DO NOT refetch getUserDocument here to avoid race conditions
       // where an older background sync overwrites a newer optimistic update.
       await firestoreOps.updateUserDocument(state.firebaseUser.uid, data);
     },
-    [state.firebaseUser, state.seenUser],
+    [state.firebaseUser],
   );
 
   const signOutAction = useCallback(async () => {

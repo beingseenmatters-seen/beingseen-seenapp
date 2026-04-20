@@ -70,31 +70,39 @@ export default function Me() {
             {lang === 'zh' ? '内在结构' : 'Inner Structure'}
           </h3>
 
-          {/* Progress bar */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted">
-                {lang === 'zh' ? '理解进度' : 'Understanding Progress'}
-              </span>
-              <span className="text-xs font-medium text-primary">
-                {understandingProgress} / {totalQuestions}
-              </span>
+          {/* Legacy me_questions progress (not tied to new 3-step onboarding). Hide 0/6 to avoid implying six mandatory steps. */}
+          {understandingProgress > 0 ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted">
+                  {lang === 'zh' ? '理解进度' : 'Understanding Progress'}
+                </span>
+                <span className="text-xs font-medium text-primary">
+                  {understandingProgress} / {totalQuestions}
+                </span>
+              </div>
+              <div className="flex gap-1.5">
+                {Array.from({ length: totalQuestions }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className={`h-1.5 flex-1 rounded-full transition-colors ${
+                      idx < understandingProgress ? 'bg-primary' : 'bg-gray-200'
+                    }`}
+                  />
+                ))}
+              </div>
             </div>
-            <div className="flex gap-1.5">
-              {Array.from({ length: totalQuestions }).map((_, idx) => (
-                <div
-                  key={idx}
-                  className={`h-1.5 flex-1 rounded-full transition-colors ${
-                    idx < understandingProgress ? 'bg-primary' : 'bg-gray-200'
-                  }`}
-                />
-              ))}
-            </div>
-          </div>
+          ) : (
+            <p className="text-xs text-muted font-light leading-relaxed">
+              {lang === 'zh'
+                ? '更深入的自我问答可在下方「问题」中自愿完成，并非必做。'
+                : 'Optional deeper prompts are available under Questions below — not required.'}
+            </p>
+          )}
         </div>
 
-        {/* ==================== 3. Continue Understanding CTA ==================== */}
-        {!isComplete && (
+        {/* ==================== 3. Continue Understanding CTA (legacy me_questions only if user already started) ==================== */}
+        {!isComplete && understandingProgress > 0 && (
           <div className="p-5 bg-white rounded-2xl border border-gray-100 space-y-4">
             <p className="text-sm text-secondary font-light leading-relaxed whitespace-pre-line">
               {lang === 'zh'

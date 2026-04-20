@@ -1,5 +1,8 @@
 export type LoginMethod = 'apple' | 'google' | 'email';
 
+/** Onboarding / AI response style (Step 3). Maps to legacy `role` for existing UI. */
+export type AiResponseStyleId = 'listener' | 'organizer' | 'challenger' | 'supporter';
+
 export interface UnderstandingAnswers {
   proudestMoment?: string;
   biggestRegret?: string;
@@ -30,10 +33,13 @@ export interface SeenUser {
   understandingAnswers?: UnderstandingAnswers;
   basic?: {
     nickname?: string;
+    /** Age range slug, e.g. 18-24, 25-34 (same as onboarding Step 1). */
     age?: string;
     location?: string;
     gender?: string;
     zodiac?: string;
+    /** Why the user is here (onboarding Step 1). */
+    currentState?: string;
   };
   soulProfile?: {
     answers?: Record<string, string>;
@@ -42,6 +48,7 @@ export interface SeenUser {
       role?: string;
       intensity?: number;
       emotionHandling?: string;
+      responseStyle?: AiResponseStyleId;
     };
     reflectModel?: any;
   };

@@ -155,11 +155,16 @@ export default function AIResponse() {
     if (!isDirty) return;
     setIsSaving(true);
     
-    const next = { role, intensity, emotionHandling };
-    
+    const next = {
+      ...seenUser?.soulProfile?.aiPreference,
+      role,
+      intensity,
+      emotionHandling,
+    };
+
     try {
       await updateProfile({
-        soulProfile: { aiPreference: next }
+        soulProfile: { aiPreference: next },
       });
       
       setSavedSnapshot(JSON.stringify(next));

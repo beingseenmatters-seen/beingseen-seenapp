@@ -70,6 +70,35 @@
     "seen_title": "你，被看见了。",
     "seen_subtitle": "我越了解你，\n就越能与你真正同频。",
     "seen_hint": "你可以随时停下来，以后继续。",
+    "step_of_total": "第 {{n}} / 3 步",
+    "basic_info_title": "基础信息",
+    "basic_info_subtitle": "在开始之前，先让 Seen 对你有一点点了解。",
+    "age_range": "年龄段",
+    "gender": "性别",
+    "gender_optional_hint": "可选",
+    "current_state": "当前状态",
+    "current_state_prompt": "你现在更像是因为什么来到这里？",
+    "gender_female": "女",
+    "gender_male": "男",
+    "gender_non_binary": "非二元",
+    "gender_prefer_not": "不想说",
+    "state_connection": "想认识和自己同频的人",
+    "state_healing": "正在经历一些事，想慢慢整理",
+    "state_talk": "只是想找个地方聊聊",
+    "state_unsure": "还不太确定",
+    "basic_info_incomplete": "请选择年龄段和来这里的原因后再继续。",
+    "understanding_style_title": "我的理解方式",
+    "understanding_style_subtitle": "让 Seen 更了解你通常如何理解事情、消化感受，以及怎样的回应会更适合你。",
+    "ai_style_title": "AI 如何回应我",
+    "ai_style_subtitle": "选择更符合你感觉的回应方式。",
+    "ai_listener": "安静倾听的人",
+    "ai_listener_desc": "不打断地听。\n先听懂你。",
+    "ai_organizer": "帮我理清思路的人",
+    "ai_organizer_desc": "把想法理顺。\n帮你看得更清楚。",
+    "ai_challenger": "会指出问题的人",
+    "ai_challenger_desc": "点出盲点。\n不只会附和。",
+    "ai_supporter": "能给我力量的人",
+    "ai_supporter_desc": "给你鼓励。\n陪你往前。",
     "life_story_title": "你能简单描述一下\n你迄今为止的人生旅程吗？",
     "life_story_placeholder": "写下任何你想说的...",
     "skip_for_now": "先跳过",
@@ -281,52 +310,52 @@
       "desc": "这里不是测试，也没有标准答案。\n这些回答仅用于 AI 更好地理解你，\n以及帮助你遇见真正同频的人。",
       "cards": {
         "value_orientation": {
-          "title": "当你面对选择时，你更愿意对什么负责？",
+          "title": "遇到在乎的事，你通常会先从哪边想起？",
           "labels": [
-            "当下是否真实",
-            "长期是否有意义"
+            "眼下更合适",
+            "长远更合适"
           ],
-          "desc": "没有对错，只是你做决定时更靠近哪一端。"
+          "desc": "只是日常倾向，没有标准答案。"
         },
         "self_vs_relationship": {
-          "title": "当你想要的，与他人期待不一致时，你更接近？",
+          "title": "如果你想要的和别人期待的不一样，你更常…",
           "labels": [
-            "优先忠于自己",
-            "优先照顾关系"
+            "先照顾自己的感受",
+            "先照顾关系的和气"
           ],
-          "desc": "这是你面对世界时的基本站位。"
+          "desc": "两种都可以，只是你更顺手的那一侧。"
         },
         "conflict_handling": {
-          "title": "当出现分歧时，你的第一反应更像？",
+          "title": "有人和你看法不同，你通常会先…",
           "labels": [
-            "先理解情绪",
-            "先澄清逻辑"
+            "注意到情绪",
+            "理一理事实"
           ],
-          "desc": "不是「你对还是我对」，而是你先从哪里开始理解。"
+          "desc": "注意力先落在哪，不代表谁对谁错。"
         },
         "life_pace": {
-          "title": "你与生活相处的节奏，更接近哪一侧？",
+          "title": "日常生活里，你的节奏更像…",
           "labels": [
-            "快",
-            "慢"
+            "偏快、偏满",
+            "偏慢、留白多"
           ],
-          "desc": "有些人走得快，有些人走得深，没有谁更好。"
+          "desc": "快慢都没有好坏。"
         },
         "connection_depth": {
-          "title": "你更享受哪种连接方式？",
+          "title": "和别人相处时，你更容易在哪种状态里放松？",
           "labels": [
-            "轻松陪伴",
-            "深度对话"
+            "轻松陪着就好",
+            "一对一聊深一点"
           ],
-          "desc": "有人需要靠近，有人需要理解。"
+          "desc": "哪种让你觉得更自然。"
         },
         "money_view": {
-          "title": "对你来说，金钱更像什么？",
+          "title": "对你来说，钱更像…",
           "labels": [
-            "安全感来源",
-            "成长与自由的工具"
+            "安稳感",
+            "去做想做的事的底气"
           ],
-          "desc": "钱在你人生中扮演的角色，会影响你几乎所有选择。"
+          "desc": "大概感觉就好。"
         },
         "risk_attitude": {
           "title": "当基本生活无忧时，你更可能？",
@@ -348,12 +377,12 @@
           "desc": "你认为什么「值得」，会决定你把时间给谁。"
         },
         "expression_style": {
-          "title": "你更习惯如何表达自己？",
+          "title": "解释自己的想法时，你更习惯从…说起",
           "labels": [
-            "说感受",
-            "说结构与逻辑"
+            "语气和感受",
+            "条理和逻辑"
           ],
-          "desc": "不是「会不会说」，而是你自然使用哪种语言。"
+          "desc": "你默认的表达方式，没有高下。"
         },
         "connection_intent": {
           "title": "你希望通过 Seen 建立怎样的连接？",

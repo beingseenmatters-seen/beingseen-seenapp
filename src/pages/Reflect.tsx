@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, ChevronRight, Info, Menu, RotateCcw, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -19,7 +19,7 @@ import { useRecentConversations } from '../hooks/useRecentConversations';
 import {
   mapSelectedModeToStyle,
   mapStyleToSelectedMode,
-  readMeDefaultStyle,
+  getReflectDefaultStyle,
   resolveResponseStyleForReflect
 } from '../services/reflectStyle';
 import { 
@@ -57,8 +57,11 @@ export default function Reflect() {
   const { isDesktop, isNative } = usePlatform();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const understandingProgress = seenUser?.understandingProgress ?? 0;
-  const showUnderstandingBanner = understandingProgress < 6;
+  /**
+   * Legacy banner used `understandingProgress < 6`; new onboarding does not increment that field, so the banner
+   * was always on for new users and pushed desktop Web to /me/questions. Disabled — optional questions stay under Me.
+   */
+  const showUnderstandingBanner = false;
   const [inputValue, setInputValue] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -123,12 +126,16 @@ export default function Reflect() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const meDefaultStyle = readMeDefaultStyle();
-  const effectiveSelectedMode = selectedMode !== null 
-    ? selectedMode 
-    : meDefaultStyle 
-      ? mapStyleToSelectedMode(meDefaultStyle)
-      : null;
+  const meDefaultStyle = useMemo(
+    () => getReflectDefaultStyle(seenUser?.soulProfile?.aiPreference),
+    [seenUser?.soulProfile?.aiPreference],
+  );
+  const effectiveSelectedMode =
+    selectedMode !== null
+      ? selectedMode
+      : meDefaultStyle !== undefined
+        ? mapStyleToSelectedMode(meDefaultStyle)
+        : null;
 
   const [pendingSummary, setPendingSummary] = useState<ConversationExtraction | null>(null);
   const [showSummaryConfirmation, setShowSummaryConfirmation] = useState(false);
@@ -393,7 +400,7 @@ export default function Reflect() {
 
   const getResolvedStyleForRequest = (args: { isNewSession: boolean }) => {
     const reflectSelectedStyle = mapSelectedModeToStyle(selectedMode);
-    const meDefault = readMeDefaultStyle();
+    const meDefault = getReflectDefaultStyle(seenUser?.soulProfile?.aiPreference);
     const resolvedStyle = resolveResponseStyleForReflect({
       reflectSelectedStyle,
       meDefaultStyle: meDefault,
@@ -428,7 +435,12 @@ export default function Reflect() {
         recentTurns,
         keepContext,
         sessionId,
-        { isNewSession: false, action: 'continue', resolvedStyle }
+        {
+          isNewSession: false,
+          action: 'continue',
+          resolvedStyle,
+          aiPreference: seenUser?.soulProfile?.aiPreference,
+        }
       );
       
       const hasQuestion = response.reply.includes('?') || response.reply.includes('？');
@@ -494,7 +506,12 @@ export default function Reflect() {
         [],
         keepContext,
         nextSessionId,
-        { isNewSession: true, action: 'new_session', resolvedStyle }
+        {
+          isNewSession: true,
+          action: 'new_session',
+          resolvedStyle,
+          aiPreference: seenUser?.soulProfile?.aiPreference,
+        }
       );
       
       const hasQuestion = response.reply.includes('?') || response.reply.includes('？');

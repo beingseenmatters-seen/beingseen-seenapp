@@ -1,24 +1,76 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useLanguage } from '../i18n';
 import { useAuth } from '../auth';
-import type { UnderstandingAnswers } from '../auth';
+import type { AiResponseStyleId, SeenUser } from '../auth';
+import { UNDERSTANDING_SLIDER_CARD_DEFS } from '../data/understandingSliderCards';
 
-type Step = 'intro' | 'lifeStory' | 'aiResponse' | 'invite' | 'question' | 'complete';
+/** First-login flow: 3 steps (basic info → understanding style sliders → AI response), then complete. */
+type ActiveStep = 'basicInfo' | 'understandingStyle' | 'aiResponse';
 
-const QUESTION_KEYS: (keyof UnderstandingAnswers)[] = [
-  'proudestMoment',
-  'biggestRegret',
-  'childhoodDream',
-  'selfDescription',
-  'biggestInterest',
-  'influentialPersonOrQuote',
+const TOTAL_ONBOARDING_STEPS = 3;
+
+const AGE_RANGE_VALUES = ['18-24', '25-34', '35-44', '45-54', '55+'] as const;
+
+const AGE_RANGE_LABEL_KEYS: Record<(typeof AGE_RANGE_VALUES)[number], string> = {
+  '18-24': 'onboarding.age_18_24',
+  '25-34': 'onboarding.age_25_34',
+  '35-44': 'onboarding.age_35_44',
+  '45-54': 'onboarding.age_45_54',
+  '55+': 'onboarding.age_55_plus',
+};
+
+const GENDER_OPTIONS = [
+  { value: 'female', labelKey: 'onboarding.gender_female' },
+  { value: 'male', labelKey: 'onboarding.gender_male' },
+  { value: 'non_binary', labelKey: 'onboarding.gender_non_binary' },
+  { value: 'prefer_not', labelKey: 'onboarding.gender_prefer_not' },
+] as const;
+
+/** Stored in `basic.currentState` */
+const CURRENT_STATE_OPTIONS = [
+  { value: 'looking_for_connection', labelKey: 'onboarding.state_connection' },
+  { value: 'healing_or_processing', labelKey: 'onboarding.state_healing' },
+  { value: 'space_to_talk', labelKey: 'onboarding.state_talk' },
+  { value: 'unsure', labelKey: 'onboarding.state_unsure' },
+] as const;
+
+function stepOrdinal(step: ActiveStep): number {
+  if (step === 'basicInfo') return 1;
+  if (step === 'understandingStyle') return 2;
+  return 3;
+}
+
+/** Maps onboarding `responseStyle` to legacy `role` used in settings/Reflect (Sidebar, AIResponse). */
+function mapResponseStyleToLegacyRole(style: AiResponseStyleId): string {
+  switch (style) {
+    case 'listener':
+      return 'mirror';
+    case 'organizer':
+      return 'organizer';
+    case 'challenger':
+      return 'guide';
+    case 'supporter':
+      return 'helper';
+    default:
+      return 'mirror';
+  }
+}
+
+const AI_STYLE_OPTIONS: { id: AiResponseStyleId; titleKey: string; descKey: string }[] = [
+  { id: 'listener', titleKey: 'onboarding.ai_listener', descKey: 'onboarding.ai_listener_desc' },
+  { id: 'organizer', titleKey: 'onboarding.ai_organizer', descKey: 'onboarding.ai_organizer_desc' },
+  { id: 'challenger', titleKey: 'onboarding.ai_challenger', descKey: 'onboarding.ai_challenger_desc' },
+  { id: 'supporter', titleKey: 'onboarding.ai_supporter', descKey: 'onboarding.ai_supporter_desc' },
 ];
 
-function getAiResponse(lifeStory: string, lang: string): string {
+/**
+ * Legacy lifeStory-based preview text — kept for possible reuse; first-login Step 3 no longer calls this.
+ */
+export function getAiResponse(lifeStory: string, lang: string): string {
   const hasContent = lifeStory.trim().length > 30;
 
   if (lang === 'zh') {
@@ -32,28 +84,90 @@ function getAiResponse(lifeStory: string, lang: string): string {
     : 'Thank you for being here.\n\nEvery journey has its own rhythm, and I look forward to understanding yours more deeply.';
 }
 
+function buildInitialSliderAnswers(seen: SeenUser | null): Record<string, number> {
+  const u = seen?.soulProfile?.understanding || {};
+  const out: Record<string, number> = {};
+  for (const c of UNDERSTANDING_SLIDER_CARD_DEFS) {
+    const v = u[c.id as keyof typeof u];
+    out[c.id] = typeof v === 'number' && !Number.isNaN(v) ? v : 50;
+  }
+  return out;
+}
+
+function getStringArray(t: (path: string) => unknown, key: string): string[] {
+  const v = t(key);
+  return Array.isArray(v) ? (v as string[]) : [];
+}
+
+function SelectChip({
+  selected,
+  onClick,
+  children,
+  className,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={clsx(
+        'rounded-xl border px-3 py-2.5 text-sm font-light text-left transition-colors',
+        selected ? 'border-primary bg-stone-50 text-primary' : 'border-gray-200 bg-white text-primary hover:border-gray-300',
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function Onboarding() {
   const navigate = useNavigate();
-  const { t, effectiveLanguage } = useLanguage();
+  const { t } = useLanguage();
   const { updateProfile, seenUser } = useAuth();
-  const lang = effectiveLanguage === 'zh' ? 'zh' : 'en';
 
-  const existingProgress = seenUser?.understandingProgress ?? 0;
-  const existingAnswers = seenUser?.understandingAnswers ?? {};
-
-  const [step, setStep] = useState<Step>('intro');
-  const [lifeStory, setLifeStory] = useState(seenUser?.lifeStory ?? '');
-  const [questionIndex, setQuestionIndex] = useState(existingProgress);
-  const [currentAnswer, setCurrentAnswer] = useState('');
-  const [answers, setAnswers] = useState<UnderstandingAnswers>(existingAnswers);
+  const [step, setStep] = useState<ActiveStep>('basicInfo');
+  const [ageRange, setAgeRange] = useState('');
+  const [gender, setGender] = useState('');
+  const [currentState, setCurrentState] = useState('');
+  const [sliderAnswers, setSliderAnswers] = useState<Record<string, number>>(() => buildInitialSliderAnswers(seenUser));
+  const [responseStyle, setResponseStyle] = useState<AiResponseStyleId | ''>(
+    () => (seenUser?.soulProfile?.aiPreference?.responseStyle as AiResponseStyleId) || '',
+  );
   const [saving, setSaving] = useState(false);
 
-  const totalQuestions = QUESTION_KEYS.length;
-
-  const questionTitleKey = (idx: number) => `onboarding.uq_${idx + 1}`;
+  useEffect(() => {
+    if (!seenUser?.basic) return;
+    setAgeRange((a) => a || seenUser.basic!.age || '');
+    setGender((g) => g || seenUser.basic!.gender || '');
+    setCurrentState((c) => c || seenUser.basic!.currentState || '');
+  }, [seenUser]);
 
   useEffect(() => {
-    console.log('[Onboarding] mounted, existing progress:', existingProgress);
+    if (!seenUser?.soulProfile?.understanding) return;
+    setSliderAnswers((prev) => {
+      const next = { ...prev };
+      for (const c of UNDERSTANDING_SLIDER_CARD_DEFS) {
+        const v = seenUser.soulProfile?.understanding?.[c.id];
+        if (typeof v === 'number' && !Number.isNaN(v)) next[c.id] = v;
+      }
+      return next;
+    });
+  }, [seenUser]);
+
+  useEffect(() => {
+    const rs = seenUser?.soulProfile?.aiPreference?.responseStyle as AiResponseStyleId | undefined;
+    if (rs && ['listener', 'organizer', 'challenger', 'supporter'].includes(rs)) {
+      setResponseStyle((prev) => prev || rs);
+    }
+  }, [seenUser]);
+
+  useEffect(() => {
+    console.log('[Onboarding] mounted (3-step flow)');
     return () => console.log('[Onboarding] unmounted');
   }, []);
 
@@ -64,7 +178,7 @@ export default function Onboarding() {
       try {
         await Promise.race([
           updateProfile(data as any),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
         ]);
         console.log('[Onboarding] request success');
       } catch (err) {
@@ -77,78 +191,61 @@ export default function Onboarding() {
     [updateProfile],
   );
 
-  const handleLifeStorySubmit = async (skipped: boolean) => {
-    console.log('[Onboarding] life story submit clicked, skipped:', skipped);
-    const story = skipped ? '' : lifeStory.trim();
+  const finishOnboardingWithAiStyle = useCallback(async () => {
+    if (!responseStyle || saving) return;
+    const style = responseStyle as AiResponseStyleId;
     await saveField({
-      lifeStory: story,
+      soulProfile: {
+        ...seenUser?.soulProfile,
+        aiPreference: {
+          ...seenUser?.soulProfile?.aiPreference,
+          responseStyle: style,
+          role: mapResponseStyleToLegacyRole(style),
+        },
+      },
+      onboardingCompleted: true,
+    });
+    console.log('[Onboarding] navigation target: main app');
+    navigate('/', { replace: true });
+  }, [navigate, saveField, seenUser, responseStyle, saving]);
+
+  const basicInfoComplete = Boolean(ageRange && currentState);
+
+  const handleBasicInfoNext = async () => {
+    if (!basicInfoComplete || saving) return;
+    await saveField({
+      basic: {
+        ...(seenUser?.basic || {}),
+        age: ageRange,
+        currentState,
+        ...(gender ? { gender } : {}),
+      },
+    });
+    setStep('understandingStyle');
+  };
+
+  const handleSliderChange = (id: string, value: number) => {
+    setSliderAnswers((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const handleUnderstandingNext = async () => {
+    const mergedUnderstanding = {
+      ...(seenUser?.soulProfile?.understanding || {}),
+      ...sliderAnswers,
+    };
+    await saveField({
+      soulProfile: {
+        ...seenUser?.soulProfile,
+        understanding: mergedUnderstanding,
+      },
       onboardingStarted: true,
     });
-    if (skipped) {
-      console.log('[Onboarding] navigation target: invite');
-      setStep('invite');
-    } else {
-      console.log('[Onboarding] navigation target: aiResponse');
-      setStep('aiResponse');
-    }
+    setStep('aiResponse');
   };
 
-  const handleContinueToQuestions = () => {
-    console.log('[Onboarding] continue to questions clicked');
-    const key = QUESTION_KEYS[questionIndex];
-    setCurrentAnswer(answers[key] ?? '');
-    setStep('question');
-  };
-
-  const handleMaybeLater = async () => {
-    console.log('[Onboarding] skip clicked (maybe later)');
-    await saveField({ onboardingCompleted: true });
-    console.log('[Onboarding] navigation target: main app (via context)');
-    navigate('/', { replace: true });
-  };
-
-  const handleQuestionSubmit = async (skipped: boolean) => {
-    console.log(`[Onboarding] question submit clicked (index ${questionIndex}), skipped:`, skipped);
-    const key = QUESTION_KEYS[questionIndex];
-    const value = skipped ? '' : currentAnswer.trim();
-
-    const updatedAnswers = { ...answers };
-    if (value) {
-      updatedAnswers[key] = value;
-    }
-    setAnswers(updatedAnswers);
-
-    const newProgress = questionIndex + 1;
-
-    await saveField({
-      understandingAnswers: updatedAnswers,
-      understandingProgress: newProgress,
-    });
-
-    if (newProgress >= totalQuestions) {
-      console.log('[Onboarding] navigation target: complete');
-      await saveField({ onboardingCompleted: true });
-      setStep('complete');
-    } else {
-      console.log(`[Onboarding] navigation target: question ${newProgress}`);
-      setQuestionIndex(newProgress);
-      const nextKey = QUESTION_KEYS[newProgress];
-      setCurrentAnswer(updatedAnswers[nextKey] ?? '');
-    }
-  };
-
-  const handleQuestionStop = async () => {
-    console.log('[Onboarding] stop here clicked');
-    await saveField({ onboardingCompleted: true });
-    console.log('[Onboarding] navigation target: main app (via context)');
-    navigate('/', { replace: true });
-  };
-
-  const handleComplete = async () => {
-    console.log('[Onboarding] complete clicked');
-    await saveField({ onboardingCompleted: true });
-    console.log('[Onboarding] navigation target: main app (via context)');
-    navigate('/', { replace: true });
+  const handleUnderstandingSkip = async () => {
+    await saveField({ onboardingStarted: true });
+    setStep('aiResponse');
   };
 
   const fade = {
@@ -158,65 +255,151 @@ export default function Onboarding() {
     transition: { duration: 0.3, ease: 'easeOut' as const },
   };
 
+  const progressLabel = t('onboarding.step_of_total').replace('{{n}}', String(stepOrdinal(step)));
+
   return (
     <div className="h-full bg-white px-8 pt-12 pb-12 flex flex-col">
+      <div className="pb-6 space-y-2 shrink-0">
+        <span className="text-xs text-muted uppercase tracking-widest">{progressLabel}</span>
+        <div className="flex gap-1.5">
+          {Array.from({ length: TOTAL_ONBOARDING_STEPS }, (_, idx) => (
+            <div
+              key={idx}
+              className={clsx(
+                'h-1 flex-1 rounded-full transition-colors',
+                idx < stepOrdinal(step) ? 'bg-primary' : 'bg-gray-200',
+              )}
+            />
+          ))}
+        </div>
+      </div>
+
       <AnimatePresence mode="wait">
-        {/* ========== INTRO ========== */}
-        {step === 'intro' && (
-          <motion.div key="intro" {...fade} className="flex-1 flex flex-col justify-between">
-            <div className="flex-1 flex flex-col justify-center space-y-6">
-              <h1 className="text-4xl font-light text-primary leading-tight">
-                {t('onboarding.seen_title')}
-              </h1>
-              <p className="text-lg font-light text-secondary leading-relaxed whitespace-pre-line">
-                {t('onboarding.seen_subtitle')}
-              </p>
-              <p className="text-sm font-light text-muted">
-                {t('onboarding.seen_hint')}
-              </p>
+        {/* Step 1 — Basic Info */}
+        {step === 'basicInfo' && (
+          <motion.div key="basicInfo" {...fade} className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto min-h-0 space-y-5 pb-4">
+              <div className="space-y-2">
+                <h1 className="text-2xl font-light text-primary leading-snug">{t('onboarding.basic_info_title')}</h1>
+                <p className="text-sm font-light text-secondary leading-relaxed">{t('onboarding.basic_info_subtitle')}</p>
+              </div>
+
+              <section className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted">{t('onboarding.age_range')}</p>
+                <div className="flex flex-wrap gap-2">
+                  {AGE_RANGE_VALUES.map((value) => (
+                    <SelectChip key={value} selected={ageRange === value} onClick={() => setAgeRange(value)}>
+                      {t(AGE_RANGE_LABEL_KEYS[value])}
+                    </SelectChip>
+                  ))}
+                </div>
+              </section>
+
+              <section className="space-y-2">
+                <div className="flex items-baseline gap-2">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted">{t('onboarding.gender')}</p>
+                  <span className="text-xs text-muted font-light">({t('onboarding.gender_optional_hint')})</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {GENDER_OPTIONS.map(({ value, labelKey }) => (
+                    <SelectChip key={value} selected={gender === value} onClick={() => setGender((g) => (g === value ? '' : value))}>
+                      {t(labelKey)}
+                    </SelectChip>
+                  ))}
+                </div>
+              </section>
+
+              <section className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted">{t('onboarding.current_state')}</p>
+                <p className="text-sm font-light text-primary leading-snug">{t('onboarding.current_state_prompt')}</p>
+                <div className="flex flex-col gap-2">
+                  {CURRENT_STATE_OPTIONS.map(({ value, labelKey }) => (
+                    <SelectChip key={value} selected={currentState === value} onClick={() => setCurrentState(value)} className="w-full">
+                      {t(labelKey)}
+                    </SelectChip>
+                  ))}
+                </div>
+              </section>
             </div>
+
+            {!basicInfoComplete && (
+              <p className="text-xs text-center text-muted font-light pb-2 shrink-0">{t('onboarding.basic_info_incomplete')}</p>
+            )}
+
             <button
-              onClick={() => setStep('lifeStory')}
-              className="w-full py-4 rounded-2xl bg-primary text-white text-lg font-light hover:bg-black transition-colors flex items-center justify-center gap-2"
+              type="button"
+              onClick={() => handleBasicInfoNext()}
+              disabled={!basicInfoComplete || saving}
+              className={clsx(
+                'w-full py-3.5 rounded-2xl text-lg font-light transition-all flex items-center justify-center gap-2 shrink-0',
+                basicInfoComplete && !saving ? 'bg-primary text-white hover:bg-black' : 'bg-gray-100 text-gray-300 cursor-not-allowed',
+              )}
               style={{ marginBottom: 'calc(env(safe-area-inset-bottom) + 8px)' }}
             >
-              {t('common.continue')}
-              <ChevronRight size={20} />
+              {saving ? t('common.loading') : t('common.next')}
+              {!saving && <ChevronRight size={20} />}
             </button>
           </motion.div>
         )}
 
-        {/* ========== LIFE STORY ========== */}
-        {step === 'lifeStory' && (
-          <motion.div key="lifeStory" {...fade} className="flex-1 flex flex-col justify-between">
-            <div className="flex-1 flex flex-col justify-center space-y-6 pb-8">
-              <h2 className="text-3xl font-light text-primary leading-snug">
-                {t('onboarding.life_story_title')}
-              </h2>
-              <textarea
-                value={lifeStory}
-                onChange={(e) => setLifeStory(e.target.value)}
-                placeholder={t('onboarding.life_story_placeholder')}
-                rows={5}
-                className="w-full px-4 py-4 rounded-2xl border border-gray-200 focus:border-primary focus:outline-none text-base font-light resize-none"
-                autoFocus
-              />
+        {/* Step 2 — My Understanding Style (7 sliders, same model as Me → Understanding) */}
+        {step === 'understandingStyle' && (
+          <motion.div key="understandingStyle" {...fade} className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto min-h-0 space-y-8 pb-4">
+              <div className="space-y-2">
+                <h2 className="text-2xl font-light text-primary leading-snug">{t('onboarding.understanding_style_title')}</h2>
+                <p className="text-sm font-light text-secondary leading-relaxed">{t('onboarding.understanding_style_subtitle')}</p>
+              </div>
+
+              {UNDERSTANDING_SLIDER_CARD_DEFS.map((card, index) => {
+                const labels = getStringArray(t, card.labelsKey);
+                const currentValue = sliderAnswers[card.id] ?? 50;
+
+                return (
+                  <div
+                    key={card.id}
+                    className="space-y-4 border-t border-dashed border-gray-200 pt-6 first:border-t-0 first:pt-0"
+                  >
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-muted tracking-widest uppercase">0{index + 1}</span>
+                      <h3 className="text-base font-medium text-primary leading-snug">{t(card.titleKey)}</h3>
+                    </div>
+                    <div className="space-y-3 py-1">
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={currentValue}
+                        onChange={(e) => handleSliderChange(card.id, parseInt(e.target.value, 10))}
+                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none touch-pan-x"
+                        style={{ touchAction: 'pan-x' }}
+                      />
+                      <div className="flex justify-between gap-3 text-xs text-secondary font-light">
+                        <span className="text-left flex-1">{labels[0]}</span>
+                        <span className="text-right flex-1">{labels[1]}</span>
+                      </div>
+                    </div>
+                    <div className="bg-gray-50/80 rounded-lg p-3">
+                      <p className="text-xs text-muted font-light leading-relaxed">{t(card.descKey)}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <div className="space-y-3" style={{ marginBottom: 'calc(env(safe-area-inset-bottom) + 8px)' }}>
+
+            <div className="space-y-3 shrink-0" style={{ marginBottom: 'calc(env(safe-area-inset-bottom) + 8px)' }}>
               <button
-                onClick={() => handleLifeStorySubmit(false)}
-                disabled={!lifeStory.trim() || saving}
-                className={clsx(
-                  'w-full py-4 rounded-2xl text-lg font-light transition-all flex items-center justify-center gap-2',
-                  lifeStory.trim() && !saving
-                    ? 'bg-primary text-white hover:bg-black'
-                    : 'bg-gray-100 text-gray-300 cursor-not-allowed',
-                )}
+                type="button"
+                onClick={() => handleUnderstandingNext()}
+                disabled={saving}
+                className="w-full py-3.5 rounded-2xl text-lg font-light transition-all flex items-center justify-center gap-2 bg-primary text-white hover:bg-black disabled:bg-gray-100 disabled:text-gray-300 disabled:cursor-not-allowed"
               >
-                {saving ? t('common.loading') : t('common.continue')}
+                {saving ? t('common.loading') : t('common.next')}
+                {!saving && <ChevronRight size={20} />}
               </button>
               <button
-                onClick={() => handleLifeStorySubmit(true)}
+                type="button"
+                onClick={() => handleUnderstandingSkip()}
                 disabled={saving}
                 className="w-full py-3 text-sm font-light text-muted hover:text-secondary transition-colors"
               >
@@ -226,140 +409,49 @@ export default function Onboarding() {
           </motion.div>
         )}
 
-        {/* ========== AI RESPONSE ========== */}
+        {/* Step 3 — How AI responds (style picker; legacy text preview not used here) */}
         {step === 'aiResponse' && (
-          <motion.div key="aiResponse" {...fade} className="flex-1 flex flex-col justify-between">
-            <div className="flex-1 flex flex-col justify-center space-y-8 pb-8">
-              <div className="bg-gray-50 p-6 rounded-2xl space-y-4">
-                <p className="text-base font-light text-primary leading-relaxed whitespace-pre-line">
-                  {getAiResponse(lifeStory, lang)}
-                </p>
+          <motion.div key="aiResponse" {...fade} className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto min-h-0 space-y-4 pb-4">
+              <div className="space-y-2">
+                <h2 className="text-2xl font-light text-primary leading-snug">{t('onboarding.ai_style_title')}</h2>
+                <p className="text-sm font-light text-secondary leading-relaxed">{t('onboarding.ai_style_subtitle')}</p>
+              </div>
+              <div className="flex flex-col gap-3" role="radiogroup" aria-label={t('onboarding.ai_style_title')}>
+                {AI_STYLE_OPTIONS.map((opt) => {
+                  const selected = responseStyle === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => setResponseStyle(opt.id)}
+                      className={clsx(
+                        'w-full text-left rounded-2xl border-2 px-4 py-4 transition-colors',
+                        selected ? 'border-primary bg-stone-50' : 'border-gray-200 bg-white hover:border-gray-300',
+                      )}
+                    >
+                      <span className="block text-base font-medium text-primary leading-snug">{t(opt.titleKey)}</span>
+                      <span className="mt-2 block text-xs font-light text-secondary whitespace-pre-line leading-relaxed">
+                        {t(opt.descKey)}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
-            <div className="space-y-3" style={{ marginBottom: 'calc(env(safe-area-inset-bottom) + 8px)' }}>
-              <button
-                onClick={() => setStep('invite')}
-                className="w-full py-4 rounded-2xl bg-primary text-white text-lg font-light hover:bg-black transition-colors"
-              >
-                {t('common.continue')}
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* ========== INVITE TO QUESTIONS ========== */}
-        {step === 'invite' && (
-          <motion.div key="invite" {...fade} className="flex-1 flex flex-col justify-between">
-            <div className="flex-1 flex flex-col justify-center space-y-6">
-              <p className="text-xl font-light text-primary leading-relaxed whitespace-pre-line">
-                {t('onboarding.invite_title')}
-              </p>
-              <p className="text-sm font-light text-muted leading-relaxed">
-                {t('onboarding.invite_subtitle')}
-              </p>
-            </div>
-            <div className="space-y-3" style={{ marginBottom: 'calc(env(safe-area-inset-bottom) + 8px)' }}>
-              <button
-                onClick={handleContinueToQuestions}
-                className="w-full py-4 rounded-2xl bg-primary text-white text-lg font-light hover:bg-black transition-colors"
-              >
-                {t('common.continue')}
-              </button>
-              <button
-                onClick={handleMaybeLater}
-                disabled={saving}
-                className="w-full py-3 text-sm font-light text-muted hover:text-secondary transition-colors"
-              >
-                {t('common.later')}
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* ========== UNDERSTANDING QUESTIONS ========== */}
-        {step === 'question' && (
-          <motion.div key={`q-${questionIndex}`} {...fade} className="flex-1 flex flex-col justify-between">
-            <div className="flex items-center justify-between pb-4">
-              <span className="text-xs text-muted uppercase tracking-widest">
-                {questionIndex + 1} / {totalQuestions}
-              </span>
-              <button
-                onClick={handleQuestionStop}
-                disabled={saving}
-                className="text-xs text-muted hover:text-secondary transition-colors"
-              >
-                {t('onboarding.stop_here')}
-              </button>
-            </div>
-
-            <div className="flex gap-1.5 pb-6">
-              {QUESTION_KEYS.map((_, idx) => (
-                <div
-                  key={idx}
-                  className={clsx(
-                    'h-1 flex-1 rounded-full transition-colors',
-                    idx <= questionIndex ? 'bg-primary' : 'bg-gray-200',
-                  )}
-                />
-              ))}
-            </div>
-
-            <div className="flex-1 flex flex-col justify-center space-y-6 pb-8">
-              <h2 className="text-2xl font-light text-primary leading-relaxed whitespace-pre-line">
-                {t(questionTitleKey(questionIndex))}
-              </h2>
-              <textarea
-                value={currentAnswer}
-                onChange={(e) => setCurrentAnswer(e.target.value)}
-                placeholder={t('onboarding.life_story_placeholder')}
-                rows={4}
-                className="w-full px-4 py-4 rounded-2xl border border-gray-200 focus:border-primary focus:outline-none text-base font-light resize-none"
-                autoFocus
-              />
-            </div>
-
-            <div className="space-y-3" style={{ marginBottom: 'calc(env(safe-area-inset-bottom) + 8px)' }}>
-              <button
-                onClick={() => handleQuestionSubmit(false)}
-                disabled={!currentAnswer.trim() || saving}
-                className={clsx(
-                  'w-full py-4 rounded-2xl text-lg font-light transition-all',
-                  currentAnswer.trim() && !saving
-                    ? 'bg-primary text-white hover:bg-black'
-                    : 'bg-gray-100 text-gray-300 cursor-not-allowed',
-                )}
-              >
-                {saving ? t('common.loading') : t('common.continue')}
-              </button>
-              <button
-                onClick={() => handleQuestionSubmit(true)}
-                disabled={saving}
-                className="w-full py-3 text-sm font-light text-muted hover:text-secondary transition-colors"
-              >
-                {t('onboarding.skip_for_now')}
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* ========== COMPLETE ========== */}
-        {step === 'complete' && (
-          <motion.div key="complete" {...fade} className="flex-1 flex flex-col justify-between">
-            <div className="flex-1 flex flex-col justify-center items-center text-center space-y-6">
-              <h2 className="text-3xl font-light text-primary">
-                {t('onboarding.complete_title')}
-              </h2>
-              <p className="text-base font-light text-secondary leading-relaxed whitespace-pre-line max-w-xs">
-                {t('onboarding.complete_subtitle')}
-              </p>
-            </div>
             <button
-              onClick={handleComplete}
-              disabled={saving}
-              className="w-full py-4 rounded-2xl bg-primary text-white text-lg font-light hover:bg-black transition-colors"
+              type="button"
+              onClick={() => finishOnboardingWithAiStyle()}
+              disabled={!responseStyle || saving}
+              className={clsx(
+                'w-full py-4 rounded-2xl text-lg font-light transition-colors shrink-0',
+                responseStyle && !saving ? 'bg-primary text-white hover:bg-black' : 'bg-gray-100 text-gray-300 cursor-not-allowed',
+              )}
               style={{ marginBottom: 'calc(env(safe-area-inset-bottom) + 8px)' }}
             >
-              {t('common.begin')}
+              {saving ? t('common.loading') : t('common.finish')}
             </button>
           </motion.div>
         )}
