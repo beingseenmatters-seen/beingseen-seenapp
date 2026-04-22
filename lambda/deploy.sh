@@ -10,6 +10,6 @@ npm install --omit=dev
 echo "3. Creating zip file..."
 # Zip the handler, index.mjs (symlink/copy), package.json, and node_modules
 cp reflect-handler.mjs index.mjs
-zip -r function.zip index.mjs reflect-handler.mjs package.json node_modules/
+zip -r function.zip index.mjs reflect-handler.mjs pushCopy.mjs matchReason.mjs package.json node_modules/
 
 echo "4. Done! You can now upload function.zip to AWS Lambda."

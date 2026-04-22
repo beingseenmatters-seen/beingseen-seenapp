@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleIdentifier</key>
 	<string></string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
 	<key>CFBundleExecutable</key>
 	<string></string>
 	<key>CLIENT_ID</key>

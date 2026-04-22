@@ -2,6 +2,7 @@ import {
   doc,
   getDoc,
   setDoc,
+  deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -85,4 +86,8 @@ export async function updateUserDocument(
   data: Partial<SeenUser>,
 ): Promise<void> {
   await setDoc(doc(db, 'users', uid), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+export async function deleteUserDocument(uid: string): Promise<void> {
+  await deleteDoc(doc(db, 'users', uid));
 }

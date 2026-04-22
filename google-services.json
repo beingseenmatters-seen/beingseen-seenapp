@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "219057410128",
+    "project_id": "seen-matters",
+    "storage_bucket": "seen-matters.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:219057410128:android:d0ea64b9ce8199d26f8155",
+        "android_client_info": {
+          "package_name": "com.beingseenmatters.seen"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "219057410128-v7eerjlunje7p1k8lopfvtuo6vonhha5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBOp_H6BGAQ6YOqo3xXHoTL0mRvk0qFFsM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "219057410128-v7eerjlunje7p1k8lopfvtuo6vonhha5.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "219057410128-jt5phseu2hdg41rsh9aecppit3gmmp8g.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.beingseenmatters.seen"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

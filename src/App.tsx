@@ -1,6 +1,7 @@
 import { Component, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './auth';
+import { usePushNotifications } from './hooks/usePushNotifications';
 import AppLayout from './layouts/AppLayout';
 import Reflect from './pages/Reflect';
 import Resonate from './pages/Resonate';
@@ -16,6 +17,7 @@ import AIResponse from './pages/settings/AIResponse';
 import PrivacyData from './pages/settings/PrivacyData';
 import AccountLanguage from './pages/settings/AccountLanguage';
 import MyQuestions from './pages/settings/MyQuestions';
+import AboutMeOptional from './pages/settings/AboutMeOptional';
 import BasicProfile from './pages/settings/BasicProfile';
 import DeleteAccount from './pages/DeleteAccount';
 
@@ -86,6 +88,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
 function AppRoutes() {
   const { firebaseUser, seenUser, initialized, isLoading } = useAuth();
+  usePushNotifications();
 
   if (!initialized) return <SplashScreen />;
 
@@ -140,6 +143,7 @@ function AppRoutes() {
       <Route path="/me/privacy" element={<PrivacyData />} />
       <Route path="/me/account" element={<AccountLanguage />} />
       <Route path="/me/questions" element={<MyQuestions />} />
+      <Route path="/me/about-you" element={<AboutMeOptional />} />
       <Route path="/delete-account" element={<DeleteAccount />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -124,6 +124,7 @@ interface AuthContextType extends AuthState {
   sendEmailLink: (email: string) => Promise<void>;
   completeEmailSignIn: (manualEmail?: string, deepLinkUrl?: string) => Promise<boolean>;
   updateProfile: (data: Partial<SeenUser>) => Promise<void>;
+  deleteAccount: () => Promise<void>;
   signOut: () => Promise<void>;
   clearError: () => void;
 }
@@ -413,6 +414,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [state.firebaseUser],
   );
 
+  const deleteAccount = useCallback(async () => {
+    if (!state.firebaseUser) throw new Error('No authenticated user');
+    dispatch({ type: 'LOADING' });
+    try {
+      console.log('[auth] starting account deletion for', state.firebaseUser.uid);
+      // 1. Delete user document from Firestore
+      await firestoreOps.deleteUserDocument(state.firebaseUser.uid);
+      console.log('[auth] firestore document deleted');
+      
+      // 2. Delete user from Firebase Auth
+      await state.firebaseUser.delete();
+      console.log('[auth] firebase auth user deleted');
+      
+      // 3. Clear local storage
+      emailLink.clearStoredEmail();
+      localStorage.removeItem('seen_user');
+      localStorage.removeItem('seen_reflect_session');
+      
+      dispatch({ type: 'SET_USER', firebaseUser: null, seenUser: null });
+      console.log('[auth] account deletion completed');
+    } catch (err) {
+      console.error('[auth] account deletion failed:', err);
+      dispatch({ type: 'SET_ERROR', error: friendlyErrorKey(err) });
+      throw err;
+    }
+  }, [state.firebaseUser]);
+
   const signOutAction = useCallback(async () => {
     dispatch({ type: 'LOADING' });
     try {
@@ -439,6 +467,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sendEmailLink: sendEmailLinkAction,
         completeEmailSignIn,
         updateProfile,
+        deleteAccount,
         signOut: signOutAction,
         clearError,
       }}

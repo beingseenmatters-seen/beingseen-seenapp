@@ -1,8 +1,10 @@
 import { ChevronRight } from 'lucide-react';
+import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../i18n';
 import { useAuth } from '../auth';
 import { usePlatform } from '../hooks/usePlatform';
+import { computeAboutMeCompletedCount } from '../services/aboutMe';
 
 export default function Me() {
   const navigate = useNavigate();
@@ -10,10 +12,12 @@ export default function Me() {
   const { seenUser, signOut } = useAuth();
   const { isDesktop } = usePlatform();
 
-  const understandingProgress = seenUser?.understandingProgress ?? 0;
-  const totalQuestions = 6;
-  const isComplete = understandingProgress >= totalQuestions;
   const lang = effectiveLanguage === 'zh' ? 'zh' : 'en';
+
+  const aboutMe = seenUser?.soulProfile?.aboutMe;
+  const aboutMeDone = computeAboutMeCompletedCount(aboutMe);
+  const aboutMeStatus: 'none' | 'progress' | 'done' =
+    aboutMeDone <= 0 ? 'none' : aboutMeDone >= 6 ? 'done' : 'progress';
 
   const handleLogout = async () => {
     await signOut();
@@ -64,13 +68,51 @@ export default function Me() {
           </button>
         </div>
 
-        {/* ==================== 2. Inner Structure ==================== */}
+        {/* Optional: light “about you” prompts (soulProfile.aboutMe — not onboarding) */}
+        <div className="p-5 bg-white rounded-2xl border border-stone-200/90 shadow-sm space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1 min-w-0">
+              <h3 className="text-base font-light text-primary leading-snug">{t('me.aboutMe_optional.card_title')}</h3>
+              <p className="text-xs text-muted font-light leading-relaxed">{t('me.aboutMe_optional.card_subtitle')}</p>
+            </div>
+            <span
+              className={clsx(
+                'shrink-0 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full',
+                aboutMeStatus === 'none' && 'bg-gray-100 text-gray-500',
+                aboutMeStatus === 'progress' && 'bg-amber-50 text-amber-800',
+                aboutMeStatus === 'done' && 'bg-emerald-50 text-emerald-800',
+              )}
+            >
+              {aboutMeStatus === 'none' && t('me.aboutMe_optional.status_not_started')}
+              {aboutMeStatus === 'progress' && t('me.aboutMe_optional.status_in_progress')}
+              {aboutMeStatus === 'done' && t('me.aboutMe_optional.status_done')}
+            </span>
+          </div>
+          <p className="text-xs text-secondary font-light tabular-nums">
+            {t('me.aboutMe_optional.progress_line').replace('{{n}}', String(aboutMeDone))}
+          </p>
+          <button
+            type="button"
+            onClick={() =>
+              aboutMeStatus === 'done'
+                ? navigate('/me/about-you', { state: { review: true } })
+                : navigate('/me/about-you')
+            }
+            className="w-full py-3 rounded-xl bg-primary text-white text-sm font-medium hover:bg-black transition-colors"
+          >
+            {aboutMeStatus === 'none' && t('me.aboutMe_optional.card_cta_start')}
+            {aboutMeStatus === 'progress' && t('me.aboutMe_optional.card_cta_continue')}
+            {aboutMeStatus === 'done' && t('me.aboutMe_optional.card_cta_review')}
+          </button>
+        </div>
+
+        {/* ==================== 2. Inner Structure (Legacy, Hidden) ==================== */}
+        {/* 
         <div className="p-5 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
             {lang === 'zh' ? '内在结构' : 'Inner Structure'}
           </h3>
 
-          {/* Legacy me_questions progress (not tied to new 3-step onboarding). Hide 0/6 to avoid implying six mandatory steps. */}
           {understandingProgress > 0 ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -100,8 +142,10 @@ export default function Me() {
             </p>
           )}
         </div>
+        */}
 
-        {/* ==================== 3. Continue Understanding CTA (legacy me_questions only if user already started) ==================== */}
+        {/* ==================== 3. Continue Understanding CTA (Legacy, Hidden) ==================== */}
+        {/*
         {!isComplete && understandingProgress > 0 && (
           <div className="p-5 bg-white rounded-2xl border border-gray-100 space-y-4">
             <p className="text-sm text-secondary font-light leading-relaxed whitespace-pre-line">
@@ -117,6 +161,7 @@ export default function Me() {
             </button>
           </div>
         )}
+        */}
 
         {/* ==================== Settings Sections ==================== */}
         <Section title={t('me.section_profile')}>
@@ -127,6 +172,8 @@ export default function Me() {
           />
         </Section>
 
+        {/* Legacy Questions Section (Hidden) */}
+        {/*
         <Section title={t('me.section_questions')}>
           <MenuItem
             title={t('me.menu_questions')}
@@ -134,6 +181,7 @@ export default function Me() {
             onClick={() => navigate('/me/questions')}
           />
         </Section>
+        */}
 
         <Section title={t('me.section_core')}>
           <MenuItem

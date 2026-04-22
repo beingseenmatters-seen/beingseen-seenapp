@@ -12,6 +12,31 @@ export interface UnderstandingAnswers {
   influentialPersonOrQuote?: string;
 }
 
+/** Optional Me-module “about you” prompts (not onboarding; not understandingProgress). */
+export type AboutMeQ5Choice = 'alone' | 'talk' | 'scroll' | 'shift' | 'other';
+
+export interface AboutMeSignals {
+  valueTags: string[];
+  regretThemes: string[];
+  aspirationThemes: string[];
+  selfNarrativeTags: string[];
+  copingStyleTags: string[];
+  resonanceTags: string[];
+  emotionalNeeds: string[];
+  updatedAt: number;
+}
+
+export interface SoulProfileAboutMe {
+  q1?: { text?: string };
+  q2?: { text?: string };
+  q3?: { who?: string; distanceNow?: string };
+  q4?: { sentence?: string; sameAsBefore?: string };
+  q5?: { choice?: AboutMeQ5Choice | string; text?: string };
+  q6?: { text?: string };
+  completedCount?: number;
+  updatedAt?: number;
+}
+
 export interface SeenUser {
   uid: string;
   email: string;
@@ -31,6 +56,7 @@ export interface SeenUser {
   lifeStory?: string;
   understandingProgress?: number;
   understandingAnswers?: UnderstandingAnswers;
+  fcmTokens?: Array<{ token: string; platform: string; updatedAt: number }>;
   basic?: {
     nickname?: string;
     /** Age range slug, e.g. 18-24, 25-34 (same as onboarding Step 1). */
@@ -40,10 +66,14 @@ export interface SeenUser {
     zodiac?: string;
     /** Why the user is here (onboarding Step 1). */
     currentState?: string;
+    /** Stable English slugs for match/me similarity, e.g. reading, travel; custom via other:... */
+    interests?: string[];
   };
   soulProfile?: {
     answers?: Record<string, string>;
     understanding?: Record<string, any>;
+    aboutMe?: SoulProfileAboutMe;
+    aboutMeSignals?: AboutMeSignals;
     aiPreference?: {
       role?: string;
       intensity?: number;

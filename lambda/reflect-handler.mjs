@@ -18,6 +18,8 @@ import {
 } from "@aws-sdk/client-secrets-manager";
 import admin from "firebase-admin";
 import { Resend } from "resend";
+import { buildPushPayload, buildMatchPushPayload } from "./pushCopy.mjs";
+import { generatePrimaryMatchReason } from "./matchReason.mjs";
 
 // ========================
 // Version & Constants
@@ -524,9 +526,13 @@ function calculateArraySimilarity(arr1, arr2) {
   return intersection.size / union.size;
 }
 
-function calculateMeSimilarity(me1, me2) {
-  if (!me1 || !me2) return 0;
-  
+/**
+ * Structured Me fields on `basic`: interests, values, lifeStage, goals, communicationPreference.
+ * Returns normalized score 0–1 and whether any dimension had data on both sides.
+ */
+function calculateMeStructuredSimilarity(me1, me2) {
+  if (!me1 || !me2) return { score: 0, hasData: false };
+
   let totalScore = 0;
   let totalWeight = 0;
 
@@ -565,8 +571,168 @@ function calculateMeSimilarity(me1, me2) {
     totalWeight += 0.10;
   }
 
-  // Normalize score based on available data
-  // If totalWeight is 0 (meaning none of the meaningful fields were present in both), return 0
+  const hasData = totalWeight > 0;
+  const score = hasData ? totalScore / totalWeight : 0;
+  return { score, hasData };
+}
+
+const UNDERSTANDING_SLIDER_KEYS = [
+  'value_orientation',
+  'self_vs_relationship',
+  'conflict_handling',
+  'life_pace',
+  'connection_depth',
+  'money_view',
+  'expression_style',
+];
+
+const AGE_RANGES = [
+  "18-24",
+  "25-34",
+  "35-44",
+  "45-54",
+  "55-64",
+  "65+"
+];
+
+function calculateBasicContextSimilarity(basic1 = {}, basic2 = {}) {
+  let totalScore = 0;
+  let totalWeight = 0;
+
+  // 1. currentState (exact match)
+  if (basic1.currentState && basic2.currentState) {
+    totalScore += basic1.currentState === basic2.currentState ? 1 : 0;
+    totalWeight += 1;
+  }
+
+  // 2. age (range proximity)
+  if (basic1.age && basic2.age) {
+    const idx1 = AGE_RANGES.indexOf(basic1.age);
+    const idx2 = AGE_RANGES.indexOf(basic2.age);
+    if (idx1 !== -1 && idx2 !== -1) {
+      const diff = Math.abs(idx1 - idx2);
+      if (diff === 0) totalScore += 1;
+      else if (diff === 1) totalScore += 0.6;
+      totalWeight += 1;
+    } else if (basic1.age === basic2.age) {
+      totalScore += 1;
+      totalWeight += 1;
+    }
+  }
+
+  // 3. location (loose text match)
+  if (basic1.location && basic2.location) {
+    const loc1 = basic1.location.toLowerCase().trim();
+    const loc2 = basic2.location.toLowerCase().trim();
+    if (loc1 === loc2) {
+      totalScore += 1;
+    } else if (loc1.includes(loc2) || loc2.includes(loc1)) {
+      totalScore += 0.7;
+    }
+    totalWeight += 1;
+  }
+
+  // 4. gender (exact match, ignore prefer_not)
+  if (basic1.gender && basic2.gender && 
+      !basic1.gender.includes('prefer_not') && 
+      !basic2.gender.includes('prefer_not')) {
+    totalScore += basic1.gender === basic2.gender ? 1 : 0;
+    totalWeight += 1;
+  }
+
+  // 5. zodiac (exact match)
+  if (basic1.zodiac && basic2.zodiac) {
+    totalScore += basic1.zodiac === basic2.zodiac ? 1 : 0;
+    totalWeight += 1;
+  }
+
+  const hasData = totalWeight > 0;
+  const score = hasData ? totalScore / totalWeight : 0;
+  return { score, hasData };
+}
+
+/**
+ * 7 sliders under soulProfile.understanding (0–100). Average of per-field 1 - |a-b|/100.
+ */
+function calculateUnderstandingSimilarity(understanding1 = {}, understanding2 = {}) {
+  let total = 0;
+  let count = 0;
+  for (const key of UNDERSTANDING_SLIDER_KEYS) {
+    const a = understanding1[key];
+    const b = understanding2[key];
+    if (typeof a === 'number' && typeof b === 'number' && !Number.isNaN(a) && !Number.isNaN(b)) {
+      total += 1 - Math.abs(a - b) / 100;
+      count += 1;
+    }
+  }
+  const hasData = count > 0;
+  const score = hasData ? total / count : 0;
+  return { score, hasData };
+}
+
+const ABOUT_ME_SIGNALS_KEYS = [
+  'valueTags',
+  'regretThemes',
+  'aspirationThemes',
+  'selfNarrativeTags',
+  'copingStyleTags',
+  'resonanceTags',
+  'emotionalNeeds'
+];
+
+function calculateAboutMeSignalsSimilarity(signals1 = {}, signals2 = {}) {
+  let totalScore = 0;
+  let totalWeight = 0;
+
+  for (const key of ABOUT_ME_SIGNALS_KEYS) {
+    const arr1 = signals1[key];
+    const arr2 = signals2[key];
+    if (Array.isArray(arr1) && Array.isArray(arr2) && arr1.length > 0 && arr2.length > 0) {
+      totalScore += calculateArraySimilarity(arr1, arr2);
+      totalWeight += 1;
+    }
+  }
+
+  const hasData = totalWeight > 0;
+  const score = hasData ? totalScore / totalWeight : 0;
+  return { score, hasData };
+}
+
+const ME_STRUCTURED_WEIGHT = 0.28;
+const ME_UNDERSTANDING_WEIGHT = 0.32;
+const ME_CONTEXT_WEIGHT = 0.15;
+const ME_ABOUT_ME_SIGNALS_WEIGHT = 0.25;
+
+/**
+ * Combine structured basic + understanding sliders + basic context + aboutMe signals into one meSimilarity.
+ * If any layer is missing data, re-normalize the weights among the layers that have data.
+ */
+function combineMeSimilarity(structuredResult, understandingResult, contextResult, aboutMeSignalsResult) {
+  const { score: s, hasData: hs } = structuredResult;
+  const { score: u, hasData: hu } = understandingResult;
+  const { score: c, hasData: hc } = contextResult || { score: 0, hasData: false };
+  const { score: a, hasData: ha } = aboutMeSignalsResult || { score: 0, hasData: false };
+
+  let totalWeight = 0;
+  let totalScore = 0;
+
+  if (hs) {
+    totalWeight += ME_STRUCTURED_WEIGHT;
+    totalScore += s * ME_STRUCTURED_WEIGHT;
+  }
+  if (hu) {
+    totalWeight += ME_UNDERSTANDING_WEIGHT;
+    totalScore += u * ME_UNDERSTANDING_WEIGHT;
+  }
+  if (hc) {
+    totalWeight += ME_CONTEXT_WEIGHT;
+    totalScore += c * ME_CONTEXT_WEIGHT;
+  }
+  if (ha) {
+    totalWeight += ME_ABOUT_ME_SIGNALS_WEIGHT;
+    totalScore += a * ME_ABOUT_ME_SIGNALS_WEIGHT;
+  }
+
   return totalWeight > 0 ? totalScore / totalWeight : 0;
 }
 
@@ -615,7 +781,8 @@ export const handler = async (event) => {
     event.routeKey === "OPTIONS /reflect/extract" || 
     event.routeKey === "OPTIONS /voice/transcribe" ||
     event.routeKey === "OPTIONS /match/rank" ||
-    event.routeKey === "OPTIONS /auth/email-link/send"
+    event.routeKey === "OPTIONS /auth/email-link/send" ||
+    event.routeKey === "OPTIONS /test/push"
   ) {
     return httpResponse(200, { ok: true });
   }
@@ -639,6 +806,45 @@ export const handler = async (event) => {
   } catch {}
 
   const path = event.requestContext?.http?.path || event.rawPath || event.path;
+
+  // Route: /test/push
+  if (path === "/test/push") {
+    console.log("Handling /test/push request");
+    const { token, title, body: pushBody, type, level, language } = body;
+    
+    if (!token) {
+      return httpResponse(400, { error: "missing_token", detail: "Requires FCM token" });
+    }
+
+    try {
+      // If type is provided, use the unified copy system, otherwise fallback to direct title/body
+      let finalTitle = title || "Seen Test";
+      let finalBody = pushBody || "Push is working";
+
+        if (type === 'match') {
+          const payload = buildMatchPushPayload({ language, primaryReason: body.primaryReason });
+          finalTitle = payload.title;
+          finalBody = payload.body;
+        } else if (type) {
+          const payload = buildPushPayload({ type, level, language });
+          finalTitle = payload.title;
+          finalBody = payload.body;
+        }
+
+      const response = await admin.messaging().send({
+        token,
+        notification: {
+          title: finalTitle,
+          body: finalBody,
+        },
+      });
+      console.log("[Push] Successfully sent message:", response);
+      return httpResponse(200, { success: true, messageId: response, title: finalTitle, body: finalBody });
+    } catch (error) {
+      console.error("[Push] Error sending message:", error);
+      return httpResponse(500, { error: "push_failed", detail: error.message });
+    }
+  }
 
   // Route: /auth/email-link/send
   if (path === "/auth/email-link/send") {
@@ -792,7 +998,17 @@ Seen · Being seen matters`;
 
     // 2. Score each candidate
     const rankedCandidates = candidates.map(candidate => {
-      let meSim = calculateMeSimilarity(currentUser.basic, candidate.basic);
+      const structuredSim = calculateMeStructuredSimilarity(currentUser.basic, candidate.basic);
+      const understandingSim = calculateUnderstandingSimilarity(
+        currentUser.soulProfile?.understanding || {},
+        candidate.soulProfile?.understanding || {},
+      );
+      const contextSim = calculateBasicContextSimilarity(currentUser.basic, candidate.basic);
+      const aboutMeSim = calculateAboutMeSignalsSimilarity(
+        currentUser.soulProfile?.aboutMeSignals || {},
+        candidate.soulProfile?.aboutMeSignals || {},
+      );
+      let meSim = combineMeSimilarity(structuredSim, understandingSim, contextSim, aboutMeSim);
       let soulSim = calculateSoulSimilarity(mySoulProfile, candidate.soulProfile);
 
       // Fallback rules
@@ -800,26 +1016,53 @@ Seen · Being seen matters`;
       if (!candidateSoul.reflectModel && !candidateSoul.latestInsight) {
         soulSim = 0; // Ignore soul if missing
       }
-      if (!candidate.basic || Object.keys(candidate.basic).length === 0) {
-        meSim = 0; // Ignore me if missing
-      }
 
       // Final Score Calculation
       let finalScore = (meWeight * meSim) + (soulWeight * soulSim);
 
-      console.log(`[Match] ${currentUser.uid} -> ${candidate.uid} | count:${myReflectCount} stage:${stage} | meSim:${meSim.toFixed(2)} soulSim:${soulSim.toFixed(2)} | final:${finalScore.toFixed(2)}`);
+      console.log(
+        `[Match] ${currentUser.uid} -> ${candidate.uid} | count:${myReflectCount} stage:${stage} | meStr:${structuredSim.score.toFixed(2)} meUnd:${understandingSim.score.toFixed(2)} meCtx:${contextSim.score.toFixed(2)} meAbt:${aboutMeSim.score.toFixed(2)} meSim:${meSim.toFixed(2)} soulSim:${soulSim.toFixed(2)} | final:${finalScore.toFixed(2)}`,
+      );
+
+      // Light match reasons
+      const matchReasons = [];
+      if (aboutMeSim.hasData && aboutMeSim.score > 0.4) {
+        const myS = currentUser.soulProfile?.aboutMeSignals || {};
+        const theirS = candidate.soulProfile?.aboutMeSignals || {};
+        
+        if (calculateArraySimilarity(myS.valueTags, theirS.valueTags) > 0) {
+          matchReasons.push('shared_values');
+        }
+        if (calculateArraySimilarity(myS.copingStyleTags, theirS.copingStyleTags) > 0) {
+          matchReasons.push('similar_coping_style');
+        }
+        if (calculateArraySimilarity(myS.selfNarrativeTags, theirS.selfNarrativeTags) > 0) {
+          matchReasons.push('similar_self_narrative');
+        }
+        if (calculateArraySimilarity(myS.resonanceTags, theirS.resonanceTags) > 0) {
+          matchReasons.push('similar_resonance_points');
+        }
+      }
+
+      const primaryMatchReason = generatePrimaryMatchReason(currentUser, candidate);
 
       return {
         ...candidate,
         finalScore,
+        primaryMatchReason,
         matchMetrics: {
           stage,
           meWeight,
           soulWeight,
           meSimilarity: meSim,
+          meStructuredSimilarity: structuredSim.score,
+          meUnderstandingSimilarity: understandingSim.score,
+          basicContextSimilarity: contextSim.score,
+          aboutMeSignalsSimilarity: aboutMeSim.score,
           soulSimilarity: soulSim,
-          finalScore
-        }
+          finalScore,
+          matchReasons: matchReasons.length > 0 ? matchReasons : undefined,
+        },
       };
     });
 

@@ -38,6 +38,69 @@ const CURRENT_STATE_OPTIONS = [
   { value: 'unsure', labelKey: 'onboarding.state_unsure' },
 ] as const;
 
+/** Stable English slugs → `basic.interests` (match / calculateMeSimilarity). */
+const INTEREST_SLUGS = [
+  'reading',
+  'outdoors',
+  'fitness',
+  'travel',
+  'shows',
+  'music',
+  'movies',
+  'food',
+  'photography',
+  'gaming',
+  'pets',
+  'art',
+  'writing',
+  'meditation',
+  'other',
+] as const;
+
+type InterestSlug = (typeof INTEREST_SLUGS)[number];
+
+const INTEREST_SLUG_SET = new Set<string>(INTEREST_SLUGS);
+
+function parseStoredInterests(stored: string[]): { slugs: InterestSlug[]; otherText: string } {
+  const slugs: InterestSlug[] = [];
+  let otherText = '';
+  const seen = new Set<string>();
+  for (const entry of stored) {
+    if (INTEREST_SLUG_SET.has(entry) && entry !== 'other') {
+      if (!seen.has(entry)) {
+        seen.add(entry);
+        slugs.push(entry as InterestSlug);
+      }
+      continue;
+    }
+    if (entry === 'other') {
+      if (!seen.has('other')) {
+        seen.add('other');
+        slugs.push('other');
+      }
+      continue;
+    }
+    if (entry.startsWith('other:')) {
+      if (!seen.has('other')) {
+        seen.add('other');
+        slugs.push('other');
+      }
+      otherText = entry.slice(6).trim();
+    }
+  }
+  return { slugs, otherText };
+}
+
+function serializeInterestsToBasic(slugs: InterestSlug[], otherText: string): string[] {
+  const ordered = INTEREST_SLUGS.filter((id) => id !== 'other' && slugs.includes(id));
+  const out: string[] = [...ordered];
+  if (slugs.includes('other')) {
+    const t = otherText.trim();
+    out.push(t ? `other:${t}` : 'other');
+  }
+  return out;
+}
+
 function stepOrdinal(step: ActiveStep): number {
   if (step === 'basicInfo') return 1;
   if (step === 'understandingStyle') return 2;
@@ -131,9 +194,12 @@ export default function Onboarding() {
   const { updateProfile, seenUser } = useAuth();
 
   const [step, setStep] = useState<ActiveStep>('basicInfo');
+  const [nickname, setNickname] = useState('');
   const [ageRange, setAgeRange] = useState('');
   const [gender, setGender] = useState('');
   const [currentState, setCurrentState] = useState('');
+  const [interestsSelected, setInterestsSelected] = useState<InterestSlug[]>([]);
+  const [otherInterestText, setOtherInterestText] = useState('');
   const [sliderAnswers, setSliderAnswers] = useState<Record<string, number>>(() => buildInitialSliderAnswers(seenUser));
   const [responseStyle, setResponseStyle] = useState<AiResponseStyleId | ''>(
     () => (seenUser?.soulProfile?.aiPreference?.responseStyle as AiResponseStyleId) || '',
@@ -142,9 +208,22 @@ export default function Onboarding() {
 
   useEffect(() => {
     if (!seenUser?.basic) return;
+    setNickname((n) => n || seenUser.basic!.nickname || '');
     setAgeRange((a) => a || seenUser.basic!.age || '');
     setGender((g) => g || seenUser.basic!.gender || '');
     setCurrentState((c) => c || seenUser.basic!.currentState || '');
+    setInterestsSelected((prev) => {
+      if (prev.length > 0) return prev;
+      const raw = seenUser.basic!.interests;
+      if (!raw?.length) return prev;
+      return parseStoredInterests(raw).slugs;
+    });
+    setOtherInterestText((prev) => {
+      if (prev) return prev;
+      const raw = seenUser.basic!.interests;
+      if (!raw?.length) return prev;
+      return parseStoredInterests(raw).otherText;
+    });
   }, [seenUser]);
 
   useEffect(() => {
@@ -209,16 +288,30 @@ export default function Onboarding() {
     navigate('/', { replace: true });
   }, [navigate, saveField, seenUser, responseStyle, saving]);
 
-  const basicInfoComplete = Boolean(ageRange && currentState);
+  const basicInfoComplete = Boolean(nickname.trim() && ageRange && currentState);
+
+  const toggleInterest = (slug: InterestSlug) => {
+    setInterestsSelected((prev) => {
+      if (prev.includes(slug)) {
+        if (slug === 'other') setOtherInterestText('');
+        return prev.filter((s) => s !== slug);
+      }
+      return [...prev, slug];
+    });
+  };
 
   const handleBasicInfoNext = async () => {
     if (!basicInfoComplete || saving) return;
+    const interestsPayload = serializeInterestsToBasic(interestsSelected, otherInterestText);
     await saveField({
+      nickname: nickname.trim(), // Keep top-level nickname for legacy/auth compatibility if needed
       basic: {
         ...(seenUser?.basic || {}),
+        nickname: nickname.trim(),
         age: ageRange,
         currentState,
         ...(gender ? { gender } : {}),
+        interests: interestsPayload,
       },
     });
     setStep('understandingStyle');
@@ -285,6 +378,19 @@ export default function Onboarding() {
               </div>
 
               <section className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted">{t('onboarding.nickname')}</p>
+                <p className="text-xs text-secondary font-light">{t('onboarding.nickname_desc')}</p>
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  maxLength={30}
+                  placeholder={t('onboarding.nickname_placeholder')}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-light text-primary placeholder:text-gray-400 focus:border-gray-400 focus:outline-none"
+                />
+              </section>
+
+              <section className="space-y-2">
                 <p className="text-xs font-medium uppercase tracking-wider text-muted">{t('onboarding.age_range')}</p>
                 <div className="flex flex-wrap gap-2">
                   {AGE_RANGE_VALUES.map((value) => (
@@ -319,6 +425,35 @@ export default function Onboarding() {
                     </SelectChip>
                   ))}
                 </div>
+              </section>
+
+              <section className="space-y-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted">{t('onboarding.interests_title')}</p>
+                  <span className="text-[10px] text-muted font-light">{t('onboarding.interests_multi_hint')}</span>
+                </div>
+                <p className="text-sm font-light text-secondary leading-relaxed">{t('onboarding.interests_hint')}</p>
+                <div className="flex flex-wrap gap-2">
+                  {INTEREST_SLUGS.map((slug) => (
+                    <SelectChip
+                      key={slug}
+                      selected={interestsSelected.includes(slug)}
+                      onClick={() => toggleInterest(slug)}
+                    >
+                      {t(`onboarding.interest_opt.${slug}`)}
+                    </SelectChip>
+                  ))}
+                </div>
+                {interestsSelected.includes('other') && (
+                  <input
+                    type="text"
+                    value={otherInterestText}
+                    onChange={(e) => setOtherInterestText(e.target.value)}
+                    placeholder={t('onboarding.interests_other_placeholder')}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-light text-primary placeholder:text-muted focus:border-gray-400 focus:outline-none"
+                    autoComplete="off"
+                  />
+                )}
               </section>
             </div>
 

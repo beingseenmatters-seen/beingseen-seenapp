@@ -29,6 +29,7 @@ import {
   saveApprovedSummary 
 } from '../services/userSummary';
 import type { ConversationExtraction } from '../types/userSummary';
+import { computeAboutMeCompletedCount } from '../services/aboutMe';
 
 interface Message {
   role: 'user' | 'ai' | 'system';
@@ -145,6 +146,9 @@ export default function Reflect() {
   // TODO (Spec §九): Lightweight calibration after conversation end
   const [calibrationInsight, setCalibrationInsight] = useState<{ key: string; text: string } | null>(null);
 
+  /** Optional About You nudge (Me → /me/about-you); dismissed only for this Reflect session. */
+  const [dismissedAboutMePrompt, setDismissedAboutMePrompt] = useState(false);
+
   const restoreConversationById = (convoId: string) => {
     const convo = getConversationById(convoId);
     if (!convo) return;
@@ -232,6 +236,10 @@ export default function Reflect() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  useEffect(() => {
+    setDismissedAboutMePrompt(false);
+  }, [sessionId]);
 
   const getRecentTurns = () => {
     return messages
@@ -554,6 +562,20 @@ export default function Reflect() {
 
   const sessionCompletionReached = hasMeaningfulExchange();
   const endConversationLabel = effectiveLanguage === 'zh' ? '结束对话' : 'End conversation';
+
+  const userReflectMessageCount = useMemo(
+    () => messages.filter((m) => m.role === 'user' && m.text.trim()).length,
+    [messages],
+  );
+  const aboutMeCompletedSoFar = useMemo(
+    () => computeAboutMeCompletedCount(seenUser?.soulProfile?.aboutMe),
+    [seenUser?.soulProfile?.aboutMe],
+  );
+  const showAboutMeReflectNudge =
+    step === 2 &&
+    !dismissedAboutMePrompt &&
+    aboutMeCompletedSoFar < 6 &&
+    userReflectMessageCount >= 1;
 
   const formatSummaryTag = (key: string): string =>
     formatInsightTag(key, effectiveLanguage === 'zh' ? 'zh' : 'en');
@@ -890,7 +912,7 @@ export default function Reflect() {
             <div className="shrink-0 px-5 pb-4">
               {isDesktop && showUnderstandingBanner && (
                 <button
-                  onClick={() => navigate('/me/questions')}
+                  onClick={() => navigate('/me/about-you')}
                   className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-100 text-left mb-2 hover:border-gray-200 transition-colors group flex items-center justify-between"
                 >
                   <p className="text-[11px] text-gray-600 font-light leading-snug">
@@ -1164,6 +1186,33 @@ export default function Reflect() {
               )}
               <div ref={chatEndRef} />
             </div>
+
+            {showAboutMeReflectNudge && (
+              <div className={`shrink-0 ${isDesktop ? 'px-8 pb-2' : 'px-5 pb-2'}`}>
+                <div className="rounded-2xl border border-stone-200/90 bg-stone-50/90 px-4 py-3 space-y-2 shadow-sm">
+                  <p className="text-sm font-light text-primary leading-snug">{t('reflect.about_me_prompt_title')}</p>
+                  <p className="text-[11px] text-muted font-light leading-relaxed">
+                    {t('reflect.about_me_prompt_body')}
+                  </p>
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => navigate('/me/about-you')}
+                      className="flex-1 py-2.5 rounded-xl bg-primary text-white text-xs font-medium hover:bg-black transition-colors"
+                    >
+                      {t('reflect.about_me_prompt_go')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDismissedAboutMePrompt(true)}
+                      className="flex-1 py-2.5 rounded-xl border border-gray-200 bg-white text-xs font-light text-secondary hover:border-gray-300 transition-colors"
+                    >
+                      {t('reflect.about_me_prompt_later')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Compact composer with role + context footer */}
             <div className={`shrink-0 bg-white ${isDesktop ? 'px-8 py-3' : 'px-4 py-2.5'}`}>

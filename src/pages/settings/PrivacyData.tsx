@@ -256,14 +256,42 @@ export default function PrivacyData() {
   const navigate = useNavigate();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { t, language } = useLanguage();
-  const { seenUser } = useAuth();
+  const { seenUser, deleteAccount } = useAuth();
   const [toast, setToast] = useState<string | null>(null);
+
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (!toast) return;
     const id = setTimeout(() => setToast(null), 2000);
     return () => clearTimeout(id);
   }, [toast]);
+
+  const handleDeleteAccount = async () => {
+    if (!seenUser) return;
+    setIsDeleting(true);
+    console.log('[PrivacyData] User confirmed account deletion');
+    try {
+      await deleteAccount();
+      console.log('[PrivacyData] deleteAccount succeeded');
+      // The user state will become null, and App.tsx should redirect to login.
+      setToast(language === 'zh' ? '账号已删除' : 'Account deleted');
+    } catch (err: any) {
+      console.error('[PrivacyData] Account deletion failed:', err);
+      if (err?.code === 'auth/requires-recent-login') {
+        setToast(language === 'zh' 
+          ? '出于安全原因，请重新登录后再删除账户。' 
+          : 'For security reasons, please sign in again before deleting your account.');
+      } else {
+        setToast(language === 'zh' 
+          ? '删除失败，请稍后再试。' 
+          : 'Deletion failed. Please try again later.');
+      }
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
 
   const handleExportText = async () => {
     const data = gatherExportData(seenUser);
@@ -422,8 +450,20 @@ export default function PrivacyData() {
                    {t('settings.privacy.confirm_msg')}
                  </p>
                  <div className="flex space-x-3">
-                   <button className="flex-1 py-2 bg-red-500 text-white rounded-lg text-xs">{t('settings.privacy.confirm_yes')}</button>
-                   <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-2 bg-white text-secondary rounded-lg text-xs">{t('settings.privacy.confirm_no')}</button>
+                   <button 
+                     onClick={handleDeleteAccount}
+                     disabled={isDeleting}
+                     className="flex-1 py-2 bg-red-500 text-white rounded-lg text-xs disabled:opacity-50"
+                   >
+                     {isDeleting ? '...' : t('settings.privacy.confirm_yes')}
+                   </button>
+                   <button 
+                     onClick={() => setShowDeleteConfirm(false)} 
+                     disabled={isDeleting}
+                     className="flex-1 py-2 bg-white text-secondary rounded-lg text-xs disabled:opacity-50"
+                   >
+                     {t('settings.privacy.confirm_no')}
+                   </button>
                  </div>
                </div>
              )}
