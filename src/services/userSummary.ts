@@ -10,11 +10,23 @@
  * Raw chats remain deletable and are never used as long-term storage.
  */
 
+import type { AboutMeSignals } from '../auth/providers/types';
+import type { EmergentTrait, TraitInferenceMeta } from '../types/emergentTraits';
 import type {
   ConversationExtraction,
   SessionInsight,
   UserUnderstandingModel,
 } from '../types/userSummary';
+
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { extractReflectSummary } from './seenApi';
+import { db } from './firebase';
+import { buildSessionPatterns } from './sessionPattern';
+import { inferEmergentTraits } from './emergentTraitInference';
+// T-301.1 — single source of truth for readiness. We import the exact functions
+// the server eligibility gate uses (lambda/resonance.mjs, pure & dependency-free)
+// so the denormalized profile.matchReady flag can never drift from the gate.
+import { assembleRIProfile, isEligibleToMatch } from '../../lambda/resonance.mjs';
 
 export type InsightLanguage = 'zh' | 'en';
 
@@ -22,6 +34,7 @@ type ConversationMessage = { role: 'user' | 'ai' | 'system'; text: string };
 
 const SESSION_INSIGHTS_STORAGE_KEY = 'seen_session_insights';
 const UNDERSTANDING_MODEL_STORAGE_KEY = 'seen_user_understanding_model';
+const EMERGENT_TRAITS_STORAGE_KEY = 'seen_emergent_traits';
 const LEGACY_PERSONALITY_MODEL_STORAGE_KEY = 'seen_user_personality_model';
 const LEGACY_SUMMARY_STORAGE_KEY = 'seen_user_summary';
 const MIN_INSIGHTS_FOR_MODEL = 1;
@@ -171,8 +184,6 @@ const MICRO_KEYWORDS = ['关系', '忠诚', '信任', '亲密', '真实', 'relat
 const STRUCTURED_PATTERNS = [/\d+[.、:：)）]/, /首先|其次|然后|最后|一方面|另一方面/, /first|second|third|finally|on the one hand|on the other hand/i];
 const COMPARATIVE_PATTERNS = ['不是', '而是', '相比', '对照', 'rather than', 'instead of', 'compare', 'contrast'];
 
-import { extractReflectSummary } from './seenApi';
-
 export async function extractSummaryFromConversation(
   messages: ConversationMessage[],
   options: { preferredResponseStyle?: string; language?: InsightLanguage; uid?: string; sessionId?: string } = {}
@@ -191,7 +202,9 @@ export async function extractSummaryFromConversation(
     });
 
     const extraction: ConversationExtraction = {
-      summaryText: response.summary || '',
+      // EX-001: surface the gentle reflection. `summary` (10-layer synthesis)
+      // stays internal and is only a fallback for older Lambda deployments.
+      summaryText: response.reflection || response.summary || '',
       thinkingStyle: [],
       coreQuestions: [],
       worldview: [],
@@ -244,9 +257,46 @@ export async function extractSummaryFromConversation(
       preferredResponseStyle: options.preferredResponseStyle,
     };
 
-    extraction.summaryText = buildSummaryText(extraction, language);
+    // EX-001: when the backend is unavailable, the reflection must still be a
+    // gentle giving-back of the person's own words — never a synthesized portrait.
+    // The structured fields above still feed the internal understanding layer.
+    extraction.summaryText = buildGentleReflection(userMessages, language);
     return extraction;
   }
+}
+
+/**
+ * EX-001 §1 gentle reflection (local fallback): hand back the smallest true
+ * thing the person said, in their own words. No analysis, no labels, no
+ * "you are" — just their own most central line, lightly cleaned.
+ */
+function buildGentleReflection(
+  userMessages: ConversationMessage[],
+  language: InsightLanguage,
+): string {
+  const candidates = userMessages
+    .map(message => message.text.replace(/\s+/g, ' ').trim())
+    .filter(text => text.length > 0);
+
+  if (candidates.length === 0) {
+    return language === 'zh' ? '你来过这里，把它说出口了。' : 'You came here, and you said it out loud.';
+  }
+
+  // The most substantive thing they said, preferring later (more settled) lines.
+  let chosen = candidates[0];
+  for (const text of candidates) {
+    if (text.length >= chosen.length) chosen = text;
+  }
+
+  const maxLen = language === 'zh' ? 60 : 160;
+  if (chosen.length <= maxLen) return chosen;
+
+  const truncated = chosen.slice(0, maxLen);
+  const sentenceEnd = Math.max(
+    truncated.lastIndexOf('。'), truncated.lastIndexOf('，'),
+    truncated.lastIndexOf('.'), truncated.lastIndexOf(','),
+  );
+  return (sentenceEnd > maxLen * 0.5 ? truncated.slice(0, sentenceEnd) : truncated).trim() + '…';
 }
 
 export function formatInsightTag(key: string, language: InsightLanguage): string {
@@ -557,6 +607,31 @@ export function clearUserUnderstandingModel(): void {
   console.log('[UserSummary] Understanding model cleared');
 }
 
+export function readEmergentTraits(): EmergentTrait[] {
+  try {
+    const raw = localStorage.getItem(EMERGENT_TRAITS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as { traits?: EmergentTrait[] };
+    return Array.isArray(parsed.traits) ? parsed.traits : [];
+  } catch (error) {
+    console.error('[UserSummary] Failed to read emergent traits:', error);
+    return [];
+  }
+}
+
+export function saveEmergentTraits(traits: EmergentTrait[], meta: TraitInferenceMeta): void {
+  try {
+    localStorage.setItem(EMERGENT_TRAITS_STORAGE_KEY, JSON.stringify({ traits, meta }));
+    console.log('[UserSummary] Emergent traits saved:', traits.length);
+  } catch (error) {
+    console.error('[UserSummary] Failed to save emergent traits:', error);
+  }
+}
+
+export function clearEmergentTraits(): void {
+  localStorage.removeItem(EMERGENT_TRAITS_STORAGE_KEY);
+}
+
 // Backward-compatible aliases
 export const readUserPersonalityModel = readUserUnderstandingModel;
 export const saveUserPersonalityModel = saveUserUnderstandingModel;
@@ -587,9 +662,6 @@ export function hasMeaningfulExtraction(extraction: ConversationExtraction): boo
   return hasMeaningfulUnderstanding(extraction);
 }
 
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from './firebase';
-
 // Helper to remove undefined values before saving to Firestore
 function removeUndefined<T extends Record<string, any>>(obj: T): T {
   return Object.entries(obj).reduce((acc, [key, value]) => {
@@ -603,10 +675,13 @@ function removeUndefined<T extends Record<string, any>>(obj: T): T {
 export async function saveApprovedSummary(
   extraction: ConversationExtraction,
   uid?: string,
-  sessionId?: string
+  sessionId?: string,
+  options: { aboutMeSignals?: AboutMeSignals } = {},
 ): Promise<{
   insight: SessionInsight;
   model: UserUnderstandingModel | null;
+  emergentTraits: EmergentTrait[];
+  traitInferenceMeta: TraitInferenceMeta | null;
   insightCount: number;
 }> {
   const insight = createSessionInsight(extraction);
@@ -620,6 +695,10 @@ export async function saveApprovedSummary(
     model = buildUserUnderstandingModel(insights);
     saveUserUnderstandingModel(model);
   }
+
+  const patterns = buildSessionPatterns(insights, options.aboutMeSignals);
+  const { traits: emergentTraits, meta: traitInferenceMeta } = inferEmergentTraits(patterns);
+  saveEmergentTraits(emergentTraits, traitInferenceMeta);
 
   // Persist to Firestore if authenticated
   console.log('[UserSummary] saveApprovedSummary called with uid:', uid, 'sessionId:', sessionId);
@@ -645,25 +724,46 @@ export async function saveApprovedSummary(
       // Always save the latest insight to soulProfile as the current snapshot
       // even if we don't have enough insights for a full aggregated model yet
       const userRef = doc(db, 'users', uid);
-      const soulProfileUpdate: any = {
+      const soulProfileUpdate: Record<string, unknown> = {
         reflectModel: {
           latestInsight: {
             ...cleanInsight,
             updatedAt: serverTimestamp()
           }
-        }
+        },
+        emergentTraits,
+        traitInferenceMeta,
       };
 
       if (cleanModel) {
         soulProfileUpdate.reflectModel = {
           ...cleanModel,
           updatedAt: serverTimestamp(),
-          latestInsight: soulProfileUpdate.reflectModel.latestInsight
+          latestInsight: (soulProfileUpdate.reflectModel as { latestInsight: unknown }).latestInsight
         };
       }
 
-      console.log('[UserSummary] Attempting to update user document with soulProfileUpdate:', soulProfileUpdate);
-      await setDoc(userRef, { soulProfile: soulProfileUpdate }, { merge: true });
+      // T-301.1 — denormalized readiness pre-filter for the candidate pool.
+      // Derived from the same gate the server applies; flag is a hint, the server
+      // re-validates eligibility for every candidate it returns.
+      const readinessRI = assembleRIProfile(emergentTraits);
+      const matchReady = isEligibleToMatch(
+        readinessRI,
+        traitInferenceMeta?.insightCount ?? insights.length
+      );
+
+      console.log('[UserSummary] Attempting to update user document with soulProfileUpdate:', soulProfileUpdate, 'matchReady:', matchReady);
+      await setDoc(
+        userRef,
+        {
+          soulProfile: soulProfileUpdate,
+          profile: {
+            matchReady,
+            updatedAt: serverTimestamp()
+          }
+        },
+        { merge: true }
+      );
       console.log('[UserSummary] Persisted to Firestore successfully with sessionId:', finalSessionId);
     } catch (error) {
       console.error('[UserSummary] Failed to persist to Firestore. Full error:', error);
@@ -677,9 +777,10 @@ export async function saveApprovedSummary(
     insight,
     insightCount: insights.length,
     modelUpdated: Boolean(model),
+    emergentTraitCount: emergentTraits.length,
   });
 
-  return { insight, model, insightCount: insights.length };
+  return { insight, model, emergentTraits, traitInferenceMeta, insightCount: insights.length };
 }
 
 export function rebuildAggregatedUnderstandingModel(): UserUnderstandingModel | null {

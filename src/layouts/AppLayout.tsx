@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
-import { MessageSquareText, Activity, Inbox, User } from 'lucide-react';
+import { MessageSquareText, Compass, Inbox, User } from 'lucide-react';
 import clsx from 'clsx';
 import { useLanguage } from '../i18n';
 import { usePlatform } from '../hooks/usePlatform';
+import { useDiscoverAvailability } from '../hooks/useDiscoverAvailability';
 import Sidebar from '../components/Sidebar';
 
 export default function AppLayout() {
@@ -51,6 +52,7 @@ function WebLayout() {
 
 function MobileLayout() {
   const { t, effectiveLanguage } = useLanguage();
+  const { hasNew: discoverHasNew } = useDiscoverAvailability();
   const topBarHeight = 32;
   const bottomBarHeight = 28;
   const navHeight = 52;
@@ -84,8 +86,8 @@ function MobileLayout() {
             style={{ height: `${navHeight}px` }}
           >
             <MobileNavItem to="/" icon={<MessageSquareText size={22} strokeWidth={1.5} />} label={t('nav.reflect')} />
-            <MobileNavItem to="/resonate" icon={<Activity size={22} strokeWidth={1.5} />} label={t('nav.resonate')} />
-            <MobileNavItem to="/inbox" icon={<Inbox size={22} strokeWidth={1.5} />} label={t('nav.inbox')} />
+            <MobileNavItem to="/discover" icon={<Compass size={22} strokeWidth={1.5} />} label={t('nav.discover')} dot={discoverHasNew} />
+            <MobileNavItem to="/inbox" icon={<Inbox size={22} strokeWidth={1.5} />} label={t('nav.connect')} />
             <MobileNavItem to="/me" icon={<User size={22} strokeWidth={1.5} />} label={t('nav.me')} />
           </nav>
 
@@ -122,7 +124,7 @@ function MobileLayout() {
   );
 }
 
-function MobileNavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label: string }) {
+function MobileNavItem({ to, icon, label, dot = false }: { to: string; icon: React.ReactNode; label: string; dot?: boolean }) {
   return (
     <NavLink
       to={to}
@@ -133,7 +135,12 @@ function MobileNavItem({ to, icon, label }: { to: string; icon: React.ReactNode;
           : 'text-gray-800 hover:text-gray-600'
       )}
     >
-      {icon}
+      <div className="relative">
+        {icon}
+        {dot && (
+          <span className="absolute -top-0.5 -right-1 h-1.5 w-1.5 rounded-full bg-green-500" />
+        )}
+      </div>
       <span className="text-[10px] tracking-wider font-medium">{label}</span>
     </NavLink>
   );

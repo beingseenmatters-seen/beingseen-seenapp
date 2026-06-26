@@ -4,7 +4,7 @@ import { useAuth } from './auth';
 import { usePushNotifications } from './hooks/usePushNotifications';
 import AppLayout from './layouts/AppLayout';
 import Reflect from './pages/Reflect';
-import Resonate from './pages/Resonate';
+import Discover from './pages/Discover';
 import Inbox from './pages/Inbox';
 import Me from './pages/Me';
 import Onboarding from './pages/Onboarding';
@@ -133,7 +133,8 @@ function AppRoutes() {
     <Routes>
       <Route element={<AppLayout />}>
         <Route path="/" element={<Reflect />} />
-        <Route path="/resonate" element={<Resonate />} />
+        <Route path="/discover" element={<Discover />} />
+        <Route path="/resonate" element={<Navigate to="/discover" replace />} />
         <Route path="/inbox" element={<Inbox />} />
         <Route path="/me" element={<Me />} />
       </Route>

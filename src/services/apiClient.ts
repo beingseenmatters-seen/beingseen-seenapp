@@ -1,4 +1,5 @@
 import { API_BASE_URL, API_KEY } from '../config/api';
+import { auth } from './firebase';
 
 interface RequestOptions extends RequestInit {
   data?: any;
@@ -13,6 +14,20 @@ export async function apiClient(endpoint: string, options: RequestOptions = {}) 
   }
   if (!headers.has('X-Seen-App-Key')) {
     headers.set('X-Seen-App-Key', API_KEY);
+  }
+
+  // W4 — attach Firebase ID token when a user is signed in so the backend can
+  // verify the caller's identity (server-side selection takes uid from the
+  // token, never from the request body). Non-breaking: omitted when no user.
+  if (!headers.has('Authorization')) {
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (idToken) {
+        headers.set('Authorization', `Bearer ${idToken}`);
+      }
+    } catch (tokenErr) {
+      console.warn('[API Client] Could not attach ID token:', tokenErr);
+    }
   }
 
   const config: RequestInit = {

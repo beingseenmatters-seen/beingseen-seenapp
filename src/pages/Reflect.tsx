@@ -24,12 +24,13 @@ import {
 } from '../services/reflectStyle';
 import { 
   extractSummaryFromConversation, 
-  formatInsightTag,
   hasMeaningfulExtraction, 
   saveApprovedSummary 
 } from '../services/userSummary';
 import type { ConversationExtraction } from '../types/userSummary';
 import { computeAboutMeCompletedCount } from '../services/aboutMe';
+import { saveKeptReflection } from '../services/keptReflections';
+import { getResonateCandidate } from '../services/connections';
 
 interface Message {
   role: 'user' | 'ai' | 'system';
@@ -146,6 +147,13 @@ export default function Reflect() {
   // TODO (Spec §九): Lightweight calibration after conversation end
   const [calibrationInsight, setCalibrationInsight] = useState<{ key: string; text: string } | null>(null);
 
+  /**
+   * Completion-first (founder decision): after a Reflection, the person feels
+   * complete first. Discover is only offered as an optional invitation, and only
+   * when a possibility genuinely exists. Checked once when the bridge appears.
+   */
+  const [discoveryAvailable, setDiscoveryAvailable] = useState(false);
+
   /** Optional About You nudge (Me → /me/about-you); dismissed only for this Reflect session. */
   const [dismissedAboutMePrompt, setDismissedAboutMePrompt] = useState(false);
 
@@ -240,6 +248,24 @@ export default function Reflect() {
   useEffect(() => {
     setDismissedAboutMePrompt(false);
   }, [sessionId]);
+
+  useEffect(() => {
+    if (step !== 3) return;
+    setDiscoveryAvailable(false);
+    const uid = firebaseUser?.uid;
+    if (!uid) return;
+    let cancelled = false;
+    getResonateCandidate(uid)
+      .then((candidate) => {
+        if (!cancelled) setDiscoveryAvailable(Boolean(candidate));
+      })
+      .catch(() => {
+        if (!cancelled) setDiscoveryAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, firebaseUser?.uid]);
 
   const getRecentTurns = () => {
     return messages
@@ -372,8 +398,16 @@ export default function Reflect() {
       await saveApprovedSummary(
         pendingSummary,
         firebaseUser?.uid || seenUser?.uid,
-        currentSessionId
+        currentSessionId,
+        { aboutMeSignals: seenUser?.soulProfile?.aboutMeSignals },
       );
+      // Reflection History (Sprint 2 data capability): keep the approved
+      // reflection itself — never the transcript. Surfaced in Me in Sprint 3.
+      saveKeptReflection({
+        text: pendingSummary.summaryText,
+        language: effectiveLanguage === 'zh' ? 'zh' : 'en',
+        sessionId: currentSessionId,
+      });
     }
     if (pendingInsightAction === 'new') {
       performClear();
@@ -577,31 +611,9 @@ export default function Reflect() {
     aboutMeCompletedSoFar < 6 &&
     userReflectMessageCount >= 1;
 
-  const formatSummaryTag = (key: string): string =>
-    formatInsightTag(key, effectiveLanguage === 'zh' ? 'zh' : 'en');
-
-  const summarySections = pendingSummary
-    ? [
-        // Legacy local extraction fields
-        { key: 'thinkingPath', label: effectiveLanguage === 'zh' ? '你的思考路径' : 'Your Thinking Path', values: pendingSummary.thinkingPath },
-        { key: 'thinkingStyle', label: effectiveLanguage === 'zh' ? '你的思考方式' : 'Your Thinking Style', values: pendingSummary.thinkingStyle },
-        { key: 'coreQuestions', label: effectiveLanguage === 'zh' ? '你的核心问题' : 'Your Core Questions', values: pendingSummary.coreQuestions },
-        { key: 'worldview', label: effectiveLanguage === 'zh' ? '你的世界观' : 'Your Worldview', values: pendingSummary.worldview },
-        { key: 'relationshipPhilosophy', label: effectiveLanguage === 'zh' ? '你的关系哲学' : 'Your Relationship Philosophy', values: pendingSummary.relationshipPhilosophy },
-        { key: 'conversationStyle', label: effectiveLanguage === 'zh' ? '你的对话风格' : 'Your Conversation Style', values: pendingSummary.conversationStyle },
-        
-        // New 10-layer LLM extraction fields
-        { key: 'emotion', label: effectiveLanguage === 'zh' ? '情绪状态' : 'Emotion', values: pendingSummary.emotion ? [pendingSummary.emotion] : [] },
-        { key: 'trigger', label: effectiveLanguage === 'zh' ? '核心触发点' : 'Trigger', values: pendingSummary.trigger ? [pendingSummary.trigger] : [] },
-        { key: 'values', label: effectiveLanguage === 'zh' ? '底层价值观' : 'Values', values: pendingSummary.values ? [pendingSummary.values] : [] },
-        { key: 'behaviorPattern', label: effectiveLanguage === 'zh' ? '行为模式' : 'Behavior Pattern', values: pendingSummary.behaviorPattern ? [pendingSummary.behaviorPattern] : [] },
-        { key: 'decisionModel', label: effectiveLanguage === 'zh' ? '决策模型' : 'Decision Model', values: pendingSummary.decisionModel ? [pendingSummary.decisionModel] : [] },
-        { key: 'personalityTraits', label: effectiveLanguage === 'zh' ? '性格特质' : 'Personality Traits', values: pendingSummary.personalityTraits ? [pendingSummary.personalityTraits] : [] },
-        { key: 'relationshipNeed', label: effectiveLanguage === 'zh' ? '关系需求' : 'Relationship Need', values: pendingSummary.relationshipNeed ? [pendingSummary.relationshipNeed] : [] },
-        { key: 'motivation', label: effectiveLanguage === 'zh' ? '深层动机' : 'Motivation', values: pendingSummary.motivation ? [pendingSummary.motivation] : [] },
-        { key: 'coreConflict', label: effectiveLanguage === 'zh' ? '核心冲突' : 'Core Conflict', values: pendingSummary.coreConflict ? [pendingSummary.coreConflict] : [] },
-      ].filter(section => section.values.length > 0)
-    : [];
+  // EX-001 §1/§4/§5: a Reflection gives back only the smallest true thing, never a
+  // report of dimensions/traits. The extraction below still feeds the internal
+  // understanding layer (via saveApprovedSummary) but is never shown to the user.
 
   // =========================================================================
   // Role dropdown (shared logic, rendered in different positions per platform)
@@ -1006,7 +1018,7 @@ export default function Reflect() {
             >
               <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mb-4" />
               <p className="text-sm text-gray-500 font-light">
-                {effectiveLanguage === 'zh' ? '正在提取对话洞察...' : 'Extracting insights...'}
+                {effectiveLanguage === 'zh' ? '稍等一下…' : 'One moment…'}
               </p>
             </motion.div>
           )}
@@ -1024,45 +1036,19 @@ export default function Reflect() {
               <div className={`space-y-6 ${isDesktop ? 'max-w-lg mx-auto' : ''}`}>
                 <div className="space-y-2">
                   <h3 className="text-xl font-light text-primary">
-                    {effectiveLanguage === 'zh' ? '这份总结，像你吗？' : 'Does this sound like you?'}
+                    {effectiveLanguage === 'zh' ? '留下这句话，如果它是真的。' : 'Keep this, if it feels true.'}
                   </h3>
                   <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-line">
                     {effectiveLanguage === 'zh'
-                      ? '聊天内容可以清除，但理解不必从零开始。\n如果你认可这份总结，我们会保留这次对话中显现出的思考方式，用于更准确的同频匹配。\n如果你不认可，它不会被保留。'
-                      : 'Chat history can be cleared, but understanding doesn\'t have to start from zero.\nIf you approve this summary, we\'ll keep the thinking patterns that emerged here for better matching.\nIf not, it will be discarded.'}
+                      ? '这是你刚才所说中，最真实的一点 —— 用你自己的话，稍微清晰了一些。\n你可以留下它，也可以放下。'
+                      : 'This is the one thing that felt true in what you said \u2014 in your own words, a little clearer.\nIt is yours to keep, or to let go.'}
                   </p>
                 </div>
 
-                <div className="bg-gray-50 p-4 rounded-xl space-y-3 max-h-[40vh] overflow-y-auto">
-                  <p className="text-sm text-gray-700 font-light leading-relaxed whitespace-pre-line">
+                <div className="bg-gray-50 p-5 rounded-xl">
+                  <p className="text-base text-gray-800 font-light leading-relaxed whitespace-pre-line">
                     {pendingSummary.summaryText}
                   </p>
-                  {summarySections.map(section => (
-                    <div key={section.key}>
-                      <span className="text-[10px] uppercase tracking-wider text-gray-500 block mb-1">
-                        {section.label}
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {section.values.map(value => (
-                          <span key={`${section.key}-${value}`} className="text-xs bg-white px-2 py-1 rounded-md text-primary border border-gray-100">
-                            {formatSummaryTag(value)}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  {pendingSummary.preferredResponseStyle && (
-                    <div>
-                      <span className="text-[10px] uppercase tracking-wider text-gray-500 block mb-1">
-                        {effectiveLanguage === 'zh' ? '偏好回应方式' : 'Response Style'}
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        <span className="text-xs bg-white px-2 py-1 rounded-md text-primary border border-gray-100">
-                          {pendingSummary.preferredResponseStyle}
-                        </span>
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 <div className="space-y-3 pt-2">
@@ -1070,13 +1056,13 @@ export default function Reflect() {
                     onClick={handleConfirmSummary}
                     className="w-full py-3 rounded-xl bg-primary text-white text-sm font-medium hover:bg-black transition-colors"
                   >
-                    {effectiveLanguage === 'zh' ? '认可并保存' : 'Approve & Save'}
+                    {effectiveLanguage === 'zh' ? '留下' : 'Keep this'}
                   </button>
                   <button
                     onClick={handleRejectSummary}
                     className="w-full py-3 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
                   >
-                    {effectiveLanguage === 'zh' ? '删除此次总结' : 'Discard Summary'}
+                    {effectiveLanguage === 'zh' ? '放下' : 'Let it go'}
                   </button>
                 </div>
               </div>
@@ -1243,10 +1229,10 @@ export default function Reflect() {
           <motion.div key="step3" {...fadeIn} className="flex-1 flex flex-col justify-center items-center text-center px-8 space-y-8">
              <div className="space-y-4 max-w-xs">
                <h2 className="text-2xl font-light text-primary leading-snug whitespace-pre-line">
-                 {t('reflect.bridge_title')}
+                 {t('reflect.complete_title')}
                </h2>
                <p className="text-sm text-gray-600 font-light leading-relaxed whitespace-pre-line">
-                 {t('reflect.bridge_desc')}
+                 {t('reflect.complete_desc')}
                </p>
              </div>
 
@@ -1284,18 +1270,31 @@ export default function Reflect() {
                </div>
              )}
 
+             {/* Completion-first: Discover is an optional invitation, shown only
+                 when a possibility genuinely exists. Never interrupts completion. */}
+             {discoveryAvailable && (
+               <div className="w-full max-w-xs rounded-2xl border border-stone-200/90 bg-stone-50/80 px-4 py-4 space-y-3">
+                 <p className="text-sm text-primary font-light leading-snug">
+                   {t('reflect.invite_discover')}
+                 </p>
+                 <Link
+                   to="/discover"
+                   className="block w-full py-2.5 rounded-xl bg-primary text-white hover:bg-black transition-colors text-sm font-medium text-center"
+                 >
+                   {t('reflect.action_discover')}
+                 </Link>
+               </div>
+             )}
+
              <div className="space-y-2.5 w-full max-w-xs">
-                <Link to="/resonate" className="block w-full py-3 rounded-xl bg-primary text-white hover:bg-black transition-colors text-sm font-medium text-center">
-                  {t('reflect.bridge_action_resonate')}
-                </Link>
-                <button 
+                <button
                   onClick={() => setStep(0)}
                   className="block w-full py-3 rounded-xl border border-gray-200 text-gray-600 hover:border-gray-400 transition-colors text-sm font-medium"
                 >
-                  {t('reflect.bridge_action_reflect')}
+                  {t('reflect.action_done')}
                 </button>
              </div>
-             
+
              <p className="text-[10px] text-gray-500 font-light">{t('reflect.bridge_footer')}</p>
           </motion.div>
         )}

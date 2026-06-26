@@ -586,63 +586,13 @@ const UNDERSTANDING_SLIDER_KEYS = [
   'expression_style',
 ];
 
-const AGE_RANGES = [
-  "18-24",
-  "25-34",
-  "35-44",
-  "45-54",
-  "55-64",
-  "65+"
-];
-
 function calculateBasicContextSimilarity(basic1 = {}, basic2 = {}) {
   let totalScore = 0;
   let totalWeight = 0;
 
-  // 1. currentState (exact match)
+  // currentState only — demographics (age, location, gender, zodiac) are out of the match path (T-102)
   if (basic1.currentState && basic2.currentState) {
     totalScore += basic1.currentState === basic2.currentState ? 1 : 0;
-    totalWeight += 1;
-  }
-
-  // 2. age (range proximity)
-  if (basic1.age && basic2.age) {
-    const idx1 = AGE_RANGES.indexOf(basic1.age);
-    const idx2 = AGE_RANGES.indexOf(basic2.age);
-    if (idx1 !== -1 && idx2 !== -1) {
-      const diff = Math.abs(idx1 - idx2);
-      if (diff === 0) totalScore += 1;
-      else if (diff === 1) totalScore += 0.6;
-      totalWeight += 1;
-    } else if (basic1.age === basic2.age) {
-      totalScore += 1;
-      totalWeight += 1;
-    }
-  }
-
-  // 3. location (loose text match)
-  if (basic1.location && basic2.location) {
-    const loc1 = basic1.location.toLowerCase().trim();
-    const loc2 = basic2.location.toLowerCase().trim();
-    if (loc1 === loc2) {
-      totalScore += 1;
-    } else if (loc1.includes(loc2) || loc2.includes(loc1)) {
-      totalScore += 0.7;
-    }
-    totalWeight += 1;
-  }
-
-  // 4. gender (exact match, ignore prefer_not)
-  if (basic1.gender && basic2.gender && 
-      !basic1.gender.includes('prefer_not') && 
-      !basic2.gender.includes('prefer_not')) {
-    totalScore += basic1.gender === basic2.gender ? 1 : 0;
-    totalWeight += 1;
-  }
-
-  // 5. zodiac (exact match)
-  if (basic1.zodiac && basic2.zodiac) {
-    totalScore += basic1.zodiac === basic2.zodiac ? 1 : 0;
     totalWeight += 1;
   }
 
@@ -1099,19 +1049,28 @@ Seen · Being seen matters`;
 
     console.log(`[Extract] Processing conversation with ${conversation.length} turns, language: ${language}`);
 
-    const extractPrompt = `You are an expert psychological profiler and conversation analyst.
-Your task is to analyze the following conversation between a User and an AI, and extract a structured 10-layer psychological profile of the USER.
+    const extractPrompt = `You have two separate jobs for the conversation below between a User and an AI. Keep them strictly separate.
 
-RULES:
-1. Analyze the USER, not the AI.
-2. Base every layer STRICTLY on evidence from the user's words. Do not invent strong conclusions from one sentence.
-3. If evidence is limited (e.g., very short conversation), use cautious and tentative wording (e.g., "seems to", "might value").
-4. If evidence for a specific layer is weak or absent, say less rather than more. It is better to be minimal and accurate than rich but speculative.
-5. Avoid generic psychology-template phrasing. Prefer grounded, specific observations.
-6. Keep each field concise but meaningful.
-7. The 'summary' field should be one compact paragraph synthesizing the overall state.
-8. Output language: ${language === 'zh' ? 'Chinese (Simplified)' : 'English'}.
-9. Return strictly valid JSON matching the exact structure below. Do NOT wrap in markdown code blocks (\`\`\`json). Return ONLY the raw JSON object.
+JOB 1 — INTERNAL PROFILE (never shown to the user):
+Extract a structured 10-layer read of the USER for internal use only.
+- Analyze the USER, not the AI.
+- Base every layer STRICTLY on evidence from the user's words. Do not invent strong conclusions from one sentence.
+- If evidence is limited, use cautious, tentative wording. If evidence for a layer is weak or absent, say less rather than more.
+- Avoid generic psychology-template phrasing. Keep each field concise.
+
+JOB 2 — THE REFLECTION (this is the ONLY thing the user will see):
+Write a single, gentle reflection given back to the user. This is NOT a summary, NOT a portrait, NOT a profile, and NOT "here is what you are." It is the smallest true thing the person said, handed back in THEIR OWN WORDS, only slightly clearer.
+Follow these rules absolutely:
+- Speak TO the person ("you"), warmly and plainly, as a close friend might — not about them.
+- One or two short sentences. Shorter is better. It should land like an exhale, not like a result.
+- Stay inside what they actually said. Do not add analysis, labels, traits, categories, conclusions, advice, or praise.
+- Never name emotions, values, patterns, or personality. Never say "you are", "your worldview", "your thinking style", or anything that fixes them.
+- Present-tense, tentative, kind. Reflect one true thing, and let the rest stay unseen.
+- If there is very little to reflect, reflect less — a single honest line is enough. Never pad.
+- Output language: ${language === 'zh' ? 'Chinese (Simplified)' : 'English'}.
+
+Output language for ALL fields: ${language === 'zh' ? 'Chinese (Simplified)' : 'English'}.
+Return strictly valid JSON matching the exact structure below. Do NOT wrap in markdown code blocks (\`\`\`json). Return ONLY the raw JSON object.
 
 REQUIRED JSON STRUCTURE:
 {
@@ -1127,7 +1086,8 @@ REQUIRED JSON STRUCTURE:
     "motivation": "Deep underlying drive or motivation",
     "coreConflict": "The central internal or external conflict"
   },
-  "summary": "One compact paragraph synthesizing the above."
+  "reflection": "The gentle reflection (Job 2) — one or two short sentences in the user's own words, slightly clearer.",
+  "summary": "Internal-only synthesis of the 10 layers in one compact paragraph. NEVER shown to the user."
 }
 
 CONVERSATION TRANSCRIPT:
@@ -1184,8 +1144,9 @@ ${transcript}`;
         }
       }
 
-      // Validate required structure
-      if (!parsedResult.layers || !parsedResult.summary) {
+      // Validate required structure. The user-facing 'reflection' (or, for older
+      // model outputs, 'summary') must be present.
+      if (!parsedResult.layers || !(parsedResult.reflection || parsedResult.summary)) {
         console.error("[Extract] Missing required top-level fields:", parsedResult);
         return httpResponse(500, { error: "reflect_extract_invalid_structure" });
       }
@@ -1205,6 +1166,9 @@ ${transcript}`;
           motivation: parsedResult.layers.motivation || "",
           coreConflict: parsedResult.layers.coreConflict || ""
         },
+        // EX-001: the gentle reflection is the only user-facing text. 'summary'
+        // stays for the internal understanding layer / backward compatibility.
+        reflection: parsedResult.reflection || "",
         summary: parsedResult.summary || "",
         model: model
       });

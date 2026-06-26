@@ -1,3 +1,5 @@
+import type { EmergentTrait, TraitInferenceMeta } from '../../types/emergentTraits';
+
 export type LoginMethod = 'apple' | 'google' | 'email';
 
 /** Onboarding / AI response style (Step 3). Maps to legacy `role` for existing UI. */
@@ -81,5 +83,8 @@ export interface SeenUser {
       responseStyle?: AiResponseStyleId;
     };
     reflectModel?: any;
+    /** T-202: inferred emergent traits from approved reflection sessions */
+    emergentTraits?: EmergentTrait[];
+    traitInferenceMeta?: TraitInferenceMeta;
   };
 }

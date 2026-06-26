@@ -19,6 +19,7 @@ export interface ConversationExtraction {
   values?: string;
   behaviorPattern?: string;
   decisionModel?: string;
+  /** @deprecated Use `soulProfile.emergentTraits` (T-202). Free-text trait; retained for backward compatibility. */
   personalityTraits?: string;
   relationshipNeed?: string;
   motivation?: string;
@@ -57,6 +58,7 @@ export interface UserUnderstandingModel {
   values?: string;
   behaviorPattern?: string;
   decisionModel?: string;
+  /** @deprecated Use `soulProfile.emergentTraits` (T-202). Free-text trait; retained for backward compatibility. */
   personalityTraits?: string;
   relationshipNeed?: string;
   motivation?: string;

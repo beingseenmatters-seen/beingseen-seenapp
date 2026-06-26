@@ -227,6 +227,9 @@ export interface ExtractSummaryResponse {
     motivation?: string;
     coreConflict?: string;
   };
+  /** EX-001 gentle reflection — the only user-facing text. */
+  reflection?: string;
+  /** Internal-only synthesis of the 10 layers. Never shown to the user. */
   summary: string;
 }
 

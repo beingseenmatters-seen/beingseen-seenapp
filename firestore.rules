@@ -1,0 +1,113 @@
+rules_version = '2';
+
+// Seen — Firestore security rules (T-301 / backlog T-003)
+//
+// Core invariant for the Resonance Engine V2:
+//   - users/{uid} is readable ONLY by its owner.
+//   - All cross-user reads (candidate selection, profile hydration) must go
+//     through the backend Admin SDK, which bypasses these rules.
+// This is what stops the client from fetching other users' soulProfiles.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isParticipant(users) {
+      return isSignedIn() && request.auth.uid in users;
+    }
+
+    // Migration-safe connection membership: accepts users[] OR userMap{uid:true}.
+    // Covers any legacy/console-seeded connection docs that lack a users[] array.
+    function isConnMember(data) {
+      return isSignedIn() && (
+        (data.users is list && request.auth.uid in data.users)
+        || (data.userMap is map && data.userMap.get(request.auth.uid, false) == true)
+      );
+    }
+
+    // ---------------------------------------------------------------------
+    // users/{uid} — owner-only. Includes soulProfile, profile, fcmTokens,
+    // basic, and the reflectInsights subcollection.
+    // ---------------------------------------------------------------------
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid);
+      allow delete: if isOwner(uid);
+
+      // All subcollections (reflectInsights/*, etc.) — owner only.
+      match /{document=**} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // connectionRequests/{id} — only the two involved users.
+    // ---------------------------------------------------------------------
+    match /connectionRequests/{requestId} {
+      allow read: if isSignedIn()
+        && (resource.data.fromUid == request.auth.uid
+            || resource.data.toUid == request.auth.uid);
+
+      // Sender creates a pending request addressed to someone else.
+      allow create: if isSignedIn()
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string
+        && request.resource.data.status == 'pending';
+
+      // Either party may update status (accept/decline/cancel).
+      allow update: if isSignedIn()
+        && (resource.data.fromUid == request.auth.uid
+            || resource.data.toUid == request.auth.uid);
+
+      allow delete: if isSignedIn() && resource.data.fromUid == request.auth.uid;
+    }
+
+    // ---------------------------------------------------------------------
+    // connections/{id} — only participants (migration-safe: users[] OR userMap).
+    // ---------------------------------------------------------------------
+    match /connections/{connectionId} {
+      allow read: if isConnMember(resource.data);
+      allow create: if isConnMember(request.resource.data);
+      allow update: if isConnMember(resource.data);
+      allow delete: if false;
+
+      // messages/* — only participants of the parent connection.
+      match /messages/{messageId} {
+        function parentData() {
+          return get(/databases/$(database)/documents/connections/$(connectionId)).data;
+        }
+        allow read: if isConnMember(parentData());
+        allow create: if isConnMember(parentData())
+          && request.resource.data.senderUid == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // waitlist/{id} — write-only from clients, never readable (T-002).
+    // ---------------------------------------------------------------------
+    match /waitlist/{docId} {
+      allow create: if true;
+      allow read, update, delete: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // reports/{id} — create-only by the signed-in reporter (T-004).
+    // ---------------------------------------------------------------------
+    match /reports/{reportId} {
+      allow create: if isSignedIn()
+        && request.resource.data.reporterUid == request.auth.uid;
+      allow read, update, delete: if false;
+    }
+
+    // Anything not matched above is denied by default.
+  }
+}

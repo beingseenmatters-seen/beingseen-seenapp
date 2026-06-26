@@ -31,15 +31,6 @@ export const UNDERSTANDING_SLIDER_KEYS = [
   'expression_style',
 ] as const;
 
-export const AGE_RANGES = [
-  "18-24",
-  "25-34",
-  "35-44",
-  "45-54",
-  "55-64",
-  "65+"
-] as const;
-
 export const ABOUT_ME_SIGNALS_KEYS = [
   'valueTags',
   'regretThemes',
@@ -131,50 +122,9 @@ export function calculateBasicContextSimilarity(basic1: any = {}, basic2: any = 
   let totalScore = 0;
   let totalWeight = 0;
 
-  // 1. currentState (exact match)
+  // currentState only — demographics (age, location, gender, zodiac) are out of the match path (T-102)
   if (basic1.currentState && basic2.currentState) {
     totalScore += basic1.currentState === basic2.currentState ? 1 : 0;
-    totalWeight += 1;
-  }
-
-  // 2. age (range proximity)
-  if (basic1.age && basic2.age) {
-    const idx1 = AGE_RANGES.indexOf(basic1.age as any);
-    const idx2 = AGE_RANGES.indexOf(basic2.age as any);
-    if (idx1 !== -1 && idx2 !== -1) {
-      const diff = Math.abs(idx1 - idx2);
-      if (diff === 0) totalScore += 1;
-      else if (diff === 1) totalScore += 0.6;
-      totalWeight += 1;
-    } else if (basic1.age === basic2.age) {
-      totalScore += 1;
-      totalWeight += 1;
-    }
-  }
-
-  // 3. location (loose text match)
-  if (basic1.location && basic2.location) {
-    const loc1 = String(basic1.location).toLowerCase().trim();
-    const loc2 = String(basic2.location).toLowerCase().trim();
-    if (loc1 === loc2) {
-      totalScore += 1;
-    } else if (loc1.includes(loc2) || loc2.includes(loc1)) {
-      totalScore += 0.7;
-    }
-    totalWeight += 1;
-  }
-
-  // 4. gender (exact match, ignore prefer_not)
-  if (basic1.gender && basic2.gender && 
-      !String(basic1.gender).includes('prefer_not') && 
-      !String(basic2.gender).includes('prefer_not')) {
-    totalScore += basic1.gender === basic2.gender ? 1 : 0;
-    totalWeight += 1;
-  }
-
-  // 5. zodiac (exact match)
-  if (basic1.zodiac && basic2.zodiac) {
-    totalScore += basic1.zodiac === basic2.zodiac ? 1 : 0;
     totalWeight += 1;
   }
 

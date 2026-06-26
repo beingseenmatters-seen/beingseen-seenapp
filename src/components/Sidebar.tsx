@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { MessageSquareText, Activity, Inbox, User, PanelLeftClose, PanelLeft, LogOut, Sparkles, Trash2 } from 'lucide-react';
+import { MessageSquareText, Compass, Inbox, User, PanelLeftClose, PanelLeft, LogOut, Sparkles, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useLanguage } from '../i18n';
 import { useAuth } from '../auth';
 import { useRecentConversations } from '../hooks/useRecentConversations';
+import { useDiscoverAvailability } from '../hooks/useDiscoverAvailability';
 import { formatRelativeTime } from '../services/recentConversations';
 
 interface SidebarProps {
@@ -16,14 +17,15 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { t, effectiveLanguage } = useLanguage();
   const { seenUser, signOut } = useAuth();
   const { conversations, remove } = useRecentConversations();
+  const { hasNew: discoverHasNew } = useDiscoverAvailability();
   const [hovered, setHovered] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const navItems = [
-    { to: '/', icon: MessageSquareText, label: t('nav.reflect') },
-    { to: '/resonate', icon: Activity, label: t('nav.resonate') },
-    { to: '/inbox', icon: Inbox, label: t('nav.inbox') },
-    { to: '/me', icon: User, label: t('nav.me') },
+    { to: '/', icon: MessageSquareText, label: t('nav.reflect'), dot: false },
+    { to: '/discover', icon: Compass, label: t('nav.discover'), dot: discoverHasNew },
+    { to: '/inbox', icon: Inbox, label: t('nav.connect'), dot: false },
+    { to: '/me', icon: User, label: t('nav.me'), dot: false },
   ];
 
   const handleLogout = async () => {
@@ -73,9 +75,17 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             }
             title={collapsed ? item.label : undefined}
           >
-            <item.icon size={20} strokeWidth={1.6} className="shrink-0" />
+            <div className="relative shrink-0">
+              <item.icon size={20} strokeWidth={1.6} />
+              {item.dot && collapsed && (
+                <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-green-500" />
+              )}
+            </div>
             {!collapsed && (
               <span className="text-sm font-medium truncate">{item.label}</span>
+            )}
+            {item.dot && !collapsed && (
+              <span className="ml-auto h-1.5 w-1.5 rounded-full bg-green-500" />
             )}
           </NavLink>
         ))}

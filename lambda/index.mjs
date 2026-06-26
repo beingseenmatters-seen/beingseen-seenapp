@@ -20,6 +20,12 @@ import admin from "firebase-admin";
 import { Resend } from "resend";
 import { buildPushPayload, buildMatchPushPayload } from "./pushCopy.mjs";
 import { generatePrimaryMatchReason } from "./matchReason.mjs";
+import {
+  assembleRIProfile,
+  isEligibleToMatch,
+  computeResonance,
+  buildReasons,
+} from "./resonance.mjs";
 
 // ========================
 // Version & Constants
@@ -56,6 +62,36 @@ if (!admin.apps.length) {
     }
   } catch (error) {
     console.error("[FirebaseAdmin] Initialization error:", error);
+  }
+}
+
+/**
+ * W4 — Verify a Firebase ID token from the Authorization header.
+ *
+ * Returns the decoded token (incl. `uid`) when valid, or null otherwise.
+ * Server-side selection (W3 `/match/candidate`) takes the viewer uid from the
+ * verified token — never from the request body — so a client cannot act as
+ * another user.
+ */
+async function verifyAuthToken(event) {
+  const headers = event.headers || {};
+  const raw =
+    headers.authorization ||
+    headers.Authorization ||
+    headers.AUTHORIZATION ||
+    "";
+
+  if (!raw || typeof raw !== "string") return null;
+
+  const match = raw.match(/^Bearer\s+(.+)$/i);
+  const idToken = match ? match[1].trim() : null;
+  if (!idToken) return null;
+
+  try {
+    return await admin.auth().verifyIdToken(idToken);
+  } catch (error) {
+    console.warn("[Auth] verifyIdToken failed:", error?.code || error?.message);
+    return null;
   }
 }
 
@@ -586,63 +622,13 @@ const UNDERSTANDING_SLIDER_KEYS = [
   'expression_style',
 ];
 
-const AGE_RANGES = [
-  "18-24",
-  "25-34",
-  "35-44",
-  "45-54",
-  "55-64",
-  "65+"
-];
-
 function calculateBasicContextSimilarity(basic1 = {}, basic2 = {}) {
   let totalScore = 0;
   let totalWeight = 0;
 
-  // 1. currentState (exact match)
+  // currentState only — demographics (age, location, gender, zodiac) are out of the match path (T-102)
   if (basic1.currentState && basic2.currentState) {
     totalScore += basic1.currentState === basic2.currentState ? 1 : 0;
-    totalWeight += 1;
-  }
-
-  // 2. age (range proximity)
-  if (basic1.age && basic2.age) {
-    const idx1 = AGE_RANGES.indexOf(basic1.age);
-    const idx2 = AGE_RANGES.indexOf(basic2.age);
-    if (idx1 !== -1 && idx2 !== -1) {
-      const diff = Math.abs(idx1 - idx2);
-      if (diff === 0) totalScore += 1;
-      else if (diff === 1) totalScore += 0.6;
-      totalWeight += 1;
-    } else if (basic1.age === basic2.age) {
-      totalScore += 1;
-      totalWeight += 1;
-    }
-  }
-
-  // 3. location (loose text match)
-  if (basic1.location && basic2.location) {
-    const loc1 = basic1.location.toLowerCase().trim();
-    const loc2 = basic2.location.toLowerCase().trim();
-    if (loc1 === loc2) {
-      totalScore += 1;
-    } else if (loc1.includes(loc2) || loc2.includes(loc1)) {
-      totalScore += 0.7;
-    }
-    totalWeight += 1;
-  }
-
-  // 4. gender (exact match, ignore prefer_not)
-  if (basic1.gender && basic2.gender && 
-      !basic1.gender.includes('prefer_not') && 
-      !basic2.gender.includes('prefer_not')) {
-    totalScore += basic1.gender === basic2.gender ? 1 : 0;
-    totalWeight += 1;
-  }
-
-  // 5. zodiac (exact match)
-  if (basic1.zodiac && basic2.zodiac) {
-    totalScore += basic1.zodiac === basic2.zodiac ? 1 : 0;
     totalWeight += 1;
   }
 
@@ -781,6 +767,8 @@ export const handler = async (event) => {
     event.routeKey === "OPTIONS /reflect/extract" || 
     event.routeKey === "OPTIONS /voice/transcribe" ||
     event.routeKey === "OPTIONS /match/rank" ||
+    event.routeKey === "OPTIONS /match/candidate" ||
+    event.routeKey === "OPTIONS /profiles/hydrate" ||
     event.routeKey === "OPTIONS /auth/email-link/send" ||
     event.routeKey === "OPTIONS /test/push"
   ) {
@@ -1078,6 +1066,180 @@ Seen · Being seen matters`;
     });
   }
 
+  // Route: /match/candidate  (T-301 — server-side selection, trait-level resonance)
+  //
+  // Client sends ONLY its identity (verified ID token). The server reads the
+  // pool via Admin SDK, ranks on emergent traits, and returns exactly ONE
+  // candidate with human-language reasons. No traits, no scores, ever leave here.
+  if (path === "/match/candidate") {
+    console.log("Handling /match/candidate request");
+
+    // W7 kill switch: MATCH_ENGINE=legacy disables server selection without a
+    // client deploy. Default (unset) allows it; the client flag gates rollout.
+    if (process.env.MATCH_ENGINE === "legacy") {
+      return httpResponse(200, { success: true, candidate: null, state: "disabled" });
+    }
+
+    const decoded = await verifyAuthToken(event);
+    if (!decoded || !decoded.uid) {
+      return httpResponse(401, { error: "invalid_token" });
+    }
+    const uid = decoded.uid;
+
+    try {
+      const fdb = admin.firestore();
+
+      // 1. Viewer + RI profile + readiness gate.
+      const myDoc = await fdb.collection("users").doc(uid).get();
+      if (!myDoc.exists) {
+        return httpResponse(200, { success: true, candidate: null, state: "viewer_not_ready" });
+      }
+      const myData = myDoc.data() || {};
+      const mySoul = myData.soulProfile || {};
+      const myInsightCount =
+        mySoul.traitInferenceMeta?.insightCount ??
+        mySoul.reflectModel?.sourceInsightCount ??
+        (mySoul.latestInsight ? 1 : 0);
+      const myRI = assembleRIProfile(mySoul.emergentTraits);
+
+      if (!isEligibleToMatch(myRI, myInsightCount)) {
+        return httpResponse(200, { success: true, candidate: null, state: "viewer_not_ready" });
+      }
+
+      // 2. Exclusions: self + anyone with an existing request/connection.
+      const excluded = new Set([uid]);
+      try {
+        const [fromReqs, toReqs, conns] = await Promise.all([
+          fdb.collection("connectionRequests").where("fromUid", "==", uid).get(),
+          fdb.collection("connectionRequests").where("toUid", "==", uid).get(),
+          fdb.collection("connections").where("users", "array-contains", uid).get(),
+        ]);
+        fromReqs.forEach((d) => excluded.add(d.data().toUid));
+        toReqs.forEach((d) => excluded.add(d.data().fromUid));
+        conns.forEach((d) => (d.data().users || []).forEach((u) => excluded.add(u)));
+      } catch (exErr) {
+        console.warn("[match/candidate] exclusion read failed:", exErr?.message);
+      }
+
+      // 3. Candidate pool (server-side, capped). Rank on resonance.
+      // T-301.1 — pre-filter on the denormalized readiness flag + recency so cold
+      // profiles are never loaded. Per-candidate isEligibleToMatch below remains the
+      // authoritative gate (the flag is only a query optimization).
+      const POOL_CAP = 500;
+      const poolSnap = await fdb
+        .collection("users")
+        .where("profile.matchReady", "==", true)
+        .orderBy("profile.updatedAt", "desc")
+        .limit(POOL_CAP)
+        .get();
+
+      let best = null; // { uid, nickname, score, resonance }
+      poolSnap.forEach((docSnap) => {
+        const cuid = docSnap.id;
+        if (excluded.has(cuid)) return;
+
+        const cData = docSnap.data() || {};
+        const cSoul = cData.soulProfile || {};
+        const cInsightCount =
+          cSoul.traitInferenceMeta?.insightCount ??
+          cSoul.reflectModel?.sourceInsightCount ??
+          (cSoul.latestInsight ? 1 : 0);
+        const cRI = assembleRIProfile(cSoul.emergentTraits);
+        if (!isEligibleToMatch(cRI, cInsightCount)) return;
+
+        const resonance = computeResonance(myRI, cRI);
+        const rankingScore = resonance.resonanceScore; // recency hook = 1.0 for V1
+        if (!best || rankingScore > best.score) {
+          best = {
+            uid: cuid,
+            nickname: cData.nickname || cData.basic?.nickname || "Anonymous User",
+            score: rankingScore,
+            resonance,
+          };
+        }
+      });
+
+      if (!best) {
+        return httpResponse(200, { success: true, candidate: null, state: "no_candidate" });
+      }
+
+      const reasons = buildReasons(best.resonance);
+
+      // Internal-only telemetry (server logs; never returned to client).
+      console.log(
+        `[match/candidate] ${uid} -> ${best.uid} | resonance:${best.score.toFixed(3)} reasons:${reasons.length}`,
+      );
+
+      // Response is intentionally minimal: no traitId/name/family/confidence, no score.
+      return httpResponse(200, {
+        success: true,
+        candidate: {
+          uid: best.uid,
+          nickname: best.nickname,
+          reasons,
+        },
+      });
+    } catch (error) {
+      console.error("[match/candidate] error:", error);
+      return httpResponse(500, { error: "internal_server_error" });
+    }
+  }
+
+  // Route: /profiles/hydrate  (T-301 companion — owner-only rules make the client
+  // unable to read other users; inbox/connection name hydration goes through here.)
+  //
+  // Returns ONLY minimal public fields (uid, nickname) and ONLY for users the
+  // caller already shares a request/connection with. No soulProfile, no traits.
+  if (path === "/profiles/hydrate") {
+    console.log("Handling /profiles/hydrate request");
+
+    const decoded = await verifyAuthToken(event);
+    if (!decoded || !decoded.uid) {
+      return httpResponse(401, { error: "invalid_token" });
+    }
+    const uid = decoded.uid;
+
+    const requestedUids = Array.isArray(body.uids) ? body.uids.slice(0, 50) : [];
+    if (requestedUids.length === 0) {
+      return httpResponse(200, { success: true, profiles: {} });
+    }
+
+    try {
+      const fdb = admin.firestore();
+
+      // Build the set of uids the caller is allowed to see.
+      const allowed = new Set();
+      const [fromReqs, toReqs, conns] = await Promise.all([
+        fdb.collection("connectionRequests").where("fromUid", "==", uid).get(),
+        fdb.collection("connectionRequests").where("toUid", "==", uid).get(),
+        fdb.collection("connections").where("users", "array-contains", uid).get(),
+      ]);
+      fromReqs.forEach((d) => allowed.add(d.data().toUid));
+      toReqs.forEach((d) => allowed.add(d.data().fromUid));
+      conns.forEach((d) => (d.data().users || []).forEach((u) => { if (u !== uid) allowed.add(u); }));
+
+      const targets = requestedUids.filter((u) => allowed.has(u));
+      const profiles = {};
+      await Promise.all(
+        targets.map(async (tUid) => {
+          const snap = await fdb.collection("users").doc(tUid).get();
+          if (snap.exists) {
+            const d = snap.data() || {};
+            profiles[tUid] = {
+              uid: tUid,
+              nickname: d.nickname || d.basic?.nickname || "Anonymous User",
+            };
+          }
+        }),
+      );
+
+      return httpResponse(200, { success: true, profiles });
+    } catch (error) {
+      console.error("[profiles/hydrate] error:", error);
+      return httpResponse(500, { error: "internal_server_error" });
+    }
+  }
+
   // Route: /extract
   if (path === "/reflect/extract") {
     console.log("Handling /reflect/extract request");
@@ -1099,19 +1261,28 @@ Seen · Being seen matters`;
 
     console.log(`[Extract] Processing conversation with ${conversation.length} turns, language: ${language}`);
 
-    const extractPrompt = `You are an expert psychological profiler and conversation analyst.
-Your task is to analyze the following conversation between a User and an AI, and extract a structured 10-layer psychological profile of the USER.
+    const extractPrompt = `You have two separate jobs for the conversation below between a User and an AI. Keep them strictly separate.
 
-RULES:
-1. Analyze the USER, not the AI.
-2. Base every layer STRICTLY on evidence from the user's words. Do not invent strong conclusions from one sentence.
-3. If evidence is limited (e.g., very short conversation), use cautious and tentative wording (e.g., "seems to", "might value").
-4. If evidence for a specific layer is weak or absent, say less rather than more. It is better to be minimal and accurate than rich but speculative.
-5. Avoid generic psychology-template phrasing. Prefer grounded, specific observations.
-6. Keep each field concise but meaningful.
-7. The 'summary' field should be one compact paragraph synthesizing the overall state.
-8. Output language: ${language === 'zh' ? 'Chinese (Simplified)' : 'English'}.
-9. Return strictly valid JSON matching the exact structure below. Do NOT wrap in markdown code blocks (\`\`\`json). Return ONLY the raw JSON object.
+JOB 1 — INTERNAL PROFILE (never shown to the user):
+Extract a structured 10-layer read of the USER for internal use only.
+- Analyze the USER, not the AI.
+- Base every layer STRICTLY on evidence from the user's words. Do not invent strong conclusions from one sentence.
+- If evidence is limited, use cautious, tentative wording. If evidence for a layer is weak or absent, say less rather than more.
+- Avoid generic psychology-template phrasing. Keep each field concise.
+
+JOB 2 — THE REFLECTION (this is the ONLY thing the user will see):
+Write a single, gentle reflection given back to the user. This is NOT a summary, NOT a portrait, NOT a profile, and NOT "here is what you are." It is the smallest true thing the person said, handed back in THEIR OWN WORDS, only slightly clearer.
+Follow these rules absolutely:
+- Speak TO the person ("you"), warmly and plainly, as a close friend might — not about them.
+- One or two short sentences. Shorter is better. It should land like an exhale, not like a result.
+- Stay inside what they actually said. Do not add analysis, labels, traits, categories, conclusions, advice, or praise.
+- Never name emotions, values, patterns, or personality. Never say "you are", "your worldview", "your thinking style", or anything that fixes them.
+- Present-tense, tentative, kind. Reflect one true thing, and let the rest stay unseen.
+- If there is very little to reflect, reflect less — a single honest line is enough. Never pad.
+- Output language: ${language === 'zh' ? 'Chinese (Simplified)' : 'English'}.
+
+Output language for ALL fields: ${language === 'zh' ? 'Chinese (Simplified)' : 'English'}.
+Return strictly valid JSON matching the exact structure below. Do NOT wrap in markdown code blocks (\`\`\`json). Return ONLY the raw JSON object.
 
 REQUIRED JSON STRUCTURE:
 {
@@ -1127,7 +1298,8 @@ REQUIRED JSON STRUCTURE:
     "motivation": "Deep underlying drive or motivation",
     "coreConflict": "The central internal or external conflict"
   },
-  "summary": "One compact paragraph synthesizing the above."
+  "reflection": "The gentle reflection (Job 2) — one or two short sentences in the user's own words, slightly clearer.",
+  "summary": "Internal-only synthesis of the 10 layers in one compact paragraph. NEVER shown to the user."
 }
 
 CONVERSATION TRANSCRIPT:
@@ -1184,8 +1356,9 @@ ${transcript}`;
         }
       }
 
-      // Validate required structure
-      if (!parsedResult.layers || !parsedResult.summary) {
+      // Validate required structure. The user-facing 'reflection' (or, for older
+      // model outputs, 'summary') must be present.
+      if (!parsedResult.layers || !(parsedResult.reflection || parsedResult.summary)) {
         console.error("[Extract] Missing required top-level fields:", parsedResult);
         return httpResponse(500, { error: "reflect_extract_invalid_structure" });
       }
@@ -1205,6 +1378,9 @@ ${transcript}`;
           motivation: parsedResult.layers.motivation || "",
           coreConflict: parsedResult.layers.coreConflict || ""
         },
+        // EX-001: the gentle reflection is the only user-facing text. 'summary'
+        // stays for the internal understanding layer / backward compatibility.
+        reflection: parsedResult.reflection || "",
         summary: parsedResult.summary || "",
         model: model
       });

@@ -15,6 +15,7 @@ import {
 import { db } from './firebase';
 import type { SeenUser } from '../auth/providers/types';
 import { apiClient } from './apiClient';
+import { MATCH_CANDIDATE_API } from '../config/api';
 
 export interface ConnectionRequest {
   id?: string;
@@ -59,6 +60,51 @@ export interface CandidateProfile {
   finalScore?: number;
   matchReason?: string;
   matchReasons?: string[];
+  /** T-301: localized human-language resonance reasons from /match/candidate. */
+  reasonsLocalized?: Array<{ zh: string; en: string }>;
+}
+
+/**
+ * T-301 — batch-hydrate minimal public profiles (uid, nickname) for users the
+ * caller already shares a request/connection with, via the Admin SDK endpoint.
+ * Used once owner-only Firestore rules make direct cross-user reads impossible.
+ */
+async function hydrateProfiles(
+  uids: string[],
+): Promise<Record<string, { uid: string; nickname: string }>> {
+  const unique = Array.from(new Set(uids.filter(Boolean)));
+  if (unique.length === 0) return {};
+  try {
+    const result = await apiClient('/profiles/hydrate', {
+      method: 'POST',
+      data: { uids: unique },
+    });
+    return result?.profiles || {};
+  } catch (err) {
+    console.warn('[hydrateProfiles] failed:', err);
+    return {};
+  }
+}
+
+/**
+ * T-301 — server-side candidate selection. The client sends only its identity
+ * (ID token attached by apiClient); the server ranks on emergent traits and
+ * returns one candidate with human-language reasons (no traits, no scores).
+ */
+async function getResonateCandidateServer(): Promise<CandidateProfile | null> {
+  try {
+    const result = await apiClient('/match/candidate', { method: 'POST', data: {} });
+    const c = result?.candidate;
+    if (!c) return null;
+    return {
+      uid: c.uid,
+      nickname: c.nickname,
+      reasonsLocalized: Array.isArray(c.reasons) ? c.reasons : [],
+    };
+  } catch (err) {
+    console.error('[getResonateCandidateServer] failed:', err);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +164,11 @@ export function generateMatchReasons(mySoul: any, candidateSoul: any): string[] 
 
 export async function getResonateCandidate(currentUid: string): Promise<CandidateProfile | null> {
   if (!currentUid) return null;
+
+  // T-301 W6 — server-side selection (owner-only rules forbid client fetch-all).
+  if (MATCH_CANDIDATE_API) {
+    return getResonateCandidateServer();
+  }
 
   try {
     console.log('[getResonateCandidate] Fetching users for candidate selection...');
@@ -319,23 +370,37 @@ export async function getInboxRequests(currentUid: string): Promise<ConnectionRe
     );
     const snapshot = await getDocs(q);
     const requests: ConnectionRequest[] = [];
-    
+
+    // T-301 — when server selection is on, hydrate sender names via the Admin-SDK
+    // endpoint (owner-only rules forbid reading other users' docs directly).
+    const hydrationMap = MATCH_CANDIDATE_API
+      ? await hydrateProfiles(snapshot.docs.map(d => (d.data() as ConnectionRequest).fromUid))
+      : {};
+
     for (const docSnap of snapshot.docs) {
       const data = docSnap.data() as ConnectionRequest;
       data.id = docSnap.id;
-      
-      // Hydrate sender profile
-      const senderDoc = await getDoc(doc(db, 'users', data.fromUid));
-      if (senderDoc.exists()) {
-        const senderData = senderDoc.data() as SeenUser;
+
+      if (MATCH_CANDIDATE_API) {
+        const hydrated = hydrationMap[data.fromUid];
         data.senderProfile = {
-          uid: senderData.uid,
-          nickname: senderData.nickname || senderData.basic?.nickname || 'Anonymous User',
-          soulProfile: senderData.soulProfile,
-          basic: senderData.basic
+          uid: data.fromUid,
+          nickname: hydrated?.nickname || 'Anonymous User',
         };
+      } else {
+        // Legacy: direct read (pre-rules-deploy).
+        const senderDoc = await getDoc(doc(db, 'users', data.fromUid));
+        if (senderDoc.exists()) {
+          const senderData = senderDoc.data() as SeenUser;
+          data.senderProfile = {
+            uid: senderData.uid,
+            nickname: senderData.nickname || senderData.basic?.nickname || 'Anonymous User',
+            soulProfile: senderData.soulProfile,
+            basic: senderData.basic
+          };
+        }
       }
-      
+
       requests.push(data);
     }
     
@@ -422,26 +487,41 @@ export async function getUserConnections(currentUid: string): Promise<Connection
     );
     const snapshot = await getDocs(q);
     const connections: Connection[] = [];
-    
+
+    // T-301 — batch-hydrate the other participant's name via the Admin-SDK endpoint
+    // when server selection is on (owner-only rules forbid direct cross-user reads).
+    const otherUids = snapshot.docs
+      .map(d => (d.data() as Connection).users?.find(uid => uid !== currentUid))
+      .filter((u): u is string => Boolean(u));
+    const hydrationMap = MATCH_CANDIDATE_API ? await hydrateProfiles(otherUids) : {};
+
     for (const docSnap of snapshot.docs) {
       const data = docSnap.data() as Connection;
       data.id = docSnap.id;
-      
-      // Hydrate other user profile
+
       const otherUid = data.users.find(uid => uid !== currentUid);
       if (otherUid) {
-        const otherDoc = await getDoc(doc(db, 'users', otherUid));
-        if (otherDoc.exists()) {
-          const otherData = otherDoc.data() as SeenUser;
+        if (MATCH_CANDIDATE_API) {
+          const hydrated = hydrationMap[otherUid];
           data.otherUserProfile = {
-            uid: otherData.uid,
-            nickname: otherData.nickname || otherData.basic?.nickname || 'Anonymous User',
-            soulProfile: otherData.soulProfile,
-            basic: otherData.basic
+            uid: otherUid,
+            nickname: hydrated?.nickname || 'Anonymous User',
           };
+        } else {
+          // Legacy: direct read (pre-rules-deploy).
+          const otherDoc = await getDoc(doc(db, 'users', otherUid));
+          if (otherDoc.exists()) {
+            const otherData = otherDoc.data() as SeenUser;
+            data.otherUserProfile = {
+              uid: otherData.uid,
+              nickname: otherData.nickname || otherData.basic?.nickname || 'Anonymous User',
+              soulProfile: otherData.soulProfile,
+              basic: otherData.basic
+            };
+          }
         }
       }
-      
+
       connections.push(data);
     }
     
