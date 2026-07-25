@@ -39,6 +39,7 @@ echo "4. Creating zip file (index.mjs stays canonical; no overwrite)..."
 zip -r function.zip \
   index.mjs \
   reflect-handler.mjs \
+  reflectModes.mjs \
   resonance.mjs \
   matchReason.mjs \
   pushCopy.mjs \

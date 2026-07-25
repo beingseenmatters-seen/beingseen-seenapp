@@ -7,8 +7,15 @@ import {
   type ReflectDebug,
   type ReflectResponseWithDebug 
 } from '../types/responseStyle';
-import { analyzeUserState, resolveStyleAndLevel } from './questionGate';
-import { buildGateSavedPreference, getReflectDefaultStyle, mapStyleToSelectedMode } from './reflectStyle';
+import { analyzeUserState, resolveModeAndLevel } from './questionGate';
+import { getReflectDefaultStyle } from './reflectStyle';
+import {
+  ResponseMode,
+  type ResponseModeType,
+  fromLegacySelectedMode,
+  normalizeResponseMode,
+  toLegacyResponseStyle,
+} from '../types/responseMode';
 
 export interface ReflectResponse {
   reply: string;
@@ -65,16 +72,14 @@ export async function sendReflect(
 export async function sendReflectWithGate(
   text: string,
   language: string = 'zh',
-  selectedMode: number | null,
+  /** Canonical response mode; legacy numeric selectedMode (0–3) still accepted. */
+  mode: ResponseModeType | number | null,
   recentTurns: Array<{ role: 'user' | 'ai'; text: string }> = [],
   keepContext: boolean = false,
   sessionId?: string,
   meta?: {
     isNewSession?: boolean;
     action?: ReflectAction;
-    resolvedStyle?: ResponseStyleType;
-    /** Firestore `soulProfile.aiPreference` — profile > localStorage for gate fallback */
-    aiPreference?: { role?: string; responseStyle?: string } | null;
   }
 ): Promise<ReflectResponseWithDebug> {
   
@@ -82,32 +87,36 @@ export async function sendReflectWithGate(
   const userState = analyzeUserState(text, recentTurns);
   console.log('[SeenAPI] User state analysis:', userState);
   
-  // 2. 与 Reflect UI 一致的默认偏好：profile > localStorage（供 selectedMode 无效时）
-  const savedPreference = buildGateSavedPreference(meta?.aiPreference);
+  // 2. 归一化为 canonical mode（legacy 数字索引 / legacy 字符串都安全落地）
+  const requestedMode: ResponseModeType =
+    typeof mode === 'number'
+      ? fromLegacySelectedMode(mode) ?? ResponseMode.REFLECT
+      : normalizeResponseMode(mode);
 
-  // If caller provides a resolvedStyle, force it via selectedMode mapping
-  const selectedModeForGate = meta?.resolvedStyle ? mapStyleToSelectedMode(meta.resolvedStyle) : selectedMode;
-  
-  // 3. 决定最终 style 和 level（包括降级逻辑）
-  const { style, level, downgraded, reason } = resolveStyleAndLevel(
-    selectedModeForGate, 
-    savedPreference, 
+  // 3. 决定最终 mode 和 level（distress override 最高优先级）
+  const { mode: finalMode, level, downgraded, reason } = resolveModeAndLevel(
+    requestedMode,
     userState
   );
   
   if (downgraded) {
-    console.log('[SeenAPI] Style downgraded:', reason);
+    console.log('[SeenAPI] Mode downgraded:', reason);
   }
 
   const conversationHistory = recentTurns;
   
-  // 4. 构建完整的请求 payload
+  // 4. 构建完整的请求 payload。
+  // 双写：canonical `responseMode`（新后端）+ legacy `responseStyle`（当前已
+  // 部署后端仍按 mirror/organizer/helper/guide 解析）。CONNECT 没有 legacy
+  // 等价值 —— 旧后端对未知值会安全回退到 mirror。
+  const legacyStyle = toLegacyResponseStyle(finalMode);
   const payload: ReflectRequestPayload = {
     text,
     language,
-    responseStyle: style,
+    responseMode: finalMode,
+    ...(legacyStyle ? { responseStyle: legacyStyle } : {}),
     userPreferenceQuestionLevel: level,
-    // Always send the full in-session conversation history so Mirror can maintain continuity.
+    // Always send the full in-session conversation history so continuity is maintained.
     conversationHistory,
     recentTurns: conversationHistory,
     keepContext,
@@ -139,8 +148,8 @@ export async function sendReflectWithGate(
       const reflectAction: ReflectAction = meta?.action ?? (isNewSession ? 'new_session' : 'continue');
 
       const fallbackQuestionGate = {
-        responseStyle: style,
-        originalStyle: style,
+        responseStyle: finalMode,
+        originalStyle: requestedMode,
         isDistressed: userState.isDistressed,
         isAskingForDeepDive: userState.isAskingForDeepDive,
         questionCount: 0, // backend may fill
@@ -165,7 +174,7 @@ export async function sendReflectWithGate(
           conversationId: sessionId,
           isNewSession,
           action: reflectAction,
-          responseStyle: style
+          responseStyle: finalMode
         }
       } satisfies ReflectDebug;
     }

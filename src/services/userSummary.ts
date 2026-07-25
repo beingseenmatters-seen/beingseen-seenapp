@@ -184,7 +184,14 @@ const MICRO_KEYWORDS = ['关系', '忠诚', '信任', '亲密', '真实', 'relat
 const STRUCTURED_PATTERNS = [/\d+[.、:：)）]/, /首先|其次|然后|最后|一方面|另一方面/, /first|second|third|finally|on the one hand|on the other hand/i];
 const COMPARATIVE_PATTERNS = ['不是', '而是', '相比', '对照', 'rather than', 'instead of', 'compare', 'contrast'];
 
-export async function extractSummaryFromConversation(
+/**
+ * Backend-only extraction (Phase 2B). Calls `/reflect/extract` once and throws
+ * on any failure (network, endpoint, malformed or empty response) instead of
+ * silently substituting a locally built sentence. The Reflect completion flow
+ * uses this so failures surface a visible retry state rather than pretending
+ * extraction succeeded.
+ */
+export async function extractSummaryFromBackend(
   messages: ConversationMessage[],
   options: { preferredResponseStyle?: string; language?: InsightLanguage; uid?: string; sessionId?: string } = {}
 ): Promise<ConversationExtraction> {
@@ -192,44 +199,52 @@ export async function extractSummaryFromConversation(
   const uid = options.uid || 'anonymous';
   const sessionId = options.sessionId || 'unknown';
 
+  const response = await extractReflectSummary({
+    uid,
+    sessionId,
+    conversation: messages,
+    module: 'reflect',
+    language
+  });
+
+  const extraction: ConversationExtraction = {
+    // EX-001: surface the gentle reflection. `summary` (10-layer synthesis)
+    // stays internal and is only a fallback for older Lambda deployments.
+    summaryText: response.reflection || response.summary || '',
+    thinkingStyle: [],
+    coreQuestions: [],
+    worldview: [],
+    relationshipPhilosophy: [],
+    conversationStyle: [],
+    thinkingPath: [],
+    preferredResponseStyle: options.preferredResponseStyle,
+    contentSummary: response.layers?.contentSummary,
+    emotion: response.layers?.emotion,
+    trigger: response.layers?.trigger,
+    values: response.layers?.values,
+    behaviorPattern: response.layers?.behaviorPattern,
+    decisionModel: response.layers?.decisionModel,
+    personalityTraits: response.layers?.personalityTraits,
+    relationshipNeed: response.layers?.relationshipNeed,
+    motivation: response.layers?.motivation,
+    coreConflict: response.layers?.coreConflict,
+  };
+
+  if (!extraction.summaryText) {
+    throw new Error('Empty summary from backend');
+  }
+
+  return extraction;
+}
+
+export async function extractSummaryFromConversation(
+  messages: ConversationMessage[],
+  options: { preferredResponseStyle?: string; language?: InsightLanguage; uid?: string; sessionId?: string } = {}
+): Promise<ConversationExtraction> {
+  const language = options.language ?? 'zh';
+
   try {
-    const response = await extractReflectSummary({
-      uid,
-      sessionId,
-      conversation: messages,
-      module: 'reflect',
-      language
-    });
-
-    const extraction: ConversationExtraction = {
-      // EX-001: surface the gentle reflection. `summary` (10-layer synthesis)
-      // stays internal and is only a fallback for older Lambda deployments.
-      summaryText: response.reflection || response.summary || '',
-      thinkingStyle: [],
-      coreQuestions: [],
-      worldview: [],
-      relationshipPhilosophy: [],
-      conversationStyle: [],
-      thinkingPath: [],
-      preferredResponseStyle: options.preferredResponseStyle,
-      contentSummary: response.layers?.contentSummary,
-      emotion: response.layers?.emotion,
-      trigger: response.layers?.trigger,
-      values: response.layers?.values,
-      behaviorPattern: response.layers?.behaviorPattern,
-      decisionModel: response.layers?.decisionModel,
-      personalityTraits: response.layers?.personalityTraits,
-      relationshipNeed: response.layers?.relationshipNeed,
-      motivation: response.layers?.motivation,
-      coreConflict: response.layers?.coreConflict,
-    };
-
-    // Fallback to local logic if summaryText is empty
-    if (!extraction.summaryText) {
-      throw new Error('Empty summary from backend');
-    }
-
-    return extraction;
+    return await extractSummaryFromBackend(messages, options);
   } catch (error) {
     console.error('[UserSummary] Backend extraction failed, falling back to local:', error);
     
@@ -659,7 +674,9 @@ export const clearUserPersonalityModel = clearUserUnderstandingModel;
 // Confirmed-summary orchestration
 
 export function hasMeaningfulExtraction(extraction: ConversationExtraction): boolean {
-  return hasMeaningfulUnderstanding(extraction);
+  // A backend extraction carries only the user-facing sentence (`summaryText`)
+  // with empty structured arrays — that alone is meaningful (Phase 2B).
+  return Boolean(extraction.summaryText?.trim()) || hasMeaningfulUnderstanding(extraction);
 }
 
 // Helper to remove undefined values before saving to Firestore

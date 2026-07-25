@@ -88,4 +88,28 @@ describe('responseMode persistence is independent from retention', () => {
     expect(convo?.responseMode).toBeUndefined();
     expect(convo?.sessionStyle).toBe('organizer');
   });
+
+  it('stores canonical five-mode values with legacy compatibility fields (Phase 2)', () => {
+    saveConversation('id-canonical', MESSAGES, '7days', 'zh', {
+      responseMode: 'untangle',
+      sessionStyle: 'organizer',
+      selectedMode: 1,
+    });
+    const convo = getConversationById('id-canonical');
+    expect(convo?.responseMode).toBe('untangle');
+    expect(convo?.sessionStyle).toBe('organizer');
+  });
+
+  it('CONNECT persists canonically with no legacy fields, and retention is unaffected', () => {
+    const saved = saveConversation('id-connect', MESSAGES, '3days', 'zh', {
+      responseMode: 'connect',
+      sessionStyle: undefined,
+      selectedMode: null,
+    });
+    expect(saved!.expiresAt - saved!.createdAt).toBe(3 * DAY_MS);
+    const convo = getConversationById('id-connect');
+    expect(convo?.responseMode).toBe('connect');
+    expect(convo?.sessionStyle).toBeUndefined();
+    expect(convo?.selectedMode).toBeNull();
+  });
 });

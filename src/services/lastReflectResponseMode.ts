@@ -1,5 +1,8 @@
-import { ResponseStyle, type ResponseStyleType } from '../types/responseStyle';
-import { isResponseStyleType } from './reflectStyle';
+import {
+  ResponseMode,
+  type ResponseModeType,
+  tryNormalizeResponseMode,
+} from '../types/responseMode';
 
 /**
  * User-scoped "last used Reflect response mode".
@@ -7,7 +10,11 @@ import { isResponseStyleType } from './reflectStyle';
  * This is the ONLY live default source for a new Reflect conversation
  * (Phase 1 decision). It is a lightweight local preference — it contains no
  * conversation content, so it may outlive transcript retention. It is
- * intentionally NOT persisted to Firestore in this phase.
+ * intentionally NOT persisted to Firestore.
+ *
+ * Phase 2: values are canonical five-mode strings. Legacy stored values
+ * (mirror/organizer/helper/guide) are normalised on read via the approved
+ * mapping; anything unknown falls back to REFLECT.
  *
  * UI components must go through this service instead of localStorage.
  */
@@ -34,26 +41,26 @@ export function lastUsedResponseModeKey(uid: string): string {
 }
 
 /**
- * Missing, invalid or unreadable values all fall back to MIRROR so a broken
- * localStorage can never break Reflect.
+ * Missing, invalid or unreadable values all fall back to REFLECT so a broken
+ * localStorage can never break Reflect. Legacy four-role values stored before
+ * Phase 2 are migrated through the approved mapping on read.
  */
 export function loadLastUsedResponseMode(
   uid: string | null | undefined,
   store: ResponseModeStore | null = defaultStore(),
-): ResponseStyleType {
-  if (!uid || !store) return ResponseStyle.MIRROR;
+): ResponseModeType {
+  if (!uid || !store) return ResponseMode.REFLECT;
   try {
     const raw = store.getItem(lastUsedResponseModeKey(uid));
-    if (raw !== null && isResponseStyleType(raw)) return raw;
-    return ResponseStyle.MIRROR;
+    return tryNormalizeResponseMode(raw) ?? ResponseMode.REFLECT;
   } catch {
-    return ResponseStyle.MIRROR;
+    return ResponseMode.REFLECT;
   }
 }
 
 export function saveLastUsedResponseMode(
   uid: string | null | undefined,
-  mode: ResponseStyleType,
+  mode: ResponseModeType,
   store: ResponseModeStore | null = defaultStore(),
 ): void {
   if (!uid || !store) return;

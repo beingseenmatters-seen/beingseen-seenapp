@@ -1,4 +1,10 @@
 import { ResponseStyle, type ResponseStyleType } from '../types/responseStyle';
+import {
+  ResponseMode,
+  type ResponseModeType,
+  tryNormalizeResponseMode,
+  fromLegacySelectedMode,
+} from '../types/responseMode';
 
 /** Onboarding Step 3 / profile `responseStyle` — map to legacy `role` / ResponseStyle. */
 export type OnboardingResponseStyleId = 'listener' | 'organizer' | 'challenger' | 'supporter';
@@ -99,42 +105,44 @@ export function mapStyleToSelectedMode(style: ResponseStyleType): number {
 }
 
 /**
- * Phase 1 resolution order (founder decision):
+ * Resolution order (Phase 1 ownership model, canonical Phase 2 values):
  *   1. locked session.responseMode
  *   2. pre-conversation draft selection
  *   3. user-scoped lastUsedResponseMode
- *   4. MIRROR
+ *   4. REFLECT (safe system fallback)
  *
  * `soulProfile.aiPreference` is deliberately NOT an input — the old Me
  * setting no longer influences a new conversation.
  */
 export function resolveResponseModeForReflect(args: {
-  sessionResponseMode?: ResponseStyleType;
-  draftResponseMode?: ResponseStyleType;
-  lastUsedResponseMode?: ResponseStyleType;
-}): ResponseStyleType {
+  sessionResponseMode?: ResponseModeType;
+  draftResponseMode?: ResponseModeType;
+  lastUsedResponseMode?: ResponseModeType;
+}): ResponseModeType {
   return (
     args.sessionResponseMode ??
     args.draftResponseMode ??
     args.lastUsedResponseMode ??
-    ResponseStyle.MIRROR
+    ResponseMode.REFLECT
   );
 }
 
 /**
- * Deterministic migration for retained conversations saved before
- * `responseMode` existed: prefer the legacy stored session style, then the
- * legacy numeric selected mode, then lastUsedResponseMode, then MIRROR.
+ * Deterministic migration for sessions saved before canonical `responseMode`
+ * existed: prefer the stored legacy session style (mirror/organizer/helper/
+ * guide → approved canonical mapping), then the legacy numeric selected mode,
+ * then lastUsedResponseMode, then REFLECT.
  */
 export function resolveLegacySessionResponseMode(args: {
   legacySessionStyle?: unknown;
   legacySelectedMode?: number | null;
-  lastUsedResponseMode?: ResponseStyleType;
-}): ResponseStyleType {
-  if (isResponseStyleType(args.legacySessionStyle)) return args.legacySessionStyle;
-  const fromSelectedMode = mapSelectedModeToStyle(args.legacySelectedMode ?? null);
+  lastUsedResponseMode?: ResponseModeType;
+}): ResponseModeType {
+  const fromStyle = tryNormalizeResponseMode(args.legacySessionStyle);
+  if (fromStyle) return fromStyle;
+  const fromSelectedMode = fromLegacySelectedMode(args.legacySelectedMode);
   if (fromSelectedMode) return fromSelectedMode;
-  return args.lastUsedResponseMode ?? ResponseStyle.MIRROR;
+  return args.lastUsedResponseMode ?? ResponseMode.REFLECT;
 }
 
 

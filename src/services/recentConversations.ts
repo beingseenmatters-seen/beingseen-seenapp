@@ -6,6 +6,14 @@ export interface ConversationMessage {
   text: string;
 }
 
+/**
+ * Lifecycle of a retained conversation (Phase 2B).
+ * Conversations saved before this field exists have `undefined`, which is
+ * treated everywhere as 'active' for backward compatibility.
+ */
+export type ConversationStatus = 'active' | 'awaiting_decision' | 'completed';
+export type ConversationDecision = 'kept' | 'released';
+
 export interface RetainedConversation {
   id: string;
   title?: string;
@@ -20,6 +28,16 @@ export interface RetainedConversation {
   /** Legacy fields kept for conversations saved before `responseMode`. */
   sessionStyle?: string;
   selectedMode?: number | null;
+  /** End-of-conversation lifecycle (Phase 2B). `undefined` = active. */
+  status?: ConversationStatus;
+  /** Only set once status is 'completed'. */
+  decision?: ConversationDecision;
+  /**
+   * Extraction awaiting the 留下/放下 decision. Persisted so refresh or
+   * reopening restores the same sentence without calling extraction again.
+   * Cleared (null) once the decision is made.
+   */
+  pendingExtraction?: Record<string, unknown> | null;
 }
 
 const STORAGE_KEY = 'seen_retained_conversations';
@@ -86,7 +104,15 @@ export function saveConversation(
   messages: ConversationMessage[],
   retention: RetentionOption,
   language: string,
-  opts?: { responseMode?: string; sessionStyle?: string; selectedMode?: number | null; title?: string }
+  opts?: {
+    responseMode?: string;
+    sessionStyle?: string;
+    selectedMode?: number | null;
+    title?: string;
+    status?: ConversationStatus;
+    decision?: ConversationDecision;
+    pendingExtraction?: Record<string, unknown> | null;
+  }
 ): RetainedConversation | null {
   const days = RETENTION_TTL_DAYS[retention];
   if (!days || days <= 0) return null;
@@ -95,23 +121,69 @@ export function saveConversation(
   if (userMsgs.length === 0) return null;
 
   const now = Date.now();
+  const cleanMessages = messages.filter(m => m.role !== 'system');
+
+  const all = readAll();
+  const existingIndex = all.findIndex(c => c.id === id);
+  const existing = existingIndex >= 0 ? all[existingIndex] : undefined;
+
+  // Reopening a conversation must not change its title, timestamp, expiry or
+  // position — only a genuine content change (a new message) refreshes them.
+  const messagesChanged =
+    !existing || JSON.stringify(existing.messages) !== JSON.stringify(cleanMessages);
+  const retentionChanged = !existing || existing.retention !== retention;
+  const refreshTimestamps = messagesChanged || retentionChanged;
+
   const convo: RetainedConversation = {
     id,
-    title: opts?.title || generateTitle(messages, language),
-    messages: messages.filter(m => m.role !== 'system'),
+    title:
+      opts?.title ||
+      (existing && !messagesChanged ? existing.title : undefined) ||
+      generateTitle(messages, language),
+    messages: cleanMessages,
     retention,
     retentionDays: days,
-    createdAt: now,
-    expiresAt: now + days * 24 * 60 * 60 * 1000,
-    responseMode: opts?.responseMode,
-    sessionStyle: opts?.sessionStyle,
-    selectedMode: opts?.selectedMode,
+    createdAt: existing && !refreshTimestamps ? existing.createdAt : now,
+    expiresAt: existing && !refreshTimestamps ? existing.expiresAt : now + days * 24 * 60 * 60 * 1000,
+    responseMode: opts?.responseMode ?? existing?.responseMode,
+    sessionStyle: opts?.sessionStyle ?? existing?.sessionStyle,
+    selectedMode: opts?.selectedMode !== undefined ? opts.selectedMode : existing?.selectedMode,
+    status: opts?.status ?? existing?.status,
+    decision: opts?.decision ?? existing?.decision,
+    pendingExtraction:
+      opts?.pendingExtraction !== undefined ? opts.pendingExtraction : existing?.pendingExtraction,
   };
 
-  const all = readAll().filter(c => c.id !== id);
-  all.unshift(convo);
-  writeAll(all);
+  if (existing && !messagesChanged) {
+    // In-place update — keep list ordering stable.
+    all[existingIndex] = convo;
+    writeAll(all);
+  } else {
+    const rest = all.filter(c => c.id !== id);
+    rest.unshift(convo);
+    writeAll(rest);
+  }
   return convo;
+}
+
+/**
+ * Patch lifecycle fields of a retained conversation in place. Never touches
+ * messages, timestamps, expiry or list ordering. No-op when the conversation
+ * does not exist (e.g. retention was 'none').
+ */
+export function updateConversation(
+  id: string,
+  patch: Partial<
+    Pick<RetainedConversation, 'status' | 'decision' | 'pendingExtraction'>
+  >
+): RetainedConversation | null {
+  const all = readAll();
+  const idx = all.findIndex(c => c.id === id);
+  if (idx === -1) return null;
+  const updated: RetainedConversation = { ...all[idx], ...patch };
+  all[idx] = updated;
+  writeAll(all);
+  return updated;
 }
 
 export function deleteConversation(id: string): void {

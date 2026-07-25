@@ -26,6 +26,17 @@ import {
   computeResonance,
   buildReasons,
 } from "./resonance.mjs";
+import {
+  REFLECT_MODE_PROMPT_VERSION,
+  resolveRequestMode,
+  toLegacyModeField,
+  buildModeInstructions,
+  analyzeUserText as analyzeUserTextShared,
+  formatExtractTranscript,
+  buildExtractPrompt,
+  parseExtractionContent,
+  toExtractResponsePayload,
+} from "./reflectModes.mjs";
 
 // ========================
 // Version & Constants
@@ -126,67 +137,30 @@ function httpResponse(statusCode, body) {
 // ========================
 
 /**
- * Resolve the effective mode from both old and new payload fields.
+ * Resolve the effective canonical mode (Phase 2 — five response modes).
  *
- * Frontend sendReflectWithGate sends:
- *   { responseStyle: 'mirror' | 'organizer' | 'helper' | 'guide' }
+ * New clients send:      { responseMode: 'reflect'|'untangle'|'express'|'connect'|'discover' }
+ * Released clients send: { responseStyle: 'mirror'|'organizer'|'helper'|'guide' }
+ * Oldest clients send:   { mode: 'mirror'|'organizer'|'expression'|'guide' }
  *
- * Old sendReflect sends:
- *   { mode: 'mirror' | 'organizer' | 'expression' | 'guide' }
- *
- * We normalise to: mirror | organizer | expression | guide
+ * All are normalised through the shared mapping in ./reflectModes.mjs
+ * (mirror→reflect, organizer→untangle, helper/expression→express,
+ * guide→discover); unknown values fall back to "reflect".
  */
 function resolveMode(body) {
-  const raw = body.responseStyle || body.mode || "mirror";
-  // Frontend uses 'helper' for the Expression role
-  if (raw === "helper") return "expression";
-  if (["mirror", "organizer", "expression", "guide"].includes(raw))
-    return raw;
-  return "mirror";
+  return resolveRequestMode(body);
 }
 
 // ========================
 // User-State Detection (lightweight, no full content logged)
 // ========================
 
-const DIRECT_MODE_ZH = [
-  "测试你的回复", "按我要求回答", "直接回答", "不要绕弯子",
-  "简洁回答", "直说", "直接说", "不要套话",
-];
-const DIRECT_MODE_EN = [
-  "testing your reply", "respond exactly", "answer directly",
-  "straight answer", "just answer", "no fluff", "be direct",
-];
-
-const DIRECT_ANSWER_ZH = [
-  "你怎么看", "你觉得", "你认为", "请分析", "帮我分析",
-  "你的判断", "你的观点", "你的看法", "解释一下", "评价一下",
-];
-const DIRECT_ANSWER_EN = [
-  "what do you think", "your opinion", "your view", "analyze",
-  "evaluate", "interpret", "explain", "your take",
-];
-
-const DISTRESS_ZH = [
-  "崩溃", "焦虑", "绝望", "不想活", "活不下去", "撑不住",
-  "受不了", "快扛不住",
-];
-const DISTRESS_EN = [
-  "desperate", "hopeless", "suicidal", "can't cope", "breaking down",
-];
-
+/**
+ * Delegates to the shared implementation in ./reflectModes.mjs so the local
+ * dev adapter and tests exercise the identical detection path.
+ */
 function analyzeUserText(text) {
-  const t = text.toLowerCase();
-  const prefersDirectMode = [...DIRECT_MODE_ZH, ...DIRECT_MODE_EN].some(
-    (k) => t.includes(k.toLowerCase())
-  );
-  const needsDirectAnswer = [...DIRECT_ANSWER_ZH, ...DIRECT_ANSWER_EN].some(
-    (k) => t.includes(k.toLowerCase())
-  );
-  const isDistressed = [...DISTRESS_ZH, ...DISTRESS_EN].some((k) =>
-    t.includes(k.toLowerCase())
-  );
-  return { prefersDirectMode, needsDirectAnswer, isDistressed };
+  return analyzeUserTextShared(text);
 }
 
 // ========================
@@ -201,10 +175,25 @@ function startsWithPassiveMirroring(text) {
 }
 
 // ========================
-// V2.1 Prompt Builder
+// V3.0 Prompt Builder — canonical five modes
 // ========================
 
+/**
+ * Active prompt path: universal Seen layer + mode-specific layer from
+ * ./reflectModes.mjs (single source of truth, also used by local dev
+ * adapter and frontend contract tests). Distress override is handled
+ * inside buildModeInstructions and has highest priority.
+ */
 function buildInstructions(mode, language, userState) {
+  return buildModeInstructions(mode, language, userState);
+}
+
+/**
+ * LEGACY v2.1 four-role prompt builder — kept for reference/parity only.
+ * Not called anywhere. Safe to delete after the five-mode rollout settles.
+ */
+// eslint-disable-next-line no-unused-vars
+function buildInstructionsV21Legacy(mode, language, userState) {
   // Shared directness block injected into mirror & guide
   const directnessRulesZh = `- 如果用户在问具体问题、索要观点、评价、解释或分析，必须先直接回答问题
 - 理解与共情只能放在答案之后，不能替代答案
@@ -1253,57 +1242,12 @@ Seen · Being seen matters`;
     const openAIKey = await getOpenAIKey();
     const model = process.env.OPENAI_MODEL || MODEL;
 
-    // Format conversation for extraction
-    const transcript = conversation
-      .filter(msg => msg.role === 'user' || msg.role === 'ai')
-      .map(msg => `${msg.role === 'user' ? 'User' : 'AI'}: ${msg.text}`)
-      .join('\n');
+    // Format conversation for extraction (shared with the local dev adapter)
+    const transcript = formatExtractTranscript(conversation);
 
     console.log(`[Extract] Processing conversation with ${conversation.length} turns, language: ${language}`);
 
-    const extractPrompt = `You have two separate jobs for the conversation below between a User and an AI. Keep them strictly separate.
-
-JOB 1 — INTERNAL PROFILE (never shown to the user):
-Extract a structured 10-layer read of the USER for internal use only.
-- Analyze the USER, not the AI.
-- Base every layer STRICTLY on evidence from the user's words. Do not invent strong conclusions from one sentence.
-- If evidence is limited, use cautious, tentative wording. If evidence for a layer is weak or absent, say less rather than more.
-- Avoid generic psychology-template phrasing. Keep each field concise.
-
-JOB 2 — THE REFLECTION (this is the ONLY thing the user will see):
-Write a single, gentle reflection given back to the user. This is NOT a summary, NOT a portrait, NOT a profile, and NOT "here is what you are." It is the smallest true thing the person said, handed back in THEIR OWN WORDS, only slightly clearer.
-Follow these rules absolutely:
-- Speak TO the person ("you"), warmly and plainly, as a close friend might — not about them.
-- One or two short sentences. Shorter is better. It should land like an exhale, not like a result.
-- Stay inside what they actually said. Do not add analysis, labels, traits, categories, conclusions, advice, or praise.
-- Never name emotions, values, patterns, or personality. Never say "you are", "your worldview", "your thinking style", or anything that fixes them.
-- Present-tense, tentative, kind. Reflect one true thing, and let the rest stay unseen.
-- If there is very little to reflect, reflect less — a single honest line is enough. Never pad.
-- Output language: ${language === 'zh' ? 'Chinese (Simplified)' : 'English'}.
-
-Output language for ALL fields: ${language === 'zh' ? 'Chinese (Simplified)' : 'English'}.
-Return strictly valid JSON matching the exact structure below. Do NOT wrap in markdown code blocks (\`\`\`json). Return ONLY the raw JSON object.
-
-REQUIRED JSON STRUCTURE:
-{
-  "layers": {
-    "contentSummary": "Brief summary of what was discussed",
-    "emotion": "Primary emotional state",
-    "trigger": "What triggered the user's current state or thoughts",
-    "values": "Underlying values or beliefs revealed",
-    "behaviorPattern": "Observed behavioral tendencies",
-    "decisionModel": "How the user seems to make decisions or process choices",
-    "personalityTraits": "Inferred personality characteristics",
-    "relationshipNeed": "What the user seems to need in relationships or interaction",
-    "motivation": "Deep underlying drive or motivation",
-    "coreConflict": "The central internal or external conflict"
-  },
-  "reflection": "The gentle reflection (Job 2) — one or two short sentences in the user's own words, slightly clearer.",
-  "summary": "Internal-only synthesis of the 10 layers in one compact paragraph. NEVER shown to the user."
-}
-
-CONVERSATION TRANSCRIPT:
-${transcript}`;
+    const extractPrompt = buildExtractPrompt(language, transcript);
 
     try {
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -1327,63 +1271,24 @@ ${transcript}`;
       }
 
       const data = await response.json();
-      let rawContent = data.choices?.[0]?.message?.content || "";
-      
-      // Clean up potential markdown formatting
-      rawContent = rawContent.trim();
-      if (rawContent.startsWith('```json')) {
-        rawContent = rawContent.replace(/^```json\n/, '').replace(/\n```$/, '');
-      } else if (rawContent.startsWith('```')) {
-        rawContent = rawContent.replace(/^```\n/, '').replace(/\n```$/, '');
-      }
+      const rawContent = data.choices?.[0]?.message?.content || "";
 
-      let parsedResult;
-      try {
-        parsedResult = JSON.parse(rawContent);
-      } catch (parseError) {
+      // Parse + validate via the shared module (identical to the local adapter)
+      const parsedResult = parseExtractionContent(rawContent);
+      if (!parsedResult) {
         console.error("[Extract] Failed to parse JSON:", rawContent);
-        // Attempt recovery: find first { and last }
-        const startIdx = rawContent.indexOf('{');
-        const endIdx = rawContent.lastIndexOf('}');
-        if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-           try {
-             parsedResult = JSON.parse(rawContent.substring(startIdx, endIdx + 1));
-           } catch (e) {
-             return httpResponse(500, { error: "reflect_extract_parse_failed" });
-           }
-        } else {
-          return httpResponse(500, { error: "reflect_extract_parse_failed" });
-        }
+        return httpResponse(500, { error: "reflect_extract_parse_failed" });
       }
 
-      // Validate required structure. The user-facing 'reflection' (or, for older
-      // model outputs, 'summary') must be present.
-      if (!parsedResult.layers || !(parsedResult.reflection || parsedResult.summary)) {
+      const payload = toExtractResponsePayload(parsedResult, model);
+      if (!payload) {
         console.error("[Extract] Missing required top-level fields:", parsedResult);
         return httpResponse(500, { error: "reflect_extract_invalid_structure" });
       }
 
       console.log("[Extract] Successfully extracted 10-layer profile");
 
-      return httpResponse(200, {
-        layers: {
-          contentSummary: parsedResult.layers.contentSummary || "",
-          emotion: parsedResult.layers.emotion || "",
-          trigger: parsedResult.layers.trigger || "",
-          values: parsedResult.layers.values || "",
-          behaviorPattern: parsedResult.layers.behaviorPattern || "",
-          decisionModel: parsedResult.layers.decisionModel || "",
-          personalityTraits: parsedResult.layers.personalityTraits || "",
-          relationshipNeed: parsedResult.layers.relationshipNeed || "",
-          motivation: parsedResult.layers.motivation || "",
-          coreConflict: parsedResult.layers.coreConflict || ""
-        },
-        // EX-001: the gentle reflection is the only user-facing text. 'summary'
-        // stays for the internal understanding layer / backward compatibility.
-        reflection: parsedResult.reflection || "",
-        summary: parsedResult.summary || "",
-        model: model
-      });
+      return httpResponse(200, payload);
 
     } catch (error) {
       console.error("[Extract] Error processing request:", error);
@@ -1490,7 +1395,7 @@ ${transcript}`;
 
   // ── Debug log (safe — no full user content) ──
   const routeInfo = {
-    promptVersion: REFLECT_PROMPT_VERSION,
+    promptVersion: REFLECT_MODE_PROMPT_VERSION,
     mode,
     model: process.env.OPENAI_MODEL || MODEL,
     language,
@@ -1559,18 +1464,23 @@ ${transcript}`;
 
   // ── Log result summary ──
   console.log(
-    `[Seen:Reflect] Done — mode=${mode} rewritten=${wasRewritten} replyLen=${reply.length}`
+    `[Seen:Reflect] Done — responseMode=${mode} rewritten=${wasRewritten} replyLen=${reply.length}`
   );
 
-  // ── Response (same shape as before + debug fields) ──
+  // ── Response ──
+  // Compatibility contract: `reply`, `response_id`, `model` and `mode` are
+  // preserved for released clients. `mode` keeps the legacy vocabulary
+  // (mirror/organizer/expression/guide) so old clients see exactly what they
+  // saw before; `responseMode` carries the canonical five-mode value.
   return httpResponse(200, {
     reply,
     response_id: data.id,
     model: effectiveModel,
-    mode,
-    // New debug fields (safe to expose, no user content)
+    mode: toLegacyModeField(mode),
+    responseMode: mode,
+    // Debug fields (safe to expose, no user content)
     _debug: {
-      promptVersion: REFLECT_PROMPT_VERSION,
+      promptVersion: REFLECT_MODE_PROMPT_VERSION,
       wasRewritten,
       directMode: userState.prefersDirectMode,
       directAnswer: userState.needsDirectAnswer,

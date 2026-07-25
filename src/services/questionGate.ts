@@ -18,6 +18,7 @@ import {
   type UserStateAnalysis,
   type QuestionLevel
 } from '../types/responseStyle';
+import { ResponseMode, type ResponseModeType } from '../types/responseMode';
 
 // ========================
 // 情绪词库（触发强制降级到 MIRROR）
@@ -227,6 +228,105 @@ export const QUESTION_POLICY_CONFIGS: Record<ResponseStyleType, QuestionPolicyCo
     requiresAuthorization: true
   }
 };
+
+// ========================
+// 策略配置：五个 canonical 回应方式（Phase 2）
+// 沿用同一套刹车架构；distress override 仍然最高优先级。
+// ========================
+export const MODE_QUESTION_POLICIES: Record<ResponseModeType, QuestionPolicyConfig> = {
+  // 听见我：默认零提问
+  [ResponseMode.REFLECT]: {
+    maxQuestionsPerTurn: 0,
+    maxConsecutiveQuestionTurns: 0,
+    allowedQuestionTypes: ['none'],
+    forbiddenPatterns: [...FORBIDDEN_PATTERNS_ZH, ...FORBIDDEN_PATTERNS_EN],
+    outputStructure: '映照情绪与个人意义 -> 贴近用户语言 -> 允许停留，默认不提问',
+    requiresAuthorization: false
+  },
+
+  // 帮我理清：仅在缺关键信息时最多 1 个澄清问题
+  [ResponseMode.UNTANGLE]: {
+    maxQuestionsPerTurn: 1,
+    maxConsecutiveQuestionTurns: 1,
+    allowedQuestionTypes: ['clarify'],
+    forbiddenPatterns: [...FORBIDDEN_PATTERNS_ZH, ...FORBIDDEN_PATTERNS_EN],
+    outputStructure: '区分事实/解读/情绪/需要/选择 -> 指出已知与未知 -> 必要时最多1个澄清问题',
+    requiresAuthorization: false
+  },
+
+  // 帮我表达：默认直接给稿，仅在对象/意图/语气缺失时 1 问
+  [ResponseMode.EXPRESS]: {
+    maxQuestionsPerTurn: 1,
+    maxConsecutiveQuestionTurns: 1,
+    allowedQuestionTypes: ['scene'],
+    forbiddenPatterns: [...FORBIDDEN_PATTERNS_ZH, ...FORBIDDEN_PATTERNS_EN, '童年', '原生家庭'],
+    outputStructure: '直接产出可用措辞（可多语气版本）-> 仅在对象/意图/语气缺失时最多1个场景问题',
+    requiresAuthorization: false
+  },
+
+  // 看懂关系：仅在关系背景必需时最多 1 问
+  [ResponseMode.CONNECT]: {
+    maxQuestionsPerTurn: 1,
+    maxConsecutiveQuestionTurns: 1,
+    allowedQuestionTypes: ['clarify', 'scene'],
+    forbiddenPatterns: [...FORBIDDEN_PATTERNS_ZH, ...FORBIDDEN_PATTERNS_EN],
+    outputStructure: '分开双方视角 -> 猜测只作为可能性 -> 寻找沟通落点，必要时最多1问',
+    requiresAuthorization: false
+  },
+
+  // 换个角度：最多 1 个探索性问题
+  [ResponseMode.DISCOVER]: {
+    maxQuestionsPerTurn: 1,
+    maxConsecutiveQuestionTurns: 2,
+    allowedQuestionTypes: ['authorization', 'retrospect', 'mirror_confirm'],
+    forbiddenPatterns: [...FORBIDDEN_PATTERNS_ZH, ...FORBIDDEN_PATTERNS_EN],
+    outputStructure: '以假设方式提出1-2个另一种解读 -> 最多1个探索性问题，感觉是打开而非纠正',
+    requiresAuthorization: true
+  }
+};
+
+export function getModePolicyConfig(mode: ResponseModeType): QuestionPolicyConfig {
+  return MODE_QUESTION_POLICIES[mode];
+}
+
+/**
+ * Phase 2 版 resolveStyleAndLevel：直接以 canonical mode 决定 question level。
+ * Distress override 优先级最高：DISCOVER 降级为 REFLECT（对应旧 GUIDE→MIRROR），
+ * 其他模式保留但强制 no_questions —— 与旧行为逐一对应。
+ */
+export function resolveModeAndLevel(
+  mode: ResponseModeType,
+  userState: UserStateAnalysis
+): { mode: ResponseModeType; level: QuestionLevel; downgraded: boolean; reason?: string } {
+  if (userState.isDistressed) {
+    if (mode === ResponseMode.DISCOVER) {
+      return {
+        mode: ResponseMode.REFLECT,
+        level: 'no_questions',
+        downgraded: true,
+        reason: `用户情绪不稳（命中: ${userState.distressedKeywords.join(', ')}），DISCOVER 强制降级到 REFLECT`
+      };
+    }
+    return {
+      mode,
+      level: 'no_questions',
+      downgraded: false,
+      reason: `用户情绪不稳（命中: ${userState.distressedKeywords.join(', ')}），保持 ${mode} 但禁止提问`
+    };
+  }
+
+  const config = getModePolicyConfig(mode);
+  let level: QuestionLevel;
+  if (config.maxQuestionsPerTurn === 0) {
+    level = 'no_questions';
+  } else if (config.requiresAuthorization && userState.isAskingForDeepDive) {
+    level = 'deep';
+  } else {
+    level = 'light';
+  }
+
+  return { mode, level, downgraded: false };
+}
 
 // ========================
 // 核心函数：分析用户状态

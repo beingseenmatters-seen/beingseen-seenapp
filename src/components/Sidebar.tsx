@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useSearchParams } from 'react-router-dom';
 import { MessageSquareText, Compass, Inbox, User, PanelLeftClose, PanelLeft, LogOut, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useLanguage } from '../i18n';
@@ -20,6 +20,9 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { hasNew: discoverHasNew } = useDiscoverAvailability();
   const [hovered, setHovered] = useState<string | null>(null);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // The conversation currently open on the Reflect page (route-owned state).
+  const selectedConversationId = searchParams.get('conversation');
 
   const navItems = [
     { to: '/', icon: MessageSquareText, label: t('nav.reflect'), dot: false },
@@ -109,40 +112,60 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 {t('nav.recent_empty')}
               </p>
             ) : (
-              conversations.map((c) => (
-                <div
-                  key={c.id}
-                  className="group relative flex items-center rounded-md hover:bg-white/60 transition-colors cursor-pointer"
-                  onMouseEnter={() => setHovered(c.id)}
-                  onMouseLeave={() => setHovered(null)}
-                  onClick={() => {
-                    navigate(`/?conversation=${c.id}`);
-                  }}
-                >
-                  <div className="flex-1 min-w-0 px-2.5 py-2">
-                    <p className="text-xs text-gray-600 truncate leading-snug">
-                      {c.title || (effectiveLanguage === 'zh' ? '对话' : 'Conversation')}
-                    </p>
-                    <p className="text-[9px] text-gray-400 mt-0.5">
-                      {formatRelativeTime(c.createdAt, effectiveLanguage === 'zh' ? 'zh' : 'en')}
-                    </p>
-                  </div>
-                  {hovered === c.id && (
+              conversations.map((c) => {
+                const title = c.title || (effectiveLanguage === 'zh' ? '对话' : 'Conversation');
+                const isSelected = c.id === selectedConversationId;
+                const isEnded = c.status === 'completed';
+                return (
+                  <div
+                    key={c.id}
+                    className={clsx(
+                      'group relative flex items-center rounded-md transition-colors',
+                      isSelected ? 'bg-white shadow-sm' : 'hover:bg-white/60'
+                    )}
+                    onMouseEnter={() => setHovered(c.id)}
+                    onMouseLeave={() => setHovered(null)}
+                  >
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(t('nav.recent_delete_confirm'))) {
-                          remove(c.id);
-                        }
-                      }}
-                      className="shrink-0 p-1 mr-1 rounded text-gray-400 hover:text-red-400 transition-colors"
-                      title={t('nav.recent_delete')}
+                      type="button"
+                      onClick={() => navigate(`/?conversation=${c.id}`)}
+                      aria-label={
+                        (effectiveLanguage === 'zh' ? '打开对话：' : 'Open conversation: ') + title
+                      }
+                      aria-current={isSelected ? 'true' : undefined}
+                      className="flex-1 min-w-0 px-2.5 py-2 text-left rounded-md cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
                     >
-                      <Trash2 size={12} />
+                      <p className={clsx(
+                        'text-xs truncate leading-snug',
+                        isSelected ? 'text-gray-800 font-medium' : 'text-gray-600'
+                      )}>
+                        {title}
+                      </p>
+                      <p className="text-[9px] text-gray-400 mt-0.5">
+                        {formatRelativeTime(c.createdAt, effectiveLanguage === 'zh' ? 'zh' : 'en')}
+                        {isEnded && (
+                          <span> · {effectiveLanguage === 'zh' ? '已结束' : 'Ended'}</span>
+                        )}
+                      </p>
                     </button>
-                  )}
-                </div>
-              ))
+                    {hovered === c.id && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(t('nav.recent_delete_confirm'))) {
+                            remove(c.id);
+                          }
+                        }}
+                        className="shrink-0 p-1 mr-1 rounded text-gray-400 hover:text-red-400 transition-colors"
+                        title={t('nav.recent_delete')}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
         </div>

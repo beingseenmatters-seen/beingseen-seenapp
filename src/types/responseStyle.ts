@@ -14,6 +14,8 @@
  *   引导者   => GUIDE
  */
 
+import type { ResponseModeType } from './responseMode';
+
 export const ResponseStyle = {
   MIRROR: 'mirror',           // 镜子：Reflect，让用户被理解
   ORGANIZER: 'organizer',     // 整理者：Structure，帮用户理清思路
@@ -90,8 +92,8 @@ export interface UserStateAnalysis {
  * Question Gate 处理结果
  */
 export interface QuestionGateResult {
-  responseStyle: ResponseStyleType;
-  originalStyle: ResponseStyleType;
+  responseStyle: ResponseStyleType | ResponseModeType;
+  originalStyle: ResponseStyleType | ResponseModeType;
   isDistressed: boolean;
   isAskingForDeepDive: boolean;
   isTaskAlreadySpecified?: boolean;  // EXPRESSION_HELP: 任务已充分给定
@@ -109,7 +111,7 @@ export interface ReflectDebugInfo {
   conversationId?: string;
   isNewSession: boolean;
   action: ReflectAction;
-  responseStyle: ResponseStyleType;
+  responseStyle: ResponseStyleType | ResponseModeType;
 }
 
 export interface ReflectDebug {
@@ -123,7 +125,10 @@ export interface ReflectDebug {
 export interface ReflectRequestPayload {
   text: string;
   language: string;
-  responseStyle: ResponseStyleType;
+  /** Canonical five-mode value (Phase 2) — preferred by the new backend. */
+  responseMode?: ResponseModeType;
+  /** Legacy compatibility field still parsed by the deployed backend. */
+  responseStyle?: ResponseStyleType;
   userPreferenceQuestionLevel: QuestionLevel;
   // Full conversation history before the current user turn.
   conversationHistory?: Array<{ role: 'user' | 'ai'; text: string }>;

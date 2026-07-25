@@ -138,6 +138,9 @@ export default function ReflectHistoryDrawer({
                                 isActive ? 'text-white/70' : 'text-gray-400',
                               )}>
                                 {formatRelativeTime(conversation.createdAt, effectiveLanguage === 'zh' ? 'zh' : 'en')}
+                                {conversation.status === 'completed' && (
+                                  <span> · {effectiveLanguage === 'zh' ? '已结束' : 'Ended'}</span>
+                                )}
                               </p>
                             </div>
                             {isActive && (

@@ -12,14 +12,25 @@ import { sendReflectWithGate } from '../services/seenApi';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import { transcribeAudio } from '../services/voiceApi';
 import { analyzeUserState } from '../services/questionGate';
-import { ResponseStyle, type ReflectDebug, type ResponseStyleType } from '../types/responseStyle';
+import { type ReflectDebug } from '../types/responseStyle';
+import {
+  ResponseMode,
+  RESPONSE_MODES,
+  type ResponseModeType,
+  tryNormalizeResponseMode,
+  toLegacyResponseStyle,
+  toLegacySelectedMode
+} from '../types/responseMode';
 import type { RetentionOption } from '../types/insight';
-import { saveConversation, getConversationById } from '../services/recentConversations';
+import {
+  saveConversation,
+  getConversationById,
+  updateConversation,
+  type ConversationStatus,
+  type ConversationDecision
+} from '../services/recentConversations';
 import { useRecentConversations } from '../hooks/useRecentConversations';
 import {
-  isResponseStyleType,
-  mapSelectedModeToStyle,
-  mapStyleToSelectedMode,
   resolveResponseModeForReflect,
   resolveLegacySessionResponseMode
 } from '../services/reflectStyle';
@@ -29,6 +40,7 @@ import {
 } from '../services/lastReflectResponseMode';
 import { 
   extractSummaryFromConversation, 
+  extractSummaryFromBackend,
   hasMeaningfulExtraction, 
   saveApprovedSummary 
 } from '../services/userSummary';
@@ -48,16 +60,28 @@ interface SavedSession {
   keepContext: boolean;
   retention?: RetentionOption;
   sessionId: string;
-  /** Canonical locked response mode for this conversation (Phase 1). */
-  responseMode?: ResponseStyleType;
+  /** Canonical locked response mode for this conversation. */
+  responseMode?: ResponseModeType;
   /** Legacy fields kept so sessions saved before `responseMode` still resolve. */
-  sessionStyle?: ResponseStyleType;
+  sessionStyle?: string;
   consecutiveQuestionTurns: number;
   selectedMode?: number | null;
   timestamp: number;
+  /** End-of-conversation lifecycle (Phase 2B). `undefined` = active. */
+  status?: ConversationStatus;
+  decision?: ConversationDecision;
+  /** Extraction awaiting 留下/放下 — survives refresh without re-extracting. */
+  pendingExtraction?: ConversationExtraction | null;
 }
 
 const STORAGE_KEY = 'seen_reflect_session';
+
+/**
+ * Internal diagnostics are opt-in only: dev build AND an explicit flag.
+ * Normal local, preview and production UI must never render debug metadata.
+ */
+const REFLECT_DEBUG_UI =
+  import.meta.env.DEV && import.meta.env.VITE_REFLECT_DEBUG === 'on';
 
 export default function Reflect() {
   const [step, setStep] = useState(0);
@@ -83,14 +107,14 @@ export default function Reflect() {
   const [retentionDropdownOpen, setRetentionDropdownOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   /**
-   * Response-mode ownership (Phase 1):
+   * Response-mode ownership (Phase 1 model, Phase 2 canonical values):
    * - `draftResponseMode`: editable selection before the first message,
    *   initialised from the user-scoped lastUsedResponseMode.
    * - `sessionResponseMode`: locked to the conversation once the first user
    *   message is accepted — the only source of truth afterwards.
    */
-  const [draftResponseMode, setDraftResponseMode] = useState<ResponseStyleType>(ResponseStyle.MIRROR);
-  const [sessionResponseMode, setSessionResponseMode] = useState<ResponseStyleType | undefined>(undefined);
+  const [draftResponseMode, setDraftResponseMode] = useState<ResponseModeType>(ResponseMode.REFLECT);
+  const [sessionResponseMode, setSessionResponseMode] = useState<ResponseModeType | undefined>(undefined);
   const [hasSavedSession, setHasSavedSession] = useState(false);
 
   // Response-mode dropdown open/close
@@ -99,7 +123,7 @@ export default function Reflect() {
   const [justCleared, setJustCleared] = useState(false);
 
   // Recent conversations for desktop sidebar + mobile drawer
-  const { conversations: recentConversations } = useRecentConversations();
+  const { conversations: recentConversations, refresh: refreshRecentConversations } = useRecentConversations();
 
   // Voice input (mobile native only)
   const voice = useVoiceRecorder();
@@ -162,6 +186,23 @@ export default function Reflect() {
   const [isExtractingSummary, setIsExtractingSummary] = useState(false);
   const [pendingInsightAction, setPendingInsightAction] = useState<'clear' | 'finish' | 'leave' | 'new' | null>(null);
 
+  // ==== Phase 2B: end-of-conversation lifecycle ====
+  /** 'active' → 'awaiting_decision' (extraction shown) → 'completed' (留下/放下 made). */
+  const [conversationStatus, setConversationStatus] = useState<ConversationStatus>('active');
+  const [conversationDecision, setConversationDecision] = useState<ConversationDecision | undefined>(undefined);
+  /** Extraction failed (完成 path) — shows the visible retry state. */
+  const [summaryError, setSummaryError] = useState(false);
+  /** 留下 save failed — retryable, keeps sentence and decision screen intact. */
+  const [decisionError, setDecisionError] = useState(false);
+  /** Guards 留下/放下 against duplicate clicks and duplicate writes. */
+  const [isSavingDecision, setIsSavingDecision] = useState(false);
+  /** Quiet notice when a recent-conversation entry no longer resolves. */
+  const [staleConversationNotice, setStaleConversationNotice] = useState(false);
+  /** Which ?conversation=<id> has already been restored (avoids restore loops). */
+  const restoredConvoRef = useRef<string | null>(null);
+
+  const conversationEnded = conversationStatus === 'completed';
+
   // TODO (Spec §九): Lightweight calibration after conversation end
   const [calibrationInsight, setCalibrationInsight] = useState<{ key: string; text: string } | null>(null);
 
@@ -172,40 +213,93 @@ export default function Reflect() {
    */
   const [discoveryAvailable, setDiscoveryAvailable] = useState(false);
 
-  const restoreConversationById = (convoId: string) => {
+  /**
+   * Restore a retained conversation, honouring its lifecycle status:
+   * - active: normal editable chat
+   * - awaiting_decision: show the saved extracted sentence + 留下/放下 again
+   *   (never re-extract just because the person reopened it)
+   * - completed: read-only transcript with a clear "ended" state
+   * Returns false when the conversation no longer exists / has expired.
+   */
+  const restoreConversationById = (convoId: string): boolean => {
     const convo = getConversationById(convoId);
-    if (!convo) return;
+    if (!convo) return false;
 
     // Preserve the conversation's locked mode; migrate legacy conversations
-    // deterministically so they stop being ambiguous once resumed.
-    const restoredMode = isResponseStyleType(convo.responseMode)
-      ? convo.responseMode
-      : resolveLegacySessionResponseMode({
-          legacySessionStyle: convo.sessionStyle,
-          legacySelectedMode: convo.selectedMode,
-          lastUsedResponseMode: loadLastUsedResponseMode(uid),
-        });
+    // (old four-role values or no mode at all) deterministically so they stop
+    // being ambiguous once resumed.
+    const restoredMode =
+      tryNormalizeResponseMode(convo.responseMode) ??
+      resolveLegacySessionResponseMode({
+        legacySessionStyle: convo.sessionStyle,
+        legacySelectedMode: convo.selectedMode,
+        lastUsedResponseMode: loadLastUsedResponseMode(uid),
+      });
+
+    const pendingExtraction = convo.pendingExtraction as ConversationExtraction | null | undefined;
+    const hasRestorableExtraction =
+      convo.status === 'awaiting_decision' &&
+      typeof pendingExtraction?.summaryText === 'string' &&
+      pendingExtraction.summaryText.trim().length > 0;
+    const status: ConversationStatus =
+      convo.status === 'completed'
+        ? 'completed'
+        : hasRestorableExtraction
+          ? 'awaiting_decision'
+          : 'active';
 
     setRoleDropdownOpen(false);
     setRetentionDropdownOpen(false);
     setMobileDrawerOpen(false);
+    setStaleConversationNotice(false);
+    setSummaryError(false);
+    setDecisionError(false);
+    setIsSavingDecision(false);
     setMessages(convo.messages.map(m => ({ role: m.role, text: m.text })));
     setStep(2);
     setRetention(convo.retention);
     setSessionId(convo.id);
     setSessionResponseMode(restoredMode);
+    setConversationStatus(status);
+    setConversationDecision(convo.decision);
+    if (status === 'awaiting_decision' && hasRestorableExtraction) {
+      setPendingSummary(pendingExtraction as ConversationExtraction);
+      setPendingInsightAction('finish');
+      setShowSummaryConfirmation(true);
+    } else {
+      setPendingSummary(null);
+      setPendingInsightAction(null);
+      setShowSummaryConfirmation(false);
+    }
     setHasSavedSession(false);
     setJustCleared(false);
+    return true;
   };
 
-  // Restore a retained conversation from URL ?conversation=<id>
+  // Route-based conversation selection: ?conversation=<id> is the single
+  // mechanism used by the desktop Sidebar and the mobile drawer. Watching
+  // searchParams (not just mount) makes selection work when the user is
+  // already on the Reflect page. The param stays in the URL while the
+  // conversation is open, so a browser refresh restores the same one.
   useEffect(() => {
     const convoId = searchParams.get('conversation');
-    if (!convoId) return;
+    if (!convoId) {
+      restoredConvoRef.current = null;
+      return;
+    }
+    if (restoredConvoRef.current === convoId) return;
 
-    setSearchParams({}, { replace: true });
-    restoreConversationById(convoId);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (restoreConversationById(convoId)) {
+      restoredConvoRef.current = convoId;
+    } else {
+      // Expired / missing / corrupt: no blank screen, no crash — quiet notice,
+      // drop the stale param, refresh the list so the entry disappears.
+      restoredConvoRef.current = null;
+      setStaleConversationNotice(true);
+      refreshRecentConversations();
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load saved session on mount
   useEffect(() => {
@@ -225,9 +319,12 @@ export default function Reflect() {
 
   useEffect(() => {
     if (sessionId) {
-      // Legacy `sessionStyle` / `selectedMode` are still written so any older
-      // reader keeps working; `responseMode` is the canonical locked field.
-      const legacySelectedMode = sessionResponseMode ? mapStyleToSelectedMode(sessionResponseMode) : null;
+      // `responseMode` is the canonical locked field. Legacy `sessionStyle` /
+      // `selectedMode` are still written (in the old four-role vocabulary) so
+      // any older reader keeps working; CONNECT has no legacy equivalent and
+      // writes undefined/null there.
+      const legacyStyle = sessionResponseMode ? toLegacyResponseStyle(sessionResponseMode) : undefined;
+      const legacySelectedMode = sessionResponseMode ? toLegacySelectedMode(sessionResponseMode) : null;
       const session: SavedSession = {
         messages,
         step,
@@ -235,10 +332,13 @@ export default function Reflect() {
         retention,
         sessionId,
         responseMode: sessionResponseMode,
-        sessionStyle: sessionResponseMode,
+        sessionStyle: legacyStyle,
         consecutiveQuestionTurns,
         selectedMode: legacySelectedMode,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        status: conversationStatus,
+        decision: conversationDecision,
+        pendingExtraction: conversationStatus === 'awaiting_decision' ? pendingSummary : null
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
 
@@ -248,11 +348,21 @@ export default function Reflect() {
           messages.map(m => ({ role: m.role, text: m.text })),
           retention,
           effectiveLanguage === 'zh' ? 'zh' : 'en',
-          { responseMode: sessionResponseMode, sessionStyle: sessionResponseMode, selectedMode: legacySelectedMode }
+          {
+            responseMode: sessionResponseMode,
+            sessionStyle: legacyStyle,
+            selectedMode: legacySelectedMode,
+            status: conversationStatus,
+            decision: conversationDecision,
+            pendingExtraction:
+              conversationStatus === 'awaiting_decision' && pendingSummary
+                ? (pendingSummary as unknown as Record<string, unknown>)
+                : null
+          }
         );
       }
     }
-  }, [messages, step, keepContext, retention, sessionId, sessionResponseMode, consecutiveQuestionTurns, effectiveLanguage]);
+  }, [messages, step, keepContext, retention, sessionId, sessionResponseMode, consecutiveQuestionTurns, effectiveLanguage, conversationStatus, conversationDecision, pendingSummary]);
 
   useEffect(() => {
     if (inputValue.trim()) {
@@ -303,25 +413,52 @@ export default function Reflect() {
       try {
         const session: SavedSession = JSON.parse(saved);
         // Preserve the locked mode; migrate legacy sessions deterministically.
-        const restoredMode = isResponseStyleType(session.responseMode)
-          ? session.responseMode
-          : resolveLegacySessionResponseMode({
-              legacySessionStyle: session.sessionStyle,
-              legacySelectedMode: session.selectedMode,
-              lastUsedResponseMode: loadLastUsedResponseMode(uid),
-            });
+        const restoredMode =
+          tryNormalizeResponseMode(session.responseMode) ??
+          resolveLegacySessionResponseMode({
+            legacySessionStyle: session.sessionStyle,
+            legacySelectedMode: session.selectedMode,
+            lastUsedResponseMode: loadLastUsedResponseMode(uid),
+          });
+        const pendingExtraction = session.pendingExtraction ?? null;
+        const hasRestorableExtraction =
+          session.status === 'awaiting_decision' &&
+          typeof pendingExtraction?.summaryText === 'string' &&
+          pendingExtraction.summaryText.trim().length > 0;
+        const status: ConversationStatus =
+          session.status === 'completed'
+            ? 'completed'
+            : hasRestorableExtraction
+              ? 'awaiting_decision'
+              : 'active';
+
         setMessages(session.messages);
         setStep(session.step === 0 ? 2 : session.step);
         setRetention(session.retention ?? '3days');
         setSessionId(session.sessionId);
         setSessionResponseMode(restoredMode);
         setConsecutiveQuestionTurns(session.consecutiveQuestionTurns);
+        setConversationStatus(status);
+        setConversationDecision(session.decision);
+        setSummaryError(false);
+        setDecisionError(false);
+        setIsSavingDecision(false);
+        if (status === 'awaiting_decision' && hasRestorableExtraction) {
+          // Restore the saved sentence and decision screen — never re-extract.
+          setPendingSummary(pendingExtraction);
+          setPendingInsightAction('finish');
+          setShowSummaryConfirmation(true);
+        } else {
+          setPendingSummary(null);
+          setPendingInsightAction(null);
+          setShowSummaryConfirmation(false);
+        }
         setHasSavedSession(false);
         setJustCleared(false);
         setRoleDropdownOpen(false);
         setRetentionDropdownOpen(false);
         setMobileDrawerOpen(false);
-        console.log('[Reflect] continue_session', { sessionId: session.sessionId, responseMode: restoredMode });
+        console.log('[Reflect] continue_session', { sessionId: session.sessionId, responseMode: restoredMode, status });
       } catch (e) {
         console.error('Failed to restore session', e);
         handleClearContext();
@@ -341,36 +478,86 @@ export default function Reflect() {
     return userTurns >= 2 && aiTurns >= 1 && meaningfulTurns >= 3;
   };
 
-  const openSummaryConfirmation = async (action: 'clear' | 'finish' | 'leave' | 'new') => {
+  /**
+   * Phase 2B: the 完成 flow extracts whenever there is genuinely something to
+   * extract from — at least one real user message and one AI reply. The old
+   * `hasMeaningfulExchange` gate (2 user turns) silently skipped extraction
+   * and jumped straight to the bridge, which was the founder-verified bug.
+   */
+  const hasExtractableContent = () => {
+    const { userTurns, aiTurns } = getConversationStats();
+    return userTurns >= 1 && aiTurns >= 1;
+  };
+
+  /** Mark the conversation ended, in state and in the retained record. */
+  const markConversationCompleted = (
+    decision: ConversationDecision | undefined,
+    convoId: string | undefined
+  ) => {
+    setConversationStatus('completed');
+    setConversationDecision(decision);
+    if (convoId) {
+      updateConversation(convoId, { status: 'completed', decision, pendingExtraction: null });
+    }
+  };
+
+  /**
+   * 'shown'       — extraction succeeded, decision overlay is up
+   * 'error'       — extraction failed and the visible retry state is up (完成 path)
+   * 'unavailable' — nothing usable to show; caller falls back to its old path
+   */
+  const openSummaryConfirmation = async (
+    action: 'clear' | 'finish' | 'leave' | 'new'
+  ): Promise<'shown' | 'error' | 'unavailable'> => {
+    if (isExtractingSummary) return 'shown'; // duplicate click — one request only
+    setSummaryError(false);
     setIsExtractingSummary(true);
     try {
-      const extracted = await extractSummaryFromConversation(messages, {
-        preferredResponseStyle: getStyleDisplayName(displayedResponseMode),
-        language: effectiveLanguage === 'zh' ? 'zh' : 'en',
+      const options = {
+        preferredResponseStyle: getModeTitle(displayedResponseMode),
+        language: (effectiveLanguage === 'zh' ? 'zh' : 'en') as 'zh' | 'en',
         uid: firebaseUser?.uid || seenUser?.uid || 'anonymous',
         sessionId: sessionId || 'unknown'
-      });
+      };
+
+      // 完成/结束对话 must never pretend extraction succeeded: backend-only,
+      // failures surface the retry state. clear/new keep their existing
+      // never-blocking behavior (backend, then local gentle fallback).
+      const extracted =
+        action === 'finish'
+          ? await extractSummaryFromBackend(messages, options)
+          : await extractSummaryFromConversation(messages, options);
 
       if (!hasMeaningfulExtraction(extracted)) {
-        return false;
+        return 'unavailable';
       }
 
       setPendingSummary(extracted);
       setPendingInsightAction(action);
       setShowSummaryConfirmation(true);
-      return true;
+      setConversationStatus('awaiting_decision');
+      return 'shown';
     } catch (error) {
       console.error('[Reflect] Failed to extract summary:', error);
-      return false;
+      if (action === 'finish') {
+        // Transcript and session stay intact; the person can retry or return.
+        setSummaryError(true);
+        return 'error';
+      }
+      return 'unavailable';
     } finally {
       setIsExtractingSummary(false);
     }
   };
 
   const handleClearContext = async () => {
+    if (conversationEnded) {
+      performClear();
+      return;
+    }
     if (messages.length > 0 && hasMeaningfulExchange()) {
       const opened = await openSummaryConfirmation('clear');
-      if (opened) {
+      if (opened === 'shown') {
         return;
       }
     }
@@ -378,9 +565,15 @@ export default function Reflect() {
   };
 
   const handleStartNewConversation = async () => {
+    if (conversationEnded) {
+      // Ended conversations never re-extract; just begin a fresh one.
+      performClear();
+      setStep(1);
+      return;
+    }
     if ((messages.length > 0 || hasSavedSession) && hasMeaningfulExchange()) {
       const opened = await openSummaryConfirmation('new');
-      if (opened) {
+      if (opened === 'shown') {
         return;
       }
     }
@@ -390,13 +583,27 @@ export default function Reflect() {
   };
 
   const handleEndConversation = async () => {
-    if (messages.length > 0 && hasMeaningfulExchange()) {
-      const opened = await openSummaryConfirmation('finish');
-      if (opened) {
-        return;
+    if (conversationEnded || isExtractingSummary) return;
+    if (messages.length > 0 && hasExtractableContent()) {
+      const result = await openSummaryConfirmation('finish');
+      if (result !== 'unavailable') {
+        return; // decision overlay or retry state is showing
       }
     }
+    // Nothing to extract from — end quietly.
+    markConversationCompleted(undefined, sessionId);
     setStep(3);
+  };
+
+  /** 再试一次 — exactly one new extraction request per retry. */
+  const handleRetryExtraction = async () => {
+    setSummaryError(false);
+    await openSummaryConfirmation('finish');
+  };
+
+  /** 返回对话 — dismiss the error, transcript and session untouched. */
+  const handleReturnToConversation = () => {
+    setSummaryError(false);
   };
 
   const performClear = () => {
@@ -413,9 +620,19 @@ export default function Reflect() {
     setPendingSummary(null);
     setPendingInsightAction(null);
     setShowSummaryConfirmation(false);
+    setConversationStatus('active');
+    setConversationDecision(undefined);
+    setSummaryError(false);
+    setDecisionError(false);
+    setIsSavingDecision(false);
+    setStaleConversationNotice(false);
     setRoleDropdownOpen(false);
     setRetentionDropdownOpen(false);
     setMobileDrawerOpen(false);
+    restoredConvoRef.current = null;
+    if (searchParams.get('conversation')) {
+      setSearchParams({}, { replace: true });
+    }
     
     if (step !== 0) {
       setStep(0);
@@ -424,24 +641,39 @@ export default function Reflect() {
   };
 
   const handleConfirmSummary = async () => {
+    // 留下 — save exactly once; duplicate clicks are ignored while in flight.
+    if (isSavingDecision) return;
     // Capture the current sessionId before it might get cleared
     const currentSessionId = sessionId;
     
-    if (pendingSummary) {
-      await saveApprovedSummary(
-        pendingSummary,
-        firebaseUser?.uid || seenUser?.uid,
-        currentSessionId,
-        { aboutMeSignals: seenUser?.soulProfile?.aboutMeSignals },
-      );
-      // Reflection History (Sprint 2 data capability): keep the approved
-      // reflection itself — never the transcript. Surfaced in Me in Sprint 3.
-      saveKeptReflection({
-        text: pendingSummary.summaryText,
-        language: effectiveLanguage === 'zh' ? 'zh' : 'en',
-        sessionId: currentSessionId,
-      });
+    setDecisionError(false);
+    setIsSavingDecision(true);
+    try {
+      if (pendingSummary) {
+        await saveApprovedSummary(
+          pendingSummary,
+          firebaseUser?.uid || seenUser?.uid,
+          currentSessionId,
+          { aboutMeSignals: seenUser?.soulProfile?.aboutMeSignals },
+        );
+        // Reflection History (Sprint 2 data capability): keep the approved
+        // reflection itself — never the transcript. Surfaced in Me in Sprint 3.
+        saveKeptReflection({
+          text: pendingSummary.summaryText,
+          language: effectiveLanguage === 'zh' ? 'zh' : 'en',
+          sessionId: currentSessionId,
+        });
+      }
+    } catch (error) {
+      // Never falsely mark it saved — keep the sentence and decision screen.
+      console.error('[Reflect] Failed to save kept reflection:', error);
+      setDecisionError(true);
+      setIsSavingDecision(false);
+      return;
     }
+    setIsSavingDecision(false);
+    markConversationCompleted('kept', currentSessionId);
+
     if (pendingInsightAction === 'new') {
       performClear();
       setStep(1);
@@ -458,6 +690,11 @@ export default function Reflect() {
   };
 
   const handleRejectSummary = () => {
+    // 放下 — nothing is written as a kept reflection; the raw transcript keeps
+    // (or loses) itself purely by the retention choice. Never re-extract.
+    if (isSavingDecision) return;
+    markConversationCompleted('released', sessionId);
+
     if (pendingInsightAction === 'new') {
       performClear();
       setStep(1);
@@ -487,26 +724,25 @@ export default function Reflect() {
       const recentTurns = getRecentTurns();
       // Locked session mode wins; draft/last-used only cover the legacy case
       // where a resumed session had no locked mode yet.
-      const resolvedStyle = resolveResponseModeForReflect({
+      const resolvedMode = resolveResponseModeForReflect({
         sessionResponseMode,
         draftResponseMode,
         lastUsedResponseMode: loadLastUsedResponseMode(uid),
       });
       if (sessionResponseMode === undefined) {
-        setSessionResponseMode(resolvedStyle);
+        setSessionResponseMode(resolvedMode);
       }
 
       const response = await sendReflectWithGate(
         currentInput, 
         effectiveLanguage === 'zh' ? 'zh' : 'en', 
-        mapStyleToSelectedMode(resolvedStyle),
+        resolvedMode,
         recentTurns,
         keepContext,
         sessionId,
         {
           isNewSession: false,
           action: 'continue',
-          resolvedStyle,
         }
       );
       
@@ -557,14 +793,13 @@ export default function Reflect() {
       const response = await sendReflectWithGate(
         currentInput, 
         effectiveLanguage === 'zh' ? 'zh' : 'en', 
-        mapStyleToSelectedMode(modeToLock),
+        modeToLock,
         [],
         keepContext,
         nextSessionId,
         {
           isNewSession: true,
           action: 'new_session',
-          resolvedStyle: modeToLock,
         }
       );
       
@@ -591,19 +826,14 @@ export default function Reflect() {
     transition: { duration: 0.4, ease: "easeOut" as const }
   };
 
-  const roleOptions = [
-    { label: t('reflect.opt_listen') },
-    { label: t('reflect.opt_clarify') },
-    { label: t('reflect.opt_blindspot') },
-    { label: t('reflect.opt_polish') }
-  ];
+  // Five canonical response modes — user intents, not AI roles.
+  const modeOptions = RESPONSE_MODES.map((mode) => ({
+    mode,
+    title: t(`reflect.mode_${mode}_title`),
+    desc: t(`reflect.mode_${mode}_desc`),
+  }));
 
-  const getStyleDisplayName = (mode: ResponseStyleType): string => {
-    const styleNames = effectiveLanguage === 'zh' 
-      ? ['镜子', '整理者', '引导者', '表达辅助']
-      : ['Mirror', 'Organizer', 'Guide', 'Expression Helper'];
-    return styleNames[mapStyleToSelectedMode(mode)] || styleNames[0];
-  };
+  const getModeTitle = (mode: ResponseModeType): string => t(`reflect.mode_${mode}_title`);
 
   const sessionCompletionReached = hasMeaningfulExchange();
   const endConversationLabel = effectiveLanguage === 'zh' ? '结束对话' : 'End conversation';
@@ -627,16 +857,16 @@ export default function Reflect() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 4 }}
             transition={{ duration: 0.15 }}
-            className={`absolute ${isDesktop ? 'bottom-full left-0 mb-2' : 'top-full left-0 mt-1'} w-64 bg-white border border-gray-100 rounded-xl shadow-lg z-20 overflow-hidden`}
+            className={`absolute ${isDesktop ? 'bottom-full left-0 mb-2 w-72' : 'top-full left-0 mt-1 w-64'} bg-white border border-gray-100 rounded-xl shadow-lg z-20 overflow-hidden`}
           >
             <div className="p-1.5 space-y-0.5">
-              {roleOptions.map((opt, i) => {
-                const isSelected = mapStyleToSelectedMode(draftResponseMode) === i;
+              {modeOptions.map((opt) => {
+                const isSelected = draftResponseMode === opt.mode;
                 return (
                   <button
-                    key={i}
+                    key={opt.mode}
                     onClick={() => {
-                      setDraftResponseMode(mapSelectedModeToStyle(i) ?? ResponseStyle.MIRROR);
+                      setDraftResponseMode(opt.mode);
                       setRoleDropdownOpen(false);
                     }}
                     className={`w-full px-3 py-2 text-left rounded-lg transition-colors ${
@@ -644,9 +874,12 @@ export default function Reflect() {
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium">{opt.label}</span>
+                      <span className="text-xs font-medium">{opt.title}</span>
                       {isSelected && <span className="text-gray-400 text-[10px]">✓</span>}
                     </div>
+                    <p className="mt-0.5 text-[10px] leading-snug text-gray-400">
+                      {opt.desc}
+                    </p>
                   </button>
                 );
               })}
@@ -745,7 +978,7 @@ export default function Reflect() {
           <div className="flex items-center gap-1.5 px-1.5 py-1 text-[11px]">
             <span className="text-gray-500">{responseModeLabel}</span>
             <span className="font-medium text-gray-600">
-              {getStyleDisplayName(displayedResponseMode)}
+              {getModeTitle(displayedResponseMode)}
             </span>
           </div>
         ) : (
@@ -755,7 +988,7 @@ export default function Reflect() {
           >
             <span className="text-gray-500">{responseModeLabel}</span>
             <span className="font-medium text-gray-700">
-              {getStyleDisplayName(displayedResponseMode)}
+              {getModeTitle(displayedResponseMode)}
             </span>
             <ChevronDown
               size={11}
@@ -805,21 +1038,26 @@ export default function Reflect() {
               before the first message, read-only afterwards */}
           {!isDesktop && (
             <div className="relative shrink-0">
+              {/* Compact control shows only the short mode title so five modes
+                  fit the mobile header without colliding with the language
+                  selector; the full label lives in the dropdown context. */}
               {responseModeLocked ? (
-                <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-50 text-[11px]">
-                  <span className="text-gray-400">{responseModeLabel}</span>
-                  <span className="font-medium text-gray-700">
-                    {getStyleDisplayName(displayedResponseMode)}
+                <div
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-50 text-[11px]"
+                  aria-label={responseModeLabel}
+                >
+                  <span className="font-medium text-gray-700 max-w-[38vw] truncate">
+                    {getModeTitle(displayedResponseMode)}
                   </span>
                 </div>
               ) : (
                 <button
                   onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
                   className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-50 text-[11px] active:bg-gray-100 transition-colors"
+                  aria-label={responseModeLabel}
                 >
-                  <span className="text-gray-400">{responseModeLabel}</span>
-                  <span className="font-medium text-gray-700">
-                    {getStyleDisplayName(displayedResponseMode)}
+                  <span className="font-medium text-gray-700 max-w-[38vw] truncate">
+                    {getModeTitle(displayedResponseMode)}
                   </span>
                   <ChevronDown
                     size={11}
@@ -843,8 +1081,9 @@ export default function Reflect() {
         </select>
       </div>
 
-      {/* Debug Panel (dev only) */}
-      {import.meta.env.DEV && lastDebug && (
+      {/* Debug Panel — internal only, requires the explicit VITE_REFLECT_DEBUG
+          flag; never rendered in normal local, preview or production UI */}
+      {REFLECT_DEBUG_UI && lastDebug && (
         <button
           onClick={() => setShowDebug(!showDebug)}
           className="absolute top-2 right-16 z-50 p-1.5 rounded-full bg-gray-100 text-gray-400 hover:bg-gray-200"
@@ -853,7 +1092,7 @@ export default function Reflect() {
         </button>
       )}
       
-      {showDebug && lastDebug && (
+      {REFLECT_DEBUG_UI && showDebug && lastDebug && (
         <div className="absolute top-10 right-4 z-50 w-72 p-3 rounded-xl bg-gray-900 text-white text-[10px] font-mono shadow-2xl max-h-[70vh] overflow-y-auto">
           <div className="font-bold mb-2 text-yellow-400">Question Gate Debug</div>
           <div className="space-y-0.5">
@@ -899,9 +1138,18 @@ export default function Reflect() {
           activeConversationId={sessionId}
           effectiveLanguage={effectiveLanguage === 'zh' ? 'zh' : 'en'}
           onClose={() => setMobileDrawerOpen(false)}
-          onSelectConversation={restoreConversationById}
+          onSelectConversation={(id) => setSearchParams({ conversation: id })}
           onNewConversation={handleStartNewConversation}
         />
+      )}
+
+      {/* Quiet notice when a recent-conversation entry no longer resolves */}
+      {staleConversationNotice && (
+        <div className="shrink-0 px-4 pt-1">
+          <div className="mx-auto max-w-md px-3 py-2 rounded-lg bg-gray-50 text-gray-500 text-xs text-center">
+            {effectiveLanguage === 'zh' ? '这段对话已不再保留。' : 'This conversation is no longer kept.'}
+          </div>
+        </div>
       )}
 
       {/* Main content area — centered on desktop */}
@@ -1027,6 +1275,40 @@ export default function Reflect() {
           )}
         </AnimatePresence>
 
+        {/* ==================== Extraction Failed (retryable) ==================== */}
+        <AnimatePresence>
+          {summaryError && !isExtractingSummary && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex flex-col justify-center px-6"
+            >
+              <div className={`space-y-6 ${isDesktop ? 'max-w-lg mx-auto w-full' : ''}`}>
+                <p className="text-sm text-gray-700 font-light leading-relaxed text-center">
+                  {effectiveLanguage === 'zh'
+                    ? '暂时没能整理出这段对话。你的内容还在，可以再试一次。'
+                    : "We couldn't gather this conversation just now. Your words are still here — you can try again."}
+                </p>
+                <div className="space-y-3">
+                  <button
+                    onClick={handleRetryExtraction}
+                    className="w-full py-3 rounded-xl bg-primary text-white text-sm font-medium hover:bg-black transition-colors"
+                  >
+                    {effectiveLanguage === 'zh' ? '再试一次' : 'Try again'}
+                  </button>
+                  <button
+                    onClick={handleReturnToConversation}
+                    className="w-full py-3 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    {effectiveLanguage === 'zh' ? '返回对话' : 'Back to the conversation'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* ==================== Summary Confirmation Overlay ==================== */}
         <AnimatePresence>
           {showSummaryConfirmation && pendingSummary && (
@@ -1054,16 +1336,28 @@ export default function Reflect() {
                   </p>
                 </div>
 
+                {decisionError && (
+                  <p className="text-xs text-red-500 text-center leading-relaxed">
+                    {effectiveLanguage === 'zh'
+                      ? '没能保存这句话。它还在这里，可以再试一次。'
+                      : "Couldn't save this just now. It's still here — please try again."}
+                  </p>
+                )}
+
                 <div className="space-y-3 pt-2">
                   <button
                     onClick={handleConfirmSummary}
-                    className="w-full py-3 rounded-xl bg-primary text-white text-sm font-medium hover:bg-black transition-colors"
+                    disabled={isSavingDecision}
+                    className="w-full py-3 rounded-xl bg-primary text-white text-sm font-medium hover:bg-black transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {effectiveLanguage === 'zh' ? '留下' : 'Keep this'}
+                    {isSavingDecision
+                      ? (effectiveLanguage === 'zh' ? '正在留下…' : 'Keeping…')
+                      : (effectiveLanguage === 'zh' ? '留下' : 'Keep this')}
                   </button>
                   <button
                     onClick={handleRejectSummary}
-                    className="w-full py-3 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
+                    disabled={isSavingDecision}
+                    className="w-full py-3 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     {effectiveLanguage === 'zh' ? '放下' : 'Let it go'}
                   </button>
@@ -1120,25 +1414,32 @@ export default function Reflect() {
           <motion.div key="step2" {...fadeIn} className="flex-1 flex flex-col overflow-hidden">
             {/* Minimal toolbar — actions only, no style label */}
             <div className="shrink-0 flex items-center justify-end px-5 py-1.5 border-b border-gray-50">
-              <div className="flex items-center space-x-1">
-                <button 
-                  onClick={() => {
-                    if (confirm(effectiveLanguage === 'zh' ? '确定要清空当前对话吗？' : 'Clear this conversation?')) {
-                      handleClearContext();
-                    }
-                  }}
-                  className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"
-                  title={t('reflect.action_clear_context')}
-                >
-                  <Trash2 size={14} />
-                </button>
-                <button 
-                  onClick={handleEndConversation}
-                  className="px-2.5 py-1 rounded-full text-[10px] text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                >
-                  {sessionCompletionReached ? endConversationLabel : t('common.finish')}
-                </button>
-              </div>
+              {conversationEnded ? (
+                <span className="px-2.5 py-1 rounded-full text-[10px] bg-gray-100 text-gray-500">
+                  {effectiveLanguage === 'zh' ? '已结束' : 'Ended'}
+                </span>
+              ) : (
+                <div className="flex items-center space-x-1">
+                  <button 
+                    onClick={() => {
+                      if (confirm(effectiveLanguage === 'zh' ? '确定要清空当前对话吗？' : 'Clear this conversation?')) {
+                        handleClearContext();
+                      }
+                    }}
+                    className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"
+                    title={t('reflect.action_clear_context')}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                  <button 
+                    onClick={handleEndConversation}
+                    disabled={isExtractingSummary}
+                    className="px-2.5 py-1 rounded-full text-[10px] text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {sessionCompletionReached ? endConversationLabel : t('common.finish')}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Chat messages */}
@@ -1154,11 +1455,6 @@ export default function Reflect() {
                   }`}>
                     <p className="text-sm font-light leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                   </div>
-                  {import.meta.env.DEV && msg.role === 'ai' && msg.debug && (
-                    <div className="mt-0.5 px-2 py-0.5 rounded text-[9px] font-mono text-gray-300">
-                      [{msg.debug.questionGate.responseStyle}] Q:{msg.debug.questionGate.questionCount} | {msg.debug.reflect.action}
-                    </div>
-                  )}
                 </div>
               ))}
 
@@ -1176,27 +1472,47 @@ export default function Reflect() {
               <div ref={chatEndRef} />
             </div>
 
-            {/* Compact composer with role + context footer */}
-            <div className={`shrink-0 bg-white ${isDesktop ? 'px-8 py-3' : 'px-4 py-2.5'}`}>
-              {userStatePreview.isDistressed && inputValue.trim() && (
-                <div className="mb-2 px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-[10px]">
-                  {effectiveLanguage === 'zh' ? '我会以更温和的方式回应你' : 'I\'ll respond gently to you'}
+            {/* Compact composer with role + context footer — or, for an ended
+                conversation, a read-only closing state with no editable input */}
+            {conversationEnded ? (
+              <div className={`shrink-0 bg-white ${isDesktop ? 'px-8 py-4' : 'px-4 py-3'}`}>
+                <div className="mx-auto max-w-sm space-y-3 text-center">
+                  <p className="text-xs text-gray-500 font-light">
+                    {effectiveLanguage === 'zh' ? '这段对话已结束。' : 'This conversation has ended.'}
+                  </p>
+                  <button
+                    onClick={() => {
+                      performClear();
+                      setStep(1);
+                    }}
+                    className="w-full rounded-xl bg-primary py-3 text-sm font-medium text-white transition-colors hover:bg-black"
+                  >
+                    {effectiveLanguage === 'zh' ? '开启新对话' : 'New conversation'}
+                  </button>
                 </div>
-              )}
-              <ChatInput
-                value={inputValue}
-                onChange={setInputValue}
-                onSend={handleReply}
-                placeholder={effectiveLanguage === 'zh' ? '继续说...' : 'Continue...'}
-                disabled={isLoading}
-                footer={composerFooter}
-                showMic={showMic}
-                onMicPress={handleMicPress}
-                onMicRelease={handleMicRelease}
-                onMicCancel={handleMicCancel}
-              />
-              <p className="text-[9px] text-gray-500 text-center mt-2">{t('reflect.mirror_footer')}</p>
-            </div>
+              </div>
+            ) : (
+              <div className={`shrink-0 bg-white ${isDesktop ? 'px-8 py-3' : 'px-4 py-2.5'}`}>
+                {userStatePreview.isDistressed && inputValue.trim() && (
+                  <div className="mb-2 px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-[10px]">
+                    {effectiveLanguage === 'zh' ? '我会以更温和的方式回应你' : 'I\'ll respond gently to you'}
+                  </div>
+                )}
+                <ChatInput
+                  value={inputValue}
+                  onChange={setInputValue}
+                  onSend={handleReply}
+                  placeholder={effectiveLanguage === 'zh' ? '继续说...' : 'Continue...'}
+                  disabled={isLoading}
+                  footer={composerFooter}
+                  showMic={showMic}
+                  onMicPress={handleMicPress}
+                  onMicRelease={handleMicRelease}
+                  onMicCancel={handleMicCancel}
+                />
+                <p className="text-[9px] text-gray-500 text-center mt-2">{t('reflect.mirror_footer')}</p>
+              </div>
+            )}
           </motion.div>
         )}
 
