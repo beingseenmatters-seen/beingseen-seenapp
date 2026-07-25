@@ -15,6 +15,9 @@ export interface RetainedConversation {
   createdAt: number;
   expiresAt: number;
   deletedAt?: number;
+  /** Canonical locked response mode for this conversation (Phase 1). */
+  responseMode?: string;
+  /** Legacy fields kept for conversations saved before `responseMode`. */
   sessionStyle?: string;
   selectedMode?: number | null;
 }
@@ -83,7 +86,7 @@ export function saveConversation(
   messages: ConversationMessage[],
   retention: RetentionOption,
   language: string,
-  opts?: { sessionStyle?: string; selectedMode?: number | null; title?: string }
+  opts?: { responseMode?: string; sessionStyle?: string; selectedMode?: number | null; title?: string }
 ): RetainedConversation | null {
   const days = RETENTION_TTL_DAYS[retention];
   if (!days || days <= 0) return null;
@@ -100,6 +103,7 @@ export function saveConversation(
     retentionDays: days,
     createdAt: now,
     expiresAt: now + days * 24 * 60 * 60 * 1000,
+    responseMode: opts?.responseMode,
     sessionStyle: opts?.sessionStyle,
     selectedMode: opts?.selectedMode,
   };

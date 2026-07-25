@@ -1,55 +1,98 @@
 import { describe, expect, it } from 'vitest';
 import { ResponseStyle } from '../types/responseStyle';
-import { resolveResponseStyleForReflect } from './reflectStyle';
+import {
+  resolveResponseModeForReflect,
+  resolveLegacySessionResponseMode,
+} from './reflectStyle';
 
-describe('resolveResponseStyleForReflect', () => {
-  it('Reflect 未选 + Me=EXPRESSION_HELP + keepContext=OFF => EXPRESSION_HELP', () => {
+describe('resolveResponseModeForReflect (Phase 1 order: session > draft > last-used > MIRROR)', () => {
+  it('locked session mode wins over draft and a later last-used value', () => {
     expect(
-      resolveResponseStyleForReflect({
-        reflectSelectedStyle: undefined,
-        meDefaultStyle: ResponseStyle.EXPRESSION_HELP,
-        sessionStyle: undefined,
-        keepContext: false,
-        isNewSession: true
-      })
-    ).toBe(ResponseStyle.EXPRESSION_HELP);
-  });
-
-  it('Reflect 未选 + keepContext=ON + sessionStyle=ORGANIZER + Me=EXPRESSION_HELP + isNewSession=false => ORGANIZER (locked)', () => {
-    expect(
-      resolveResponseStyleForReflect({
-        reflectSelectedStyle: undefined,
-        meDefaultStyle: ResponseStyle.EXPRESSION_HELP,
-        sessionStyle: ResponseStyle.ORGANIZER,
-        keepContext: true,
-        isNewSession: false
+      resolveResponseModeForReflect({
+        sessionResponseMode: ResponseStyle.ORGANIZER,
+        draftResponseMode: ResponseStyle.GUIDE,
+        lastUsedResponseMode: ResponseStyle.EXPRESSION_HELP,
       })
     ).toBe(ResponseStyle.ORGANIZER);
   });
 
-  it('Reflect 选了 GUIDE => GUIDE (overrides all)', () => {
+  it('before the first message, the draft selection wins over last-used', () => {
     expect(
-      resolveResponseStyleForReflect({
-        reflectSelectedStyle: ResponseStyle.GUIDE,
-        meDefaultStyle: ResponseStyle.EXPRESSION_HELP,
-        sessionStyle: ResponseStyle.ORGANIZER,
-        keepContext: true,
-        isNewSession: false
+      resolveResponseModeForReflect({
+        sessionResponseMode: undefined,
+        draftResponseMode: ResponseStyle.GUIDE,
+        lastUsedResponseMode: ResponseStyle.EXPRESSION_HELP,
       })
     ).toBe(ResponseStyle.GUIDE);
   });
 
-  it('Me 未设置 + Reflect 未选 => MIRROR', () => {
+  it('a new conversation starts from the previous conversation\'s last-used mode', () => {
     expect(
-      resolveResponseStyleForReflect({
-        reflectSelectedStyle: undefined,
-        meDefaultStyle: undefined,
-        sessionStyle: undefined,
-        keepContext: false,
-        isNewSession: true
+      resolveResponseModeForReflect({
+        sessionResponseMode: undefined,
+        draftResponseMode: undefined,
+        lastUsedResponseMode: ResponseStyle.EXPRESSION_HELP,
+      })
+    ).toBe(ResponseStyle.EXPRESSION_HELP);
+  });
+
+  it('falls back to MIRROR when nothing is set — Me aiPreference is not an input', () => {
+    // A user whose old Me setting was e.g. EXPRESSION_HELP gets MIRROR here:
+    // soulProfile.aiPreference no longer controls a new conversation.
+    expect(
+      resolveResponseModeForReflect({
+        sessionResponseMode: undefined,
+        draftResponseMode: undefined,
+        lastUsedResponseMode: undefined,
       })
     ).toBe(ResponseStyle.MIRROR);
   });
 });
 
+describe('resolveLegacySessionResponseMode (deterministic migration for retained sessions)', () => {
+  it('prefers a valid legacy stored session style', () => {
+    expect(
+      resolveLegacySessionResponseMode({
+        legacySessionStyle: ResponseStyle.ORGANIZER,
+        legacySelectedMode: 2,
+        lastUsedResponseMode: ResponseStyle.EXPRESSION_HELP,
+      })
+    ).toBe(ResponseStyle.ORGANIZER);
+  });
 
+  it('falls back to the legacy numeric selected mode when the style is missing or invalid', () => {
+    expect(
+      resolveLegacySessionResponseMode({
+        legacySessionStyle: 'bogus',
+        legacySelectedMode: 2,
+        lastUsedResponseMode: ResponseStyle.EXPRESSION_HELP,
+      })
+    ).toBe(ResponseStyle.GUIDE);
+  });
+
+  it('falls back to lastUsedResponseMode when no legacy fields exist', () => {
+    expect(
+      resolveLegacySessionResponseMode({
+        legacySessionStyle: undefined,
+        legacySelectedMode: null,
+        lastUsedResponseMode: ResponseStyle.EXPRESSION_HELP,
+      })
+    ).toBe(ResponseStyle.EXPRESSION_HELP);
+  });
+
+  it('falls back to MIRROR when nothing at all is available', () => {
+    expect(
+      resolveLegacySessionResponseMode({
+        legacySessionStyle: undefined,
+        legacySelectedMode: undefined,
+        lastUsedResponseMode: undefined,
+      })
+    ).toBe(ResponseStyle.MIRROR);
+  });
+
+  it('is deterministic — same inputs always produce the same mode', () => {
+    const args = { legacySessionStyle: 'x', legacySelectedMode: 1, lastUsedResponseMode: undefined };
+    expect(resolveLegacySessionResponseMode(args)).toBe(resolveLegacySessionResponseMode(args));
+    expect(resolveLegacySessionResponseMode(args)).toBe(ResponseStyle.ORGANIZER);
+  });
+});

@@ -49,7 +49,9 @@ export function resolveStyleFromAiPreference(
 }
 
 /**
- * Reflect default style: Firestore profile first, then localStorage `seen_ai_preference`, else undefined (caller may use MIRROR).
+ * LEGACY — no longer a live default for Reflect (Phase 1). Kept only for the
+ * question-gate fallback path in seenApi, which never fires when a resolved
+ * style is provided. New conversations use `lastUsedResponseMode` instead.
  */
 export function getReflectDefaultStyle(
   aiPreference?: { role?: string; responseStyle?: string } | null,
@@ -96,19 +98,43 @@ export function mapStyleToSelectedMode(style: ResponseStyleType): number {
   }
 }
 
-export function resolveResponseStyleForReflect(args: {
-  reflectSelectedStyle?: ResponseStyleType;
-  meDefaultStyle?: ResponseStyleType;
-  sessionStyle?: ResponseStyleType;
-  keepContext: boolean;
-  isNewSession: boolean;
+/**
+ * Phase 1 resolution order (founder decision):
+ *   1. locked session.responseMode
+ *   2. pre-conversation draft selection
+ *   3. user-scoped lastUsedResponseMode
+ *   4. MIRROR
+ *
+ * `soulProfile.aiPreference` is deliberately NOT an input — the old Me
+ * setting no longer influences a new conversation.
+ */
+export function resolveResponseModeForReflect(args: {
+  sessionResponseMode?: ResponseStyleType;
+  draftResponseMode?: ResponseStyleType;
+  lastUsedResponseMode?: ResponseStyleType;
 }): ResponseStyleType {
-  const { reflectSelectedStyle, meDefaultStyle, sessionStyle, keepContext, isNewSession } = args;
+  return (
+    args.sessionResponseMode ??
+    args.draftResponseMode ??
+    args.lastUsedResponseMode ??
+    ResponseStyle.MIRROR
+  );
+}
 
-  if (reflectSelectedStyle) return reflectSelectedStyle;
-  if (keepContext && sessionStyle && !isNewSession) return sessionStyle;
-  if (meDefaultStyle) return meDefaultStyle;
-  return ResponseStyle.MIRROR;
+/**
+ * Deterministic migration for retained conversations saved before
+ * `responseMode` existed: prefer the legacy stored session style, then the
+ * legacy numeric selected mode, then lastUsedResponseMode, then MIRROR.
+ */
+export function resolveLegacySessionResponseMode(args: {
+  legacySessionStyle?: unknown;
+  legacySelectedMode?: number | null;
+  lastUsedResponseMode?: ResponseStyleType;
+}): ResponseStyleType {
+  if (isResponseStyleType(args.legacySessionStyle)) return args.legacySessionStyle;
+  const fromSelectedMode = mapSelectedModeToStyle(args.legacySelectedMode ?? null);
+  if (fromSelectedMode) return fromSelectedMode;
+  return args.lastUsedResponseMode ?? ResponseStyle.MIRROR;
 }
 
 

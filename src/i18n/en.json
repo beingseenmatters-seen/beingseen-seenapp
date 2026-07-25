@@ -251,6 +251,7 @@
     "about_me_prompt_body": "A few optional questions can help Seen understand you more deeply over time.",
     "about_me_prompt_go": "Go now",
     "about_me_prompt_later": "Maybe later",
+    "mode_label": "Response mode",
     "retention_label": "This conversation",
     "retention_3days": "Save 3 days",
     "retention_7days": "Save 7 days",

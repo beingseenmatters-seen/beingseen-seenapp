@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, ChevronRight, Info, Menu, RotateCcw, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -17,11 +17,16 @@ import type { RetentionOption } from '../types/insight';
 import { saveConversation, getConversationById } from '../services/recentConversations';
 import { useRecentConversations } from '../hooks/useRecentConversations';
 import {
+  isResponseStyleType,
   mapSelectedModeToStyle,
   mapStyleToSelectedMode,
-  getReflectDefaultStyle,
-  resolveResponseStyleForReflect
+  resolveResponseModeForReflect,
+  resolveLegacySessionResponseMode
 } from '../services/reflectStyle';
+import {
+  loadLastUsedResponseMode,
+  saveLastUsedResponseMode
+} from '../services/lastReflectResponseMode';
 import { 
   extractSummaryFromConversation, 
   hasMeaningfulExtraction, 
@@ -43,9 +48,12 @@ interface SavedSession {
   keepContext: boolean;
   retention?: RetentionOption;
   sessionId: string;
+  /** Canonical locked response mode for this conversation (Phase 1). */
+  responseMode?: ResponseStyleType;
+  /** Legacy fields kept so sessions saved before `responseMode` still resolve. */
   sessionStyle?: ResponseStyleType;
   consecutiveQuestionTurns: number;
-  selectedMode: number | null;
+  selectedMode?: number | null;
   timestamp: number;
 }
 
@@ -66,7 +74,6 @@ export default function Reflect() {
   const [inputValue, setInputValue] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedMode, setSelectedMode] = useState<number | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [lastDebug, setLastDebug] = useState<ReflectDebug | null>(null);
   const [consecutiveQuestionTurns, setConsecutiveQuestionTurns] = useState(0);
@@ -75,10 +82,18 @@ export default function Reflect() {
   const [retention, setRetention] = useState<RetentionOption>('3days');
   const [retentionDropdownOpen, setRetentionDropdownOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
-  const [sessionStyle, setSessionStyle] = useState<ResponseStyleType | undefined>(undefined);
+  /**
+   * Response-mode ownership (Phase 1):
+   * - `draftResponseMode`: editable selection before the first message,
+   *   initialised from the user-scoped lastUsedResponseMode.
+   * - `sessionResponseMode`: locked to the conversation once the first user
+   *   message is accepted — the only source of truth afterwards.
+   */
+  const [draftResponseMode, setDraftResponseMode] = useState<ResponseStyleType>(ResponseStyle.MIRROR);
+  const [sessionResponseMode, setSessionResponseMode] = useState<ResponseStyleType | undefined>(undefined);
   const [hasSavedSession, setHasSavedSession] = useState(false);
 
-  // Role dropdown open/close
+  // Response-mode dropdown open/close
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [justCleared, setJustCleared] = useState(false);
@@ -127,16 +142,20 @@ export default function Reflect() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const meDefaultStyle = useMemo(
-    () => getReflectDefaultStyle(seenUser?.soulProfile?.aiPreference),
-    [seenUser?.soulProfile?.aiPreference],
-  );
-  const effectiveSelectedMode =
-    selectedMode !== null
-      ? selectedMode
-      : meDefaultStyle !== undefined
-        ? mapStyleToSelectedMode(meDefaultStyle)
-        : null;
+  const uid = firebaseUser?.uid;
+
+  const hasUserMessage = messages.some(m => m.role === 'user' && m.text.trim().length > 0);
+  /** Once the first user message is accepted, the mode is locked to the session. */
+  const responseModeLocked = hasUserMessage || sessionResponseMode !== undefined;
+  const displayedResponseMode = sessionResponseMode ?? draftResponseMode;
+
+  // Initialise the pre-conversation draft from the user-scoped last-used mode.
+  // Never overrides a locked or in-progress conversation.
+  useEffect(() => {
+    if (!uid) return;
+    if (sessionResponseMode !== undefined || hasUserMessage) return;
+    setDraftResponseMode(loadLastUsedResponseMode(uid));
+  }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [pendingSummary, setPendingSummary] = useState<ConversationExtraction | null>(null);
   const [showSummaryConfirmation, setShowSummaryConfirmation] = useState(false);
@@ -157,6 +176,16 @@ export default function Reflect() {
     const convo = getConversationById(convoId);
     if (!convo) return;
 
+    // Preserve the conversation's locked mode; migrate legacy conversations
+    // deterministically so they stop being ambiguous once resumed.
+    const restoredMode = isResponseStyleType(convo.responseMode)
+      ? convo.responseMode
+      : resolveLegacySessionResponseMode({
+          legacySessionStyle: convo.sessionStyle,
+          legacySelectedMode: convo.selectedMode,
+          lastUsedResponseMode: loadLastUsedResponseMode(uid),
+        });
+
     setRoleDropdownOpen(false);
     setRetentionDropdownOpen(false);
     setMobileDrawerOpen(false);
@@ -164,8 +193,7 @@ export default function Reflect() {
     setStep(2);
     setRetention(convo.retention);
     setSessionId(convo.id);
-    setSessionStyle(convo.sessionStyle as ResponseStyleType | undefined);
-    setSelectedMode(convo.selectedMode ?? null);
+    setSessionResponseMode(restoredMode);
     setHasSavedSession(false);
     setJustCleared(false);
   };
@@ -197,15 +225,19 @@ export default function Reflect() {
 
   useEffect(() => {
     if (sessionId) {
+      // Legacy `sessionStyle` / `selectedMode` are still written so any older
+      // reader keeps working; `responseMode` is the canonical locked field.
+      const legacySelectedMode = sessionResponseMode ? mapStyleToSelectedMode(sessionResponseMode) : null;
       const session: SavedSession = {
         messages,
         step,
         keepContext,
         retention,
         sessionId,
-        sessionStyle,
+        responseMode: sessionResponseMode,
+        sessionStyle: sessionResponseMode,
         consecutiveQuestionTurns,
-        selectedMode,
+        selectedMode: legacySelectedMode,
         timestamp: Date.now()
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
@@ -216,11 +248,11 @@ export default function Reflect() {
           messages.map(m => ({ role: m.role, text: m.text })),
           retention,
           effectiveLanguage === 'zh' ? 'zh' : 'en',
-          { sessionStyle, selectedMode }
+          { responseMode: sessionResponseMode, sessionStyle: sessionResponseMode, selectedMode: legacySelectedMode }
         );
       }
     }
-  }, [messages, step, keepContext, retention, sessionId, sessionStyle, consecutiveQuestionTurns, selectedMode, effectiveLanguage]);
+  }, [messages, step, keepContext, retention, sessionId, sessionResponseMode, consecutiveQuestionTurns, effectiveLanguage]);
 
   useEffect(() => {
     if (inputValue.trim()) {
@@ -270,19 +302,26 @@ export default function Reflect() {
     if (saved) {
       try {
         const session: SavedSession = JSON.parse(saved);
+        // Preserve the locked mode; migrate legacy sessions deterministically.
+        const restoredMode = isResponseStyleType(session.responseMode)
+          ? session.responseMode
+          : resolveLegacySessionResponseMode({
+              legacySessionStyle: session.sessionStyle,
+              legacySelectedMode: session.selectedMode,
+              lastUsedResponseMode: loadLastUsedResponseMode(uid),
+            });
         setMessages(session.messages);
         setStep(session.step === 0 ? 2 : session.step);
         setRetention(session.retention ?? '3days');
         setSessionId(session.sessionId);
-        setSessionStyle(session.sessionStyle);
+        setSessionResponseMode(restoredMode);
         setConsecutiveQuestionTurns(session.consecutiveQuestionTurns);
-        setSelectedMode(session.selectedMode);
         setHasSavedSession(false);
         setJustCleared(false);
         setRoleDropdownOpen(false);
         setRetentionDropdownOpen(false);
         setMobileDrawerOpen(false);
-        console.log('[Reflect] continue_session', { sessionId: session.sessionId, sessionStyle: session.sessionStyle });
+        console.log('[Reflect] continue_session', { sessionId: session.sessionId, responseMode: restoredMode });
       } catch (e) {
         console.error('Failed to restore session', e);
         handleClearContext();
@@ -306,7 +345,7 @@ export default function Reflect() {
     setIsExtractingSummary(true);
     try {
       const extracted = await extractSummaryFromConversation(messages, {
-        preferredResponseStyle: getStyleDisplayName(effectiveSelectedMode),
+        preferredResponseStyle: getStyleDisplayName(displayedResponseMode),
         language: effectiveLanguage === 'zh' ? 'zh' : 'en',
         uid: firebaseUser?.uid || seenUser?.uid || 'anonymous',
         sessionId: sessionId || 'unknown'
@@ -365,7 +404,9 @@ export default function Reflect() {
     setHasSavedSession(false);
     setRetention('3days');
     setSessionId(undefined);
-    setSessionStyle(undefined);
+    setSessionResponseMode(undefined);
+    // The next conversation starts from the previous conversation's mode.
+    setDraftResponseMode(loadLastUsedResponseMode(uid));
     setMessages([]);
     setConsecutiveQuestionTurns(0);
     setJustCleared(true);
@@ -432,19 +473,6 @@ export default function Reflect() {
     setStep(3);
   };
 
-  const getResolvedStyleForRequest = (args: { isNewSession: boolean }) => {
-    const reflectSelectedStyle = mapSelectedModeToStyle(selectedMode);
-    const meDefault = getReflectDefaultStyle(seenUser?.soulProfile?.aiPreference);
-    const resolvedStyle = resolveResponseStyleForReflect({
-      reflectSelectedStyle,
-      meDefaultStyle: meDefault,
-      sessionStyle,
-      keepContext,
-      isNewSession: args.isNewSession
-    });
-    return { resolvedStyle, reflectSelectedStyle, meDefaultStyle: meDefault };
-  };
-
   const handleReply = async () => {
     if (!inputValue.trim()) return;
 
@@ -457,15 +485,21 @@ export default function Reflect() {
     
     try {
       const recentTurns = getRecentTurns();
-      const { resolvedStyle } = getResolvedStyleForRequest({ isNewSession: false });
-      const selectedModeForRequest = effectiveSelectedMode !== null 
-        ? effectiveSelectedMode 
-        : mapStyleToSelectedMode(resolvedStyle);
+      // Locked session mode wins; draft/last-used only cover the legacy case
+      // where a resumed session had no locked mode yet.
+      const resolvedStyle = resolveResponseModeForReflect({
+        sessionResponseMode,
+        draftResponseMode,
+        lastUsedResponseMode: loadLastUsedResponseMode(uid),
+      });
+      if (sessionResponseMode === undefined) {
+        setSessionResponseMode(resolvedStyle);
+      }
 
       const response = await sendReflectWithGate(
         currentInput, 
         effectiveLanguage === 'zh' ? 'zh' : 'en', 
-        selectedModeForRequest,
+        mapStyleToSelectedMode(resolvedStyle),
         recentTurns,
         keepContext,
         sessionId,
@@ -473,7 +507,6 @@ export default function Reflect() {
           isNewSession: false,
           action: 'continue',
           resolvedStyle,
-          aiPreference: seenUser?.soulProfile?.aiPreference,
         }
       );
       
@@ -513,38 +546,25 @@ export default function Reflect() {
     setIsLoading(true);
     
     try {
-      const { resolvedStyle, reflectSelectedStyle } = getResolvedStyleForRequest({ isNewSession: true });
-      const selectedModeForRequest = effectiveSelectedMode !== null 
-        ? effectiveSelectedMode 
-        : mapStyleToSelectedMode(resolvedStyle);
-      
-      console.log('[Reflect] handleSend', { 
-        selectedMode, 
-        effectiveSelectedMode, 
-        meDefaultStyle, 
-        resolvedStyle, 
-        selectedModeForRequest 
-      });
+      // First accepted user message: lock the draft into the session and
+      // remember it as the user's last-used mode for the next conversation.
+      const modeToLock = draftResponseMode;
+      setSessionResponseMode(modeToLock);
+      saveLastUsedResponseMode(uid, modeToLock);
 
-      if (keepContext) {
-        const toLock = reflectSelectedStyle ?? resolvedStyle ?? ResponseStyle.MIRROR;
-        setSessionStyle(toLock);
-      } else {
-        setSessionStyle(undefined);
-      }
+      console.log('[Reflect] handleSend', { responseMode: modeToLock });
 
       const response = await sendReflectWithGate(
         currentInput, 
         effectiveLanguage === 'zh' ? 'zh' : 'en', 
-        selectedModeForRequest,
+        mapStyleToSelectedMode(modeToLock),
         [],
         keepContext,
         nextSessionId,
         {
           isNewSession: true,
           action: 'new_session',
-          resolvedStyle,
-          aiPreference: seenUser?.soulProfile?.aiPreference,
+          resolvedStyle: modeToLock,
         }
       );
       
@@ -578,12 +598,11 @@ export default function Reflect() {
     { label: t('reflect.opt_polish') }
   ];
 
-  const getStyleDisplayName = (mode: number | null): string => {
-    if (mode === null) return effectiveLanguage === 'zh' ? '镜子' : 'Mirror';
+  const getStyleDisplayName = (mode: ResponseStyleType): string => {
     const styleNames = effectiveLanguage === 'zh' 
       ? ['镜子', '整理者', '引导者', '表达辅助']
       : ['Mirror', 'Organizer', 'Guide', 'Expression Helper'];
-    return styleNames[mode] || styleNames[0];
+    return styleNames[mapStyleToSelectedMode(mode)] || styleNames[0];
   };
 
   const sessionCompletionReached = hasMeaningfulExchange();
@@ -594,12 +613,13 @@ export default function Reflect() {
   // understanding layer (via saveApprovedSummary) but is never shown to the user.
 
   // =========================================================================
-  // Role dropdown (shared logic, rendered in different positions per platform)
+  // Response-mode dropdown (shared logic, rendered per platform; only
+  // interactive before the conversation locks)
   // =========================================================================
 
   const roleDropdownMenu = (
     <AnimatePresence>
-      {roleDropdownOpen && (
+      {roleDropdownOpen && !responseModeLocked && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setRoleDropdownOpen(false)} />
           <motion.div
@@ -611,12 +631,12 @@ export default function Reflect() {
           >
             <div className="p-1.5 space-y-0.5">
               {roleOptions.map((opt, i) => {
-                const isSelected = effectiveSelectedMode === i;
+                const isSelected = mapStyleToSelectedMode(draftResponseMode) === i;
                 return (
                   <button
                     key={i}
                     onClick={() => {
-                      setSelectedMode(i);
+                      setDraftResponseMode(mapSelectedModeToStyle(i) ?? ResponseStyle.MIRROR);
                       setRoleDropdownOpen(false);
                     }}
                     className={`w-full px-3 py-2 text-left rounded-lg transition-colors ${
@@ -714,49 +734,43 @@ export default function Reflect() {
   // Composer footer — platform-aware
   // =========================================================================
 
-  const meDefaultStyleName = (() => {
-    const names = effectiveLanguage === 'zh'
-      ? ['镜子', '整理者', '引导者', '表达辅助']
-      : ['Mirror', 'Organizer', 'Guide', 'Expression Helper'];
-    const idx = meDefaultStyle ? mapStyleToSelectedMode(meDefaultStyle) : null;
-    return idx !== null ? names[idx] : names[0];
-  })();
+  const responseModeLabel = t('reflect.mode_label');
 
   const composerFooter = isDesktop ? (
     <div className="flex items-center justify-between pt-1">
-      {/* Desktop: role dropdown on left */}
+      {/* Desktop: single response-mode control on the left — editable before
+          the first message, a quiet read-only label afterwards */}
       <div className="relative">
-        <button
-          onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
-          className="flex items-center gap-1.5 px-1.5 py-1 rounded-md text-[11px] hover:bg-gray-100 transition-colors"
-        >
-          <span className="text-gray-500">
-            {effectiveLanguage === 'zh' ? '角色' : 'Role'}
-          </span>
-          <span className="font-medium text-gray-700">
-            {getStyleDisplayName(effectiveSelectedMode)}
-          </span>
-          <ChevronDown
-            size={11}
-            className={`text-gray-400 transition-transform duration-200 ${roleDropdownOpen ? 'rotate-180' : ''}`}
-          />
-        </button>
+        {responseModeLocked ? (
+          <div className="flex items-center gap-1.5 px-1.5 py-1 text-[11px]">
+            <span className="text-gray-500">{responseModeLabel}</span>
+            <span className="font-medium text-gray-600">
+              {getStyleDisplayName(displayedResponseMode)}
+            </span>
+          </div>
+        ) : (
+          <button
+            onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
+            className="flex items-center gap-1.5 px-1.5 py-1 rounded-md text-[11px] hover:bg-gray-100 transition-colors"
+          >
+            <span className="text-gray-500">{responseModeLabel}</span>
+            <span className="font-medium text-gray-700">
+              {getStyleDisplayName(displayedResponseMode)}
+            </span>
+            <ChevronDown
+              size={11}
+              className={`text-gray-400 transition-transform duration-200 ${roleDropdownOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+        )}
         {roleDropdownMenu}
       </div>
       {retentionDropdown}
     </div>
   ) : (
-    <div className="flex items-center justify-between pt-1">
-      {/* Mobile: AI preference (read-only) on left */}
-      <div className="flex items-center gap-1 px-1 py-0.5 text-[11px]">
-        <span className="text-gray-500">
-          {effectiveLanguage === 'zh' ? '偏好' : 'Style'}
-        </span>
-        <span className="font-medium text-gray-600">
-          {meDefaultStyleName}
-        </span>
-      </div>
-      {/* Mobile: retention on right */}
+    <div className="flex items-center justify-end pt-1">
+      {/* Mobile: the response-mode control lives in the page header only;
+          the composer footer keeps just the retention control */}
       {retentionDropdown}
     </div>
   );
@@ -787,21 +801,32 @@ export default function Reflect() {
           <span className="text-[11px] font-semibold tracking-[0.2em] text-gray-500 uppercase">
             {t('nav.reflect')}
           </span>
-          {/* Mobile: role selector next to title */}
+          {/* Mobile: single response-mode control next to title — editable
+              before the first message, read-only afterwards */}
           {!isDesktop && (
             <div className="relative shrink-0">
-              <button
-                onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-50 text-[11px] active:bg-gray-100 transition-colors"
-              >
-                <span className="font-medium text-gray-700">
-                  {getStyleDisplayName(effectiveSelectedMode)}
-                </span>
-                <ChevronDown
-                  size={11}
-                  className={`text-gray-400 transition-transform duration-200 ${roleDropdownOpen ? 'rotate-180' : ''}`}
-                />
-              </button>
+              {responseModeLocked ? (
+                <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-50 text-[11px]">
+                  <span className="text-gray-400">{responseModeLabel}</span>
+                  <span className="font-medium text-gray-700">
+                    {getStyleDisplayName(displayedResponseMode)}
+                  </span>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-50 text-[11px] active:bg-gray-100 transition-colors"
+                >
+                  <span className="text-gray-400">{responseModeLabel}</span>
+                  <span className="font-medium text-gray-700">
+                    {getStyleDisplayName(displayedResponseMode)}
+                  </span>
+                  <ChevronDown
+                    size={11}
+                    className={`text-gray-400 transition-transform duration-200 ${roleDropdownOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+              )}
               {roleDropdownMenu}
             </div>
           )}

@@ -251,6 +251,7 @@
     "about_me_prompt_body": "有几个可选的小问题，能帮助 Seen 更慢慢理解你。",
     "about_me_prompt_go": "去完成",
     "about_me_prompt_later": "稍后再说",
+    "mode_label": "回应方式",
     "retention_label": "本次对话",
     "retention_3days": "保存 3 天",
     "retention_7days": "保存 7 天",
