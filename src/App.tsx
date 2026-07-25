@@ -20,6 +20,11 @@ import MyQuestions from './pages/settings/MyQuestions';
 import AboutMeOptional from './pages/settings/AboutMeOptional';
 import BasicProfile from './pages/settings/BasicProfile';
 import DeleteAccount from './pages/DeleteAccount';
+import MomentsEntry from './pages/moments/MomentsEntry';
+import MomentsSessionPage from './pages/moments/MomentsSessionPage';
+import MomentsResultPage from './pages/moments/MomentsResultPage';
+import MySketches from './pages/me/MySketches';
+import SketchDetail from './pages/me/SketchDetail';
 
 function SplashScreen() {
   return (
@@ -145,6 +150,11 @@ function AppRoutes() {
       <Route path="/me/account" element={<AccountLanguage />} />
       <Route path="/me/questions" element={<MyQuestions />} />
       <Route path="/me/about-you" element={<AboutMeOptional />} />
+      <Route path="/moments" element={<MomentsEntry />} />
+      <Route path="/moments/session/:sessionId" element={<MomentsSessionPage />} />
+      <Route path="/moments/result/:sessionId" element={<MomentsResultPage />} />
+      <Route path="/me/sketches" element={<MySketches />} />
+      <Route path="/me/sketches/:sessionId" element={<SketchDetail />} />
       <Route path="/delete-account" element={<DeleteAccount />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

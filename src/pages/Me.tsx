@@ -1,27 +1,35 @@
+import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
-import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../i18n';
 import { useAuth } from '../auth';
 import { usePlatform } from '../hooks/usePlatform';
-import { computeAboutMeCompletedCount } from '../services/aboutMe';
+import { momentsClient } from '../services/moments/momentsClient';
+import type { MomentsOverview } from '../services/moments/momentsService';
 
 export default function Me() {
   const navigate = useNavigate();
-  const { t, effectiveLanguage } = useLanguage();
-  const { seenUser, signOut } = useAuth();
+  const { t } = useLanguage();
+  const { signOut } = useAuth();
   const { isDesktop } = usePlatform();
 
-  const lang = effectiveLanguage === 'zh' ? 'zh' : 'en';
+  const [moments, setMoments] = useState<MomentsOverview | null>(null);
 
-  const aboutMe = seenUser?.soulProfile?.aboutMe;
-  const aboutMeDone = computeAboutMeCompletedCount(aboutMe);
-  const aboutMeStatus: 'none' | 'progress' | 'done' =
-    aboutMeDone <= 0 ? 'none' : aboutMeDone >= 6 ? 'done' : 'progress';
+  useEffect(() => {
+    momentsClient.getOverview().then(setMoments).catch(() => setMoments(null));
+  }, []);
 
   const handleLogout = async () => {
     await signOut();
   };
+
+  const handleStartMoments = async () => {
+    const session = await momentsClient.createSession();
+    navigate(`/moments/session/${session.id}`);
+  };
+
+  const hasActive = !!moments?.activeSession;
+  const hasHistory = (moments?.completedCount ?? 0) > 0;
 
   return (
     <div className="h-full flex flex-col">
@@ -43,127 +51,7 @@ export default function Me() {
       </div>
 
       <div className="space-y-8">
-        {/* ==================== 1. My Understanding ==================== */}
-        {/*
-          TODO (Spec §十): This section should display layered insights:
-          - Stable traits (high confidence, multi-session verified)
-          - Current dynamic state (mood, energy — transient)
-          - Candidate insights (single-session, awaiting verification)
-          - Multi-session summary (aggregated self-understanding)
-        */}
-        <div className="p-5 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-            {lang === 'zh' ? '我的理解' : 'My Understanding'}
-          </h3>
-          <p className="text-sm text-secondary font-light leading-relaxed">
-            {lang === 'zh'
-              ? '基于你的对话逐步构建的抽象理解。原始对话会自动过期，但理解会留下。'
-              : 'An abstract understanding built progressively from your conversations. Raw chats expire, but understanding remains.'}
-          </p>
-          <button
-            onClick={() => navigate('/me/understanding')}
-            className="text-xs text-primary font-medium inline-flex items-center gap-1 hover:gap-2 transition-all"
-          >
-            {lang === 'zh' ? '查看详情 →' : 'View details →'}
-          </button>
-        </div>
-
-        {/* Optional: light “about you” prompts (soulProfile.aboutMe — not onboarding) */}
-        <div className="p-5 bg-white rounded-2xl border border-stone-200/90 shadow-sm space-y-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1 min-w-0">
-              <h3 className="text-base font-light text-primary leading-snug">{t('me.aboutMe_optional.card_title')}</h3>
-              <p className="text-xs text-muted font-light leading-relaxed">{t('me.aboutMe_optional.card_subtitle')}</p>
-            </div>
-            <span
-              className={clsx(
-                'shrink-0 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full',
-                aboutMeStatus === 'none' && 'bg-gray-100 text-gray-500',
-                aboutMeStatus === 'progress' && 'bg-amber-50 text-amber-800',
-                aboutMeStatus === 'done' && 'bg-emerald-50 text-emerald-800',
-              )}
-            >
-              {aboutMeStatus === 'none' && t('me.aboutMe_optional.status_not_started')}
-              {aboutMeStatus === 'progress' && t('me.aboutMe_optional.status_in_progress')}
-              {aboutMeStatus === 'done' && t('me.aboutMe_optional.status_done')}
-            </span>
-          </div>
-          <p className="text-xs text-secondary font-light tabular-nums">
-            {t('me.aboutMe_optional.progress_line').replace('{{n}}', String(aboutMeDone))}
-          </p>
-          <button
-            type="button"
-            onClick={() =>
-              aboutMeStatus === 'done'
-                ? navigate('/me/about-you', { state: { review: true } })
-                : navigate('/me/about-you')
-            }
-            className="w-full py-3 rounded-xl bg-primary text-white text-sm font-medium hover:bg-black transition-colors"
-          >
-            {aboutMeStatus === 'none' && t('me.aboutMe_optional.card_cta_start')}
-            {aboutMeStatus === 'progress' && t('me.aboutMe_optional.card_cta_continue')}
-            {aboutMeStatus === 'done' && t('me.aboutMe_optional.card_cta_review')}
-          </button>
-        </div>
-
-        {/* ==================== 2. Inner Structure (Legacy, Hidden) ==================== */}
-        {/* 
-        <div className="p-5 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-            {lang === 'zh' ? '内在结构' : 'Inner Structure'}
-          </h3>
-
-          {understandingProgress > 0 ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted">
-                  {lang === 'zh' ? '理解进度' : 'Understanding Progress'}
-                </span>
-                <span className="text-xs font-medium text-primary">
-                  {understandingProgress} / {totalQuestions}
-                </span>
-              </div>
-              <div className="flex gap-1.5">
-                {Array.from({ length: totalQuestions }).map((_, idx) => (
-                  <div
-                    key={idx}
-                    className={`h-1.5 flex-1 rounded-full transition-colors ${
-                      idx < understandingProgress ? 'bg-primary' : 'bg-gray-200'
-                    }`}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : (
-            <p className="text-xs text-muted font-light leading-relaxed">
-              {lang === 'zh'
-                ? '更深入的自我问答可在下方「问题」中自愿完成，并非必做。'
-                : 'Optional deeper prompts are available under Questions below — not required.'}
-            </p>
-          )}
-        </div>
-        */}
-
-        {/* ==================== 3. Continue Understanding CTA (Legacy, Hidden) ==================== */}
-        {/*
-        {!isComplete && understandingProgress > 0 && (
-          <div className="p-5 bg-white rounded-2xl border border-gray-100 space-y-4">
-            <p className="text-sm text-secondary font-light leading-relaxed whitespace-pre-line">
-              {lang === 'zh'
-                ? '这些洞察帮助塑造你被理解的方式——\n以及你与他人连接的方式。\n\n你的资料越完整，\n你的体验就越有意义。'
-                : 'These insights help shape how you are understood —\nand how you connect with others.\n\nThe more complete your profile is,\nthe more meaningful your experience will be.'}
-            </p>
-            <button
-              onClick={() => navigate('/me/questions')}
-              className="w-full py-3 rounded-xl bg-primary text-white text-sm font-medium hover:bg-black transition-colors flex items-center justify-center gap-1"
-            >
-              {lang === 'zh' ? '继续 →' : 'Continue →'}
-            </button>
-          </div>
-        )}
-        */}
-
-        {/* ==================== Settings Sections ==================== */}
+        {/* ==================== A. 基础资料 ==================== */}
         <Section title={t('me.section_profile')}>
           <MenuItem
             title={t('me.menu_profile')}
@@ -172,36 +60,67 @@ export default function Me() {
           />
         </Section>
 
-        {/* Legacy Questions Section (Hidden) */}
-        {/*
-        <Section title={t('me.section_questions')}>
-          <MenuItem
-            title={t('me.menu_questions')}
-            subtitle={t('me.menu_questions_sub')}
-            onClick={() => navigate('/me/questions')}
-          />
-        </Section>
-        */}
+        {/* ==================== B. Seen 眼中的你 ==================== */}
+        <Section title={t('me.section_seen')}>
+          {/* Dynamic primary card: start a set, or continue the unfinished one */}
+          <div className="p-5 bg-white rounded-2xl border border-stone-200/90 shadow-sm space-y-4">
+            <div className="space-y-1">
+              <h3 className="text-base font-light text-primary leading-snug">
+                {hasActive ? t('me.moments_progress_title') : t('me.moments_empty_title')}
+              </h3>
+              <p className="text-xs text-muted font-light leading-relaxed tabular-nums">
+                {hasActive
+                  ? t('me.moments_progress_line')
+                      .replace('{{n}}', String(moments?.answeredCount ?? 0))
+                      .replace('{{total}}', String(moments?.sessionSize ?? 10))
+                  : t('me.moments_empty_sub')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                hasActive
+                  ? navigate(`/moments/session/${moments!.activeSession!.id}`)
+                  : handleStartMoments()
+              }
+              className="w-full py-3 rounded-xl bg-primary text-white text-sm font-medium hover:bg-black transition-colors"
+            >
+              {hasActive ? t('me.moments_progress_cta') : t('me.moments_empty_cta')}
+            </button>
+          </div>
 
-        <Section title={t('me.section_core')}>
-          <MenuItem
-            title={t('me.menu_understanding')}
-            subtitle={t('me.menu_understanding_sub')}
-            onClick={() => navigate('/me/understanding')}
-          />
-          <MenuItem
-            title={t('me.menu_ai')}
-            subtitle={t('me.menu_ai_sub')}
-            onClick={() => navigate('/me/ai-response')}
-          />
+          {hasHistory && (
+            <>
+              {moments?.latestCompletedSessionId && (
+                <MenuItem
+                  title={t('me.menu_latest_sketch')}
+                  subtitle={t('me.menu_latest_sketch_sub')}
+                  onClick={() => navigate(`/me/sketches/${moments.latestCompletedSessionId}`)}
+                />
+              )}
+              <MenuItem
+                title={t('me.menu_all_sketches')}
+                subtitle={t('me.menu_all_sketches_sub').replace(
+                  '{{n}}',
+                  String(moments?.completedCount ?? 0),
+                )}
+                onClick={() => navigate('/me/sketches')}
+              />
+            </>
+          )}
         </Section>
 
+        {/* ==================== C. 数据与隐私 ==================== */}
         <Section title={t('me.section_data')}>
           <MenuItem
             title={t('me.menu_privacy')}
             subtitle={t('me.menu_privacy_sub')}
             onClick={() => navigate('/me/privacy')}
           />
+        </Section>
+
+        {/* ==================== D. 账户 ==================== */}
+        <Section title={t('me.section_account')}>
           <MenuItem
             title={t('me.menu_account')}
             subtitle={t('me.menu_account_sub')}
