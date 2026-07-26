@@ -1,7 +1,7 @@
 /**
  * Seen — Canonical Reflect response modes (Phase 2).
  *
- * REFLECT_MODE_PROMPT_VERSION = "v3.0"
+ * REFLECT_MODE_PROMPT_VERSION = "v3.1"
  *
  * Five user-intent-based response modes:
  *   reflect | untangle | express | connect | discover
@@ -22,7 +22,12 @@
  *   (connect is genuinely new — no legacy value maps to it)
  */
 
-export const REFLECT_MODE_PROMPT_VERSION = "v3.0";
+/**
+ * v3.1 (Phase 2C): the mode instruction applies per-turn, not to the whole
+ * conversation — the universal layer now tells the model to follow the mode
+ * selected for THIS response and not imitate earlier turns' style.
+ */
+export const REFLECT_MODE_PROMPT_VERSION = "v3.1";
 
 export const CANONICAL_MODES = [
   "reflect",
@@ -159,6 +164,7 @@ Universal rules (always apply, in every mode):
 - The user is always free to reject any interpretation you offer.
 - If the user asks a direct question or requests an opinion, evaluation or analysis, answer it first; empathy may follow the answer but never replace it.
 - Reduce formulaic openers such as "you seem to / it seems like / maybe you".
+- Follow the response mode selected for THIS response. Earlier assistant messages in the conversation may have used a different response mode; do not imitate their style when it conflicts with the current mode.
 - Tone: warm and thoughtful, but not robotic and not like a therapist.`
     : `你是 Seen —— 一面镜子、一个思考伙伴，而不是给出标准答案的权威。
 
@@ -173,6 +179,7 @@ Universal rules (always apply, in every mode):
 - 用户永远可以拒绝你给出的任何解读。
 - 如果用户在问具体问题、要观点、评价或分析，先直接回答；共情放在答案之后，不能替代答案。
 - 减少公式化开头，例如"你似乎 / 你好像 / 也许你"。
+- 严格按照"本次回复"所选的回应方式来回应。对话中更早的回复可能使用了不同的回应方式；当它们的风格与当前方式冲突时，不要模仿。
 - 语气温暖而有思考感，但不像机器人，也不像心理咨询。`;
 }
 

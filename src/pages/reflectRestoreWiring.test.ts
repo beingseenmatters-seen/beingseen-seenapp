@@ -54,7 +54,12 @@ describe('recent conversation selection (route-based)', () => {
 
 describe('完成 completion flow wiring', () => {
   it('完成 uses the strict backend extraction (no silent local fake)', () => {
-    expect(reflectSource).toContain('extractSummaryFromBackend(messages, options)');
+    // Phase 2C: extraction sees the complete conversation text only — per-turn
+    // mode metadata is stripped before the request.
+    expect(reflectSource).toContain('extractSummaryFromBackend(extractionMessages, options)');
+    expect(reflectSource).toContain(
+      'const extractionMessages = messages.map(m => ({ role: m.role, text: m.text }));'
+    );
   });
 
   it('the extraction gate no longer silently skips short conversations', () => {

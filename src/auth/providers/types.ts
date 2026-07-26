@@ -61,14 +61,22 @@ export interface SeenUser {
   fcmTokens?: Array<{ token: string; platform: string; updatedAt: number }>;
   basic?: {
     nickname?: string;
-    /** Age range slug, e.g. 18-24, 25-34 (same as onboarding Step 1). */
+    /** Age range slug, e.g. 18-24, 25-34 (collected at onboarding). */
     age?: string;
     location?: string;
     gender?: string;
     zodiac?: string;
-    /** Why the user is here (onboarding Step 1). */
+    /**
+     * Legacy field — no longer collected during onboarding. Onboarding only
+     * asks what cannot naturally emerge from later interaction; Reflect and
+     * Moments are the primary understanding mechanisms. Existing users'
+     * values are preserved untouched.
+     */
     currentState?: string;
-    /** Stable English slugs for match/me similarity, e.g. reading, travel; custom via other:... */
+    /**
+     * Legacy field — no longer collected during onboarding (see currentState
+     * note). Stable English slugs, e.g. reading, travel; custom via other:...
+     */
     interests?: string[];
   };
   soulProfile?: {

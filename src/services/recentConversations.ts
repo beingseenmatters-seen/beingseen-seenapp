@@ -4,6 +4,14 @@ import { RETENTION_TTL_DAYS } from '../types/insight';
 export interface ConversationMessage {
   role: 'user' | 'ai' | 'system';
   text: string;
+  /**
+   * Turn-level response-mode metadata (Phase 2C), present on AI turns saved
+   * after turn-level switching. `requestedMode` is what the user selected for
+   * that turn; `effectiveMode` is what was applied after distress/question-gate
+   * overrides. Older messages simply lack these fields.
+   */
+  requestedMode?: string;
+  effectiveMode?: string;
 }
 
 /**
@@ -23,7 +31,12 @@ export interface RetainedConversation {
   createdAt: number;
   expiresAt: number;
   deletedAt?: number;
-  /** Canonical locked response mode for this conversation (Phase 1). */
+  /**
+   * Canonical response mode. Since Phase 2C this is the conversation's
+   * CURRENT next-turn mode (turn-level model); for conversations saved by the
+   * earlier whole-session model it holds the old locked mode, which migrates
+   * cleanly to "current mode" on restore.
+   */
   responseMode?: string;
   /** Legacy fields kept for conversations saved before `responseMode`. */
   sessionStyle?: string;

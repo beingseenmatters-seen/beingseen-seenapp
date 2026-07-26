@@ -69,10 +69,21 @@ export async function sendReflect(
 /**
  * 发送 Reflect 请求 - 带 Question Gate 增强版本
  */
+/**
+ * Turn-level mode metadata (Phase 2C): every reply reports which mode the
+ * user requested for that turn and which mode was actually applied after
+ * distress/question-gate overrides. Stored per turn, never rendered as
+ * visible debug text.
+ */
+export interface ReflectTurnModeMeta {
+  requestedMode: ResponseModeType;
+  effectiveMode: ResponseModeType;
+}
+
 export async function sendReflectWithGate(
   text: string,
   language: string = 'zh',
-  /** Canonical response mode; legacy numeric selectedMode (0–3) still accepted. */
+  /** Canonical response mode requested for THIS turn; legacy numeric selectedMode (0–3) still accepted. */
   mode: ResponseModeType | number | null,
   recentTurns: Array<{ role: 'user' | 'ai'; text: string }> = [],
   keepContext: boolean = false,
@@ -81,7 +92,7 @@ export async function sendReflectWithGate(
     isNewSession?: boolean;
     action?: ReflectAction;
   }
-): Promise<ReflectResponseWithDebug> {
+): Promise<ReflectResponseWithDebug & ReflectTurnModeMeta> {
   
   // 1. 分析用户状态
   const userState = analyzeUserState(text, recentTurns);
@@ -179,7 +190,13 @@ export async function sendReflectWithGate(
       } satisfies ReflectDebug;
     }
     
-    return data as ReflectResponseWithDebug;
+    // Turn-level metadata: requested = user's selection for this turn,
+    // effective = what was actually applied after distress/gate overrides.
+    return {
+      ...(data as ReflectResponseWithDebug),
+      requestedMode,
+      effectiveMode: finalMode,
+    };
   } catch (error: unknown) {
     const err = error as Error & { name?: string };
     console.error('[SeenAPI] Fetch error:', err);

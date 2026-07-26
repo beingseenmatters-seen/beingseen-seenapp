@@ -30,10 +30,7 @@ import {
   type ConversationDecision
 } from '../services/recentConversations';
 import { useRecentConversations } from '../hooks/useRecentConversations';
-import {
-  resolveResponseModeForReflect,
-  resolveLegacySessionResponseMode
-} from '../services/reflectStyle';
+import { resolveLegacySessionResponseMode } from '../services/reflectStyle';
 import {
   loadLastUsedResponseMode,
   saveLastUsedResponseMode
@@ -52,6 +49,14 @@ interface Message {
   role: 'user' | 'ai' | 'system';
   text: string;
   debug?: ReflectDebug;
+  /**
+   * Turn-level mode metadata (Phase 2C), set on AI replies:
+   * `requestedMode` = the mode the user selected for that turn;
+   * `effectiveMode` = the mode actually applied after distress/question-gate
+   * overrides. Internal only — never rendered as visible debug text.
+   */
+  requestedMode?: ResponseModeType;
+  effectiveMode?: ResponseModeType;
 }
 
 interface SavedSession {
@@ -60,7 +65,17 @@ interface SavedSession {
   keepContext: boolean;
   retention?: RetentionOption;
   sessionId: string;
-  /** Canonical locked response mode for this conversation. */
+  /**
+   * The response mode currently selected for the NEXT user turn (Phase 2C
+   * turn-level model). Editable between completed turns.
+   */
+  currentResponseMode?: ResponseModeType;
+  /**
+   * Pre-2C field. Old sessions stored the whole-conversation locked mode here;
+   * still written (mirroring currentResponseMode) so older readers keep
+   * working, and used as the migration source when currentResponseMode is
+   * absent.
+   */
   responseMode?: ResponseModeType;
   /** Legacy fields kept so sessions saved before `responseMode` still resolve. */
   sessionStyle?: string;
@@ -107,14 +122,20 @@ export default function Reflect() {
   const [retentionDropdownOpen, setRetentionDropdownOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   /**
-   * Response-mode ownership (Phase 1 model, Phase 2 canonical values):
-   * - `draftResponseMode`: editable selection before the first message,
-   *   initialised from the user-scoped lastUsedResponseMode.
-   * - `sessionResponseMode`: locked to the conversation once the first user
-   *   message is accepted — the only source of truth afterwards.
+   * Turn-level response-mode ownership (Phase 2C):
+   * `currentResponseMode` = "the response mode currently selected for the
+   * next user turn". It is editable between completed turns, snapshotted at
+   * send time for that turn, and disabled only while a request is in flight
+   * or the conversation is no longer active. Modes describe what kind of help
+   * the user wants NEXT — they are not fixed roles locked to a conversation.
    */
-  const [draftResponseMode, setDraftResponseMode] = useState<ResponseModeType>(ResponseMode.REFLECT);
-  const [sessionResponseMode, setSessionResponseMode] = useState<ResponseModeType | undefined>(undefined);
+  const [currentResponseMode, setCurrentResponseMode] = useState<ResponseModeType>(ResponseMode.REFLECT);
+  /** Transient "下一次回复将使用「…」" notice after a mid-conversation switch. */
+  const [modeChangeNotice, setModeChangeNotice] = useState<ResponseModeType | null>(null);
+  const modeNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (modeNoticeTimeoutRef.current) clearTimeout(modeNoticeTimeoutRef.current);
+  }, []);
   const [hasSavedSession, setHasSavedSession] = useState(false);
 
   // Response-mode dropdown open/close
@@ -169,16 +190,14 @@ export default function Reflect() {
   const uid = firebaseUser?.uid;
 
   const hasUserMessage = messages.some(m => m.role === 'user' && m.text.trim().length > 0);
-  /** Once the first user message is accepted, the mode is locked to the session. */
-  const responseModeLocked = hasUserMessage || sessionResponseMode !== undefined;
-  const displayedResponseMode = sessionResponseMode ?? draftResponseMode;
 
-  // Initialise the pre-conversation draft from the user-scoped last-used mode.
-  // Never overrides a locked or in-progress conversation.
+  // A NEW conversation initialises from the most recently actually-used mode.
+  // A restored conversation owns its mode and is never overridden by this
+  // (restore effects run after this one and set currentResponseMode directly).
   useEffect(() => {
     if (!uid) return;
-    if (sessionResponseMode !== undefined || hasUserMessage) return;
-    setDraftResponseMode(loadLastUsedResponseMode(uid));
+    if (hasUserMessage) return;
+    setCurrentResponseMode(loadLastUsedResponseMode(uid));
   }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [pendingSummary, setPendingSummary] = useState<ConversationExtraction | null>(null);
@@ -203,6 +222,20 @@ export default function Reflect() {
 
   const conversationEnded = conversationStatus === 'completed';
 
+  /**
+   * Turn-level selector availability (Phase 2C): selection is allowed only
+   * while the conversation is active and nothing is in flight. Disabled while
+   * an AI reply is generating, extraction is running, a 留下/放下 decision is
+   * in progress or pending, or the conversation is completed/read-only.
+   */
+  const modeSelectorDisabled =
+    isLoading ||
+    isExtractingSummary ||
+    isSavingDecision ||
+    showSummaryConfirmation ||
+    summaryError ||
+    conversationStatus !== 'active';
+
   // TODO (Spec §九): Lightweight calibration after conversation end
   const [calibrationInsight, setCalibrationInsight] = useState<{ key: string; text: string } | null>(null);
 
@@ -225,9 +258,9 @@ export default function Reflect() {
     const convo = getConversationById(convoId);
     if (!convo) return false;
 
-    // Preserve the conversation's locked mode; migrate legacy conversations
-    // (old four-role values or no mode at all) deterministically so they stop
-    // being ambiguous once resumed.
+    // The conversation's own current mode wins over the global last-used one.
+    // Old whole-session records migrate deterministically: their resolved
+    // locked mode becomes the current next-turn mode.
     const restoredMode =
       tryNormalizeResponseMode(convo.responseMode) ??
       resolveLegacySessionResponseMode({
@@ -255,11 +288,18 @@ export default function Reflect() {
     setSummaryError(false);
     setDecisionError(false);
     setIsSavingDecision(false);
-    setMessages(convo.messages.map(m => ({ role: m.role, text: m.text })));
+    // Restore per-turn mode metadata where present (older messages lack it).
+    setMessages(convo.messages.map(m => ({
+      role: m.role,
+      text: m.text,
+      requestedMode: tryNormalizeResponseMode(m.requestedMode) ?? undefined,
+      effectiveMode: tryNormalizeResponseMode(m.effectiveMode) ?? undefined,
+    })));
     setStep(2);
     setRetention(convo.retention);
     setSessionId(convo.id);
-    setSessionResponseMode(restoredMode);
+    setCurrentResponseMode(restoredMode);
+    setModeChangeNotice(null);
     setConversationStatus(status);
     setConversationDecision(convo.decision);
     if (status === 'awaiting_decision' && hasRestorableExtraction) {
@@ -319,19 +359,21 @@ export default function Reflect() {
 
   useEffect(() => {
     if (sessionId) {
-      // `responseMode` is the canonical locked field. Legacy `sessionStyle` /
-      // `selectedMode` are still written (in the old four-role vocabulary) so
-      // any older reader keeps working; CONNECT has no legacy equivalent and
-      // writes undefined/null there.
-      const legacyStyle = sessionResponseMode ? toLegacyResponseStyle(sessionResponseMode) : undefined;
-      const legacySelectedMode = sessionResponseMode ? toLegacySelectedMode(sessionResponseMode) : null;
+      // `currentResponseMode` is the turn-level field (mode for the NEXT
+      // turn). `responseMode` mirrors it for pre-2C readers, and legacy
+      // `sessionStyle` / `selectedMode` are still written (old four-role
+      // vocabulary) so any older reader keeps working; CONNECT has no legacy
+      // equivalent and writes undefined/null there.
+      const legacyStyle = toLegacyResponseStyle(currentResponseMode);
+      const legacySelectedMode = toLegacySelectedMode(currentResponseMode);
       const session: SavedSession = {
         messages,
         step,
         keepContext,
         retention,
         sessionId,
-        responseMode: sessionResponseMode,
+        currentResponseMode,
+        responseMode: currentResponseMode,
         sessionStyle: legacyStyle,
         consecutiveQuestionTurns,
         selectedMode: legacySelectedMode,
@@ -345,11 +387,17 @@ export default function Reflect() {
       if (retention !== 'none' && messages.filter(m => m.role === 'user' && m.text.trim()).length > 0) {
         saveConversation(
           sessionId,
-          messages.map(m => ({ role: m.role, text: m.text })),
+          // Persist per-turn mode metadata with each AI message (never debug).
+          messages.map(m => ({
+            role: m.role,
+            text: m.text,
+            requestedMode: m.requestedMode,
+            effectiveMode: m.effectiveMode,
+          })),
           retention,
           effectiveLanguage === 'zh' ? 'zh' : 'en',
           {
-            responseMode: sessionResponseMode,
+            responseMode: currentResponseMode,
             sessionStyle: legacyStyle,
             selectedMode: legacySelectedMode,
             status: conversationStatus,
@@ -362,7 +410,7 @@ export default function Reflect() {
         );
       }
     }
-  }, [messages, step, keepContext, retention, sessionId, sessionResponseMode, consecutiveQuestionTurns, effectiveLanguage, conversationStatus, conversationDecision, pendingSummary]);
+  }, [messages, step, keepContext, retention, sessionId, currentResponseMode, consecutiveQuestionTurns, effectiveLanguage, conversationStatus, conversationDecision, pendingSummary]);
 
   useEffect(() => {
     if (inputValue.trim()) {
@@ -412,8 +460,11 @@ export default function Reflect() {
     if (saved) {
       try {
         const session: SavedSession = JSON.parse(saved);
-        // Preserve the locked mode; migrate legacy sessions deterministically.
+        // Turn-level field first; old whole-session `responseMode` (and older
+        // sessionStyle/selectedMode) migrate deterministically to become the
+        // conversation's current next-turn mode.
         const restoredMode =
+          tryNormalizeResponseMode(session.currentResponseMode) ??
           tryNormalizeResponseMode(session.responseMode) ??
           resolveLegacySessionResponseMode({
             legacySessionStyle: session.sessionStyle,
@@ -436,7 +487,8 @@ export default function Reflect() {
         setStep(session.step === 0 ? 2 : session.step);
         setRetention(session.retention ?? '3days');
         setSessionId(session.sessionId);
-        setSessionResponseMode(restoredMode);
+        setCurrentResponseMode(restoredMode);
+        setModeChangeNotice(null);
         setConsecutiveQuestionTurns(session.consecutiveQuestionTurns);
         setConversationStatus(status);
         setConversationDecision(session.decision);
@@ -514,19 +566,24 @@ export default function Reflect() {
     setIsExtractingSummary(true);
     try {
       const options = {
-        preferredResponseStyle: getModeTitle(displayedResponseMode),
+        preferredResponseStyle: getModeTitle(currentResponseMode),
         language: (effectiveLanguage === 'zh' ? 'zh' : 'en') as 'zh' | 'en',
         uid: firebaseUser?.uid || seenUser?.uid || 'anonymous',
         sessionId: sessionId || 'unknown'
       };
+
+      // The extraction sees only the complete conversation text. Per-turn
+      // mode metadata is a tool preference, never personality evidence — it
+      // is stripped here and never reaches trait inference.
+      const extractionMessages = messages.map(m => ({ role: m.role, text: m.text }));
 
       // 完成/结束对话 must never pretend extraction succeeded: backend-only,
       // failures surface the retry state. clear/new keep their existing
       // never-blocking behavior (backend, then local gentle fallback).
       const extracted =
         action === 'finish'
-          ? await extractSummaryFromBackend(messages, options)
-          : await extractSummaryFromConversation(messages, options);
+          ? await extractSummaryFromBackend(extractionMessages, options)
+          : await extractSummaryFromConversation(extractionMessages, options);
 
       if (!hasMeaningfulExtraction(extracted)) {
         return 'unavailable';
@@ -611,9 +668,9 @@ export default function Reflect() {
     setHasSavedSession(false);
     setRetention('3days');
     setSessionId(undefined);
-    setSessionResponseMode(undefined);
-    // The next conversation starts from the previous conversation's mode.
-    setDraftResponseMode(loadLastUsedResponseMode(uid));
+    // The next conversation starts from the most recently actually-used mode.
+    setCurrentResponseMode(loadLastUsedResponseMode(uid));
+    setModeChangeNotice(null);
     setMessages([]);
     setConsecutiveQuestionTurns(0);
     setJustCleared(true);
@@ -712,31 +769,29 @@ export default function Reflect() {
 
   const handleReply = async () => {
     if (!inputValue.trim()) return;
+    if (isLoading || conversationEnded) return;
 
     setRoleDropdownOpen(false);
     setRetentionDropdownOpen(false);
+    setModeChangeNotice(null);
     const currentInput = inputValue;
+    // Snapshot the mode for THIS turn — changing the selector afterwards can
+    // never mutate an in-flight request; it only affects the next turn.
+    const modeForTurn = currentResponseMode;
     setMessages(prev => [...prev, { role: 'user', text: currentInput }]);
     setInputValue('');
     setIsLoading(true);
     
     try {
       const recentTurns = getRecentTurns();
-      // Locked session mode wins; draft/last-used only cover the legacy case
-      // where a resumed session had no locked mode yet.
-      const resolvedMode = resolveResponseModeForReflect({
-        sessionResponseMode,
-        draftResponseMode,
-        lastUsedResponseMode: loadLastUsedResponseMode(uid),
-      });
-      if (sessionResponseMode === undefined) {
-        setSessionResponseMode(resolvedMode);
-      }
+      // The message is accepted for sending with this mode — record it as the
+      // user's most recently actually-used mode.
+      saveLastUsedResponseMode(uid, modeForTurn);
 
       const response = await sendReflectWithGate(
         currentInput, 
         effectiveLanguage === 'zh' ? 'zh' : 'en', 
-        resolvedMode,
+        modeForTurn,
         recentTurns,
         keepContext,
         sessionId,
@@ -754,7 +809,13 @@ export default function Reflect() {
       }
       
       if (response.debug) setLastDebug(response.debug);
-      setMessages(prev => [...prev, { role: 'ai', text: response.reply, debug: response.debug }]);
+      setMessages(prev => [...prev, {
+        role: 'ai',
+        text: response.reply,
+        debug: response.debug,
+        requestedMode: response.requestedMode,
+        effectiveMode: response.effectiveMode,
+      }]);
     } catch (error: unknown) {
       console.error('API Error:', error);
       const errorMessage = (error as Error)?.message || 'Unknown error';
@@ -766,9 +827,11 @@ export default function Reflect() {
 
   const handleSend = async () => {
     if (!inputValue.trim()) return;
+    if (isLoading) return;
     
     setRoleDropdownOpen(false);
     setRetentionDropdownOpen(false);
+    setModeChangeNotice(null);
     setStep(2);
     setConsecutiveQuestionTurns(0);
     setJustCleared(false);
@@ -778,22 +841,22 @@ export default function Reflect() {
     setSessionId(nextSessionId);
 
     const currentInput = inputValue;
+    // Snapshot the mode for this first turn.
+    const modeForTurn = currentResponseMode;
     setInputValue('');
     setIsLoading(true);
     
     try {
-      // First accepted user message: lock the draft into the session and
-      // remember it as the user's last-used mode for the next conversation.
-      const modeToLock = draftResponseMode;
-      setSessionResponseMode(modeToLock);
-      saveLastUsedResponseMode(uid, modeToLock);
+      // The message is accepted for sending with this mode — record it as the
+      // user's most recently actually-used mode.
+      saveLastUsedResponseMode(uid, modeForTurn);
 
-      console.log('[Reflect] handleSend', { responseMode: modeToLock });
+      console.log('[Reflect] handleSend', { responseMode: modeForTurn });
 
       const response = await sendReflectWithGate(
         currentInput, 
         effectiveLanguage === 'zh' ? 'zh' : 'en', 
-        modeToLock,
+        modeForTurn,
         [],
         keepContext,
         nextSessionId,
@@ -809,7 +872,13 @@ export default function Reflect() {
       }
       
       if (response.debug) setLastDebug(response.debug);
-      setMessages(prev => [...prev, { role: 'ai', text: response.reply, debug: response.debug }]);
+      setMessages(prev => [...prev, {
+        role: 'ai',
+        text: response.reply,
+        debug: response.debug,
+        requestedMode: response.requestedMode,
+        effectiveMode: response.effectiveMode,
+      }]);
     } catch (error: unknown) {
       console.error('API Error:', error);
       const errorMessage = (error as Error)?.message || 'Unknown error';
@@ -843,13 +912,35 @@ export default function Reflect() {
   // understanding layer (via saveApprovedSummary) but is never shown to the user.
 
   // =========================================================================
-  // Response-mode dropdown (shared logic, rendered per platform; only
-  // interactive before the conversation locks)
+  // Response-mode dropdown (shared logic, rendered per platform; editable
+  // between completed turns — the selection applies to the NEXT response)
   // =========================================================================
+
+  /**
+   * Select the mode for the next turn. Never touches earlier messages or an
+   * in-flight request, and never writes lastUsedResponseMode (that happens
+   * only when a message is actually sent). Mid-conversation switches show a
+   * transient, non-chat notice.
+   */
+  const handleSelectMode = (mode: ResponseModeType) => {
+    setCurrentResponseMode(mode);
+    setRoleDropdownOpen(false);
+    if (modeNoticeTimeoutRef.current) {
+      clearTimeout(modeNoticeTimeoutRef.current);
+      modeNoticeTimeoutRef.current = null;
+    }
+    if (messages.some(m => m.role === 'ai')) {
+      setModeChangeNotice(mode);
+      modeNoticeTimeoutRef.current = setTimeout(() => {
+        setModeChangeNotice(null);
+        modeNoticeTimeoutRef.current = null;
+      }, 4000);
+    }
+  };
 
   const roleDropdownMenu = (
     <AnimatePresence>
-      {roleDropdownOpen && !responseModeLocked && (
+      {roleDropdownOpen && !modeSelectorDisabled && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setRoleDropdownOpen(false)} />
           <motion.div
@@ -861,14 +952,11 @@ export default function Reflect() {
           >
             <div className="p-1.5 space-y-0.5">
               {modeOptions.map((opt) => {
-                const isSelected = draftResponseMode === opt.mode;
+                const isSelected = currentResponseMode === opt.mode;
                 return (
                   <button
                     key={opt.mode}
-                    onClick={() => {
-                      setDraftResponseMode(opt.mode);
-                      setRoleDropdownOpen(false);
-                    }}
+                    onClick={() => handleSelectMode(opt.mode)}
                     className={`w-full px-3 py-2 text-left rounded-lg transition-colors ${
                       isSelected ? 'bg-gray-50 text-gray-900' : 'text-gray-600 hover:bg-gray-50'
                     }`}
@@ -971,14 +1059,18 @@ export default function Reflect() {
 
   const composerFooter = isDesktop ? (
     <div className="flex items-center justify-between pt-1">
-      {/* Desktop: single response-mode control on the left — editable before
-          the first message, a quiet read-only label afterwards */}
+      {/* Desktop: single response-mode control on the left — editable between
+          completed turns, quietly disabled while a request is in flight or the
+          conversation is no longer active (turn-level model, Phase 2C) */}
       <div className="relative">
-        {responseModeLocked ? (
-          <div className="flex items-center gap-1.5 px-1.5 py-1 text-[11px]">
-            <span className="text-gray-500">{responseModeLabel}</span>
-            <span className="font-medium text-gray-600">
-              {getModeTitle(displayedResponseMode)}
+        {modeSelectorDisabled ? (
+          <div
+            className="flex items-center gap-1.5 px-1.5 py-1 text-[11px]"
+            aria-disabled="true"
+          >
+            <span className="text-gray-400">{responseModeLabel}</span>
+            <span className="font-medium text-gray-400">
+              {getModeTitle(currentResponseMode)}
             </span>
           </div>
         ) : (
@@ -988,7 +1080,7 @@ export default function Reflect() {
           >
             <span className="text-gray-500">{responseModeLabel}</span>
             <span className="font-medium text-gray-700">
-              {getModeTitle(displayedResponseMode)}
+              {getModeTitle(currentResponseMode)}
             </span>
             <ChevronDown
               size={11}
@@ -1035,19 +1127,21 @@ export default function Reflect() {
             {t('nav.reflect')}
           </span>
           {/* Mobile: single response-mode control next to title — editable
-              before the first message, read-only afterwards */}
+              between completed turns, disabled while a request is in flight
+              or the conversation is no longer active (turn-level model) */}
           {!isDesktop && (
             <div className="relative shrink-0">
               {/* Compact control shows only the short mode title so five modes
                   fit the mobile header without colliding with the language
                   selector; the full label lives in the dropdown context. */}
-              {responseModeLocked ? (
+              {modeSelectorDisabled ? (
                 <div
                   className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-50 text-[11px]"
                   aria-label={responseModeLabel}
+                  aria-disabled="true"
                 >
-                  <span className="font-medium text-gray-700 max-w-[38vw] truncate">
-                    {getModeTitle(displayedResponseMode)}
+                  <span className="font-medium text-gray-400 max-w-[38vw] truncate">
+                    {getModeTitle(currentResponseMode)}
                   </span>
                 </div>
               ) : (
@@ -1057,7 +1151,7 @@ export default function Reflect() {
                   aria-label={responseModeLabel}
                 >
                   <span className="font-medium text-gray-700 max-w-[38vw] truncate">
-                    {getModeTitle(displayedResponseMode)}
+                    {getModeTitle(currentResponseMode)}
                   </span>
                   <ChevronDown
                     size={11}
@@ -1493,6 +1587,15 @@ export default function Reflect() {
               </div>
             ) : (
               <div className={`shrink-0 bg-white ${isDesktop ? 'px-8 py-3' : 'px-4 py-2.5'}`}>
+                {/* Transient, non-chat notice after a mid-conversation mode
+                    switch — never persisted as a message */}
+                {modeChangeNotice && (
+                  <div className="mb-2 px-2.5 py-1.5 rounded-lg bg-gray-50 text-gray-500 text-[10px] text-center">
+                    {effectiveLanguage === 'zh'
+                      ? `下一次回复将使用「${getModeTitle(modeChangeNotice)}」`
+                      : `The next reply will use "${getModeTitle(modeChangeNotice)}"`}
+                  </div>
+                )}
                 {userStatePreview.isDistressed && inputValue.trim() && (
                   <div className="mb-2 px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-[10px]">
                     {effectiveLanguage === 'zh' ? '我会以更温和的方式回应你' : 'I\'ll respond gently to you'}

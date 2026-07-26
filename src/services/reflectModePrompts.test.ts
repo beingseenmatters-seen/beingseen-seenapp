@@ -96,6 +96,17 @@ describe('mode-specific prompt contracts (zh)', () => {
     }
   });
 
+  it('the mode instruction applies per-turn: earlier turns in another mode must not be imitated (Phase 2C)', () => {
+    for (const mode of CANONICAL_MODES) {
+      const zh = buildModeInstructions(mode, 'zh', calm);
+      expect(zh).toContain('严格按照"本次回复"所选的回应方式来回应');
+      expect(zh).toContain('不要模仿');
+      const en = buildModeInstructions(mode, 'en', calm);
+      expect(en).toContain('Follow the response mode selected for THIS response');
+      expect(en).toContain('do not imitate their style when it conflicts with the current mode');
+    }
+  });
+
   it('REFLECT does not default to advice or questions', () => {
     const p = buildModeInstructions('reflect', 'zh', calm);
     expect(p).toContain('被准确地听见');
