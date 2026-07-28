@@ -11,13 +11,14 @@ import {
 } from './responseMode';
 
 describe('canonical ResponseMode model', () => {
-  it('exposes exactly the five canonical values', () => {
-    expect(RESPONSE_MODES).toEqual(['reflect', 'untangle', 'express', 'connect', 'discover']);
+  it('exposes exactly the six canonical values, 一起想想 (explore) after 换个角度 (discover)', () => {
+    expect(RESPONSE_MODES).toEqual(['reflect', 'untangle', 'express', 'connect', 'discover', 'explore']);
     expect(ResponseMode.REFLECT).toBe('reflect');
     expect(ResponseMode.UNTANGLE).toBe('untangle');
     expect(ResponseMode.EXPRESS).toBe('express');
     expect(ResponseMode.CONNECT).toBe('connect');
     expect(ResponseMode.DISCOVER).toBe('discover');
+    expect(ResponseMode.EXPLORE).toBe('explore');
   });
 
   it('isResponseModeType accepts only canonical values', () => {
@@ -47,9 +48,10 @@ describe('legacy normalisation (approved mapping)', () => {
     expect(normalizeResponseMode('guide')).toBe(ResponseMode.DISCOVER);
   });
 
-  it('no legacy value maps to CONNECT', () => {
+  it('no legacy value maps to CONNECT or EXPLORE', () => {
     for (const legacy of ['mirror', 'organizer', 'helper', 'expression_help', 'expression', 'guide']) {
       expect(normalizeResponseMode(legacy)).not.toBe(ResponseMode.CONNECT);
+      expect(normalizeResponseMode(legacy)).not.toBe(ResponseMode.EXPLORE);
     }
   });
 
@@ -68,16 +70,18 @@ describe('legacy normalisation (approved mapping)', () => {
     expect(tryNormalizeResponseMode(undefined)).toBeUndefined();
     expect(tryNormalizeResponseMode('guide')).toBe(ResponseMode.DISCOVER);
     expect(tryNormalizeResponseMode('connect')).toBe(ResponseMode.CONNECT);
+    expect(tryNormalizeResponseMode('explore')).toBe(ResponseMode.EXPLORE);
   });
 });
 
 describe('legacy wire-format helpers', () => {
-  it('toLegacyResponseStyle maps four modes back; CONNECT has no legacy value', () => {
+  it('toLegacyResponseStyle maps four modes back; CONNECT and EXPLORE have no legacy value', () => {
     expect(toLegacyResponseStyle(ResponseMode.REFLECT)).toBe('mirror');
     expect(toLegacyResponseStyle(ResponseMode.UNTANGLE)).toBe('organizer');
     expect(toLegacyResponseStyle(ResponseMode.EXPRESS)).toBe('helper');
     expect(toLegacyResponseStyle(ResponseMode.DISCOVER)).toBe('guide');
     expect(toLegacyResponseStyle(ResponseMode.CONNECT)).toBeUndefined();
+    expect(toLegacyResponseStyle(ResponseMode.EXPLORE)).toBeUndefined();
   });
 
   it('legacy numeric selectedMode round-trips through the mapping', () => {
@@ -93,5 +97,6 @@ describe('legacy wire-format helpers', () => {
     expect(toLegacySelectedMode(ResponseMode.DISCOVER)).toBe(2);
     expect(toLegacySelectedMode(ResponseMode.EXPRESS)).toBe(3);
     expect(toLegacySelectedMode(ResponseMode.CONNECT)).toBeNull();
+    expect(toLegacySelectedMode(ResponseMode.EXPLORE)).toBeNull();
   });
 });

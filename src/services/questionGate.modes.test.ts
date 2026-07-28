@@ -7,7 +7,7 @@ import {
   analyzeUserState,
 } from './questionGate';
 
-describe('question-gate policies for the five canonical modes', () => {
+describe('question-gate policies for the six canonical modes', () => {
   it('every canonical mode has a policy', () => {
     for (const mode of RESPONSE_MODES) {
       expect(MODE_QUESTION_POLICIES[mode]).toBeDefined();
@@ -42,6 +42,13 @@ describe('question-gate policies for the five canonical modes', () => {
     expect(MODE_QUESTION_POLICIES[ResponseMode.DISCOVER].maxQuestionsPerTurn).toBe(1);
   });
 
+  it('EXPLORE (一起想想): at most one clarifying question, no authorization needed', () => {
+    const config = MODE_QUESTION_POLICIES[ResponseMode.EXPLORE];
+    expect(config.maxQuestionsPerTurn).toBe(1);
+    expect(config.allowedQuestionTypes).toContain('clarify');
+    expect(config.requiresAuthorization).toBe(false);
+  });
+
   it('no mode allows more than one question per turn — no interview chains', () => {
     for (const mode of RESPONSE_MODES) {
       expect(MODE_QUESTION_POLICIES[mode].maxQuestionsPerTurn).toBeLessThanOrEqual(1);
@@ -59,8 +66,8 @@ describe('resolveModeAndLevel', () => {
     expect(result).toMatchObject({ mode: ResponseMode.REFLECT, level: 'no_questions', downgraded: false });
   });
 
-  it('UNTANGLE / EXPRESS / CONNECT resolve to light questioning', () => {
-    for (const mode of [ResponseMode.UNTANGLE, ResponseMode.EXPRESS, ResponseMode.CONNECT]) {
+  it('UNTANGLE / EXPRESS / CONNECT / EXPLORE resolve to light questioning', () => {
+    for (const mode of [ResponseMode.UNTANGLE, ResponseMode.EXPRESS, ResponseMode.CONNECT, ResponseMode.EXPLORE]) {
       const result = resolveModeAndLevel(mode, calmState);
       expect(result).toMatchObject({ mode, level: 'light', downgraded: false });
     }
@@ -79,7 +86,7 @@ describe('resolveModeAndLevel', () => {
   });
 
   it('distress override forces no_questions in all other modes without changing the mode', () => {
-    for (const mode of [ResponseMode.REFLECT, ResponseMode.UNTANGLE, ResponseMode.EXPRESS, ResponseMode.CONNECT]) {
+    for (const mode of [ResponseMode.REFLECT, ResponseMode.UNTANGLE, ResponseMode.EXPRESS, ResponseMode.CONNECT, ResponseMode.EXPLORE]) {
       const result = resolveModeAndLevel(mode, distressedState);
       expect(result.mode).toBe(mode);
       expect(result.level).toBe('no_questions');

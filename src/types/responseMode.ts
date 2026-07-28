@@ -16,17 +16,20 @@ export const ResponseMode = {
   EXPRESS: 'express',
   CONNECT: 'connect',
   DISCOVER: 'discover',
+  /** 一起想想 — jointly think through a real event / practical problem. */
+  EXPLORE: 'explore',
 } as const;
 
 export type ResponseModeType = typeof ResponseMode[keyof typeof ResponseMode];
 
-/** Canonical display/order for the selector UI. */
+/** Canonical display/order for the selector UI (一起想想 after 换个角度). */
 export const RESPONSE_MODES: ResponseModeType[] = [
   ResponseMode.REFLECT,
   ResponseMode.UNTANGLE,
   ResponseMode.EXPRESS,
   ResponseMode.CONNECT,
   ResponseMode.DISCOVER,
+  ResponseMode.EXPLORE,
 ];
 
 export function isResponseModeType(value: unknown): value is ResponseModeType {
@@ -35,7 +38,8 @@ export function isResponseModeType(value: unknown): value is ResponseModeType {
     value === ResponseMode.UNTANGLE ||
     value === ResponseMode.EXPRESS ||
     value === ResponseMode.CONNECT ||
-    value === ResponseMode.DISCOVER
+    value === ResponseMode.DISCOVER ||
+    value === ResponseMode.EXPLORE
   );
 }
 
@@ -73,9 +77,9 @@ export function normalizeResponseMode(value: unknown): ResponseModeType {
 
 /**
  * Legacy wire value for compatibility fields (`responseStyle` in the API
- * payload, `sessionStyle` in retained conversations). CONNECT has no legacy
- * equivalent, so it returns undefined and legacy consumers apply their own
- * safe fallback (the deployed backend falls back to mirror).
+ * payload, `sessionStyle` in retained conversations). CONNECT and EXPLORE
+ * have no legacy equivalent, so they return undefined and legacy consumers
+ * apply their own safe fallback (the deployed backend falls back to mirror).
  */
 export function toLegacyResponseStyle(
   mode: ResponseModeType,
@@ -90,13 +94,14 @@ export function toLegacyResponseStyle(
     case ResponseMode.DISCOVER:
       return 'guide';
     case ResponseMode.CONNECT:
+    case ResponseMode.EXPLORE:
       return undefined;
   }
 }
 
 /**
  * Legacy numeric selectedMode (0–3) used by old persisted sessions.
- * CONNECT has no legacy index.
+ * CONNECT and EXPLORE have no legacy index.
  */
 export function toLegacySelectedMode(mode: ResponseModeType): number | null {
   switch (mode) {
@@ -109,6 +114,7 @@ export function toLegacySelectedMode(mode: ResponseModeType): number | null {
     case ResponseMode.EXPRESS:
       return 3;
     case ResponseMode.CONNECT:
+    case ResponseMode.EXPLORE:
       return null;
   }
 }

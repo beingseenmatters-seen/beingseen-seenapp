@@ -38,6 +38,15 @@ describe('sendReflectWithGate — canonical five-mode payloads', () => {
     expect(payload.responseStyle).toBeUndefined();
   });
 
+  it('EXPLORE (一起想想) sends its own canonical identifier — no fallback to another mode', async () => {
+    const fetchMock = mockFetch();
+    await sendReflectWithGate('工作上遇到一个现实问题，想一起想想怎么处理', 'zh', ResponseMode.EXPLORE);
+    const payload = lastPayload(fetchMock);
+    expect(payload.responseMode).toBe('explore');
+    // Like CONNECT, EXPLORE has no legacy equivalent, so no misleading legacy value is sent.
+    expect(payload.responseStyle).toBeUndefined();
+  });
+
   it('every mapped mode produces the correct legacy responseStyle for the deployed backend', async () => {
     const cases: Array<[string, string]> = [
       [ResponseMode.REFLECT, 'mirror'],

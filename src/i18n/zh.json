@@ -261,6 +261,8 @@
     "mode_connect_desc": "看见双方视角，找到更合适的沟通落点",
     "mode_discover_title": "换个角度",
     "mode_discover_desc": "温和指出我可能还没有看见的另一面",
+    "mode_explore_title": "一起想想",
+    "mode_explore_desc": "一起聊聊生活中值得思考的事，看看有没有新的理解和方向。",
     "retention_label": "本次对话",
     "retention_3days": "保存 3 天",
     "retention_7days": "保存 7 天",

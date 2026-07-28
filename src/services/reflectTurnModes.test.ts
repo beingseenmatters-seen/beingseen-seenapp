@@ -96,4 +96,17 @@ describe('mode is resolved per turn, never cached across turns', () => {
     expect(payloadAt(fetchMock, 0).responseStyle).toBe('helper');
     expect(payloadAt(fetchMock, 1).responseStyle).toBeUndefined();
   });
+
+  it('EXPLORE (一起想想) follows the same per-turn lifecycle: applies to one turn, next turn may switch away', async () => {
+    const fetchMock = mockFetch();
+    const res = await sendReflectWithGate('工作上有个决定要做，一起想想', 'zh', ResponseMode.EXPLORE, [], true, 's1');
+    expect(res.requestedMode).toBe('explore');
+    expect(res.effectiveMode).toBe('explore');
+    await sendReflectWithGate('现在只想被听见', 'zh', ResponseMode.REFLECT, [], true, 's1');
+    expect(payloadAt(fetchMock, 0).responseMode).toBe('explore');
+    expect(payloadAt(fetchMock, 1).responseMode).toBe('reflect');
+    // Same session — switching to/from EXPLORE never forks the conversation.
+    expect(payloadAt(fetchMock, 0).sessionId).toBe('s1');
+    expect(payloadAt(fetchMock, 1).sessionId).toBe('s1');
+  });
 });

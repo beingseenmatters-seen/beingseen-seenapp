@@ -282,6 +282,16 @@ export const MODE_QUESTION_POLICIES: Record<ResponseModeType, QuestionPolicyConf
     forbiddenPatterns: [...FORBIDDEN_PATTERNS_ZH, ...FORBIDDEN_PATTERNS_EN],
     outputStructure: '以假设方式提出1-2个另一种解读 -> 最多1个探索性问题，感觉是打开而非纠正',
     requiresAuthorization: true
+  },
+
+  // 一起想想：能直接给有用的分析/建议就不问，仅缺关键信息时最多 1 个澄清问题
+  [ResponseMode.EXPLORE]: {
+    maxQuestionsPerTurn: 1,
+    maxConsecutiveQuestionTurns: 1,
+    allowedQuestionTypes: ['clarify'],
+    forbiddenPatterns: [...FORBIDDEN_PATTERNS_ZH, ...FORBIDDEN_PATTERNS_EN],
+    outputStructure: '承接用户看法 -> 一起分析视角/现实限制/取舍 -> 给出可行的选项或下一步，必要时最多1个澄清问题',
+    requiresAuthorization: false
   }
 };
 

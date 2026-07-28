@@ -52,7 +52,7 @@ describe('buildExtractPrompt', () => {
   it('contains both jobs and embeds the transcript', () => {
     const prompt = buildExtractPrompt('zh', 'User: 我在想工作的事');
     expect(prompt).toContain('JOB 1 — INTERNAL PROFILE');
-    expect(prompt).toContain('JOB 2 — THE REFLECTION');
+    expect(prompt).toContain('JOB 2 — THE UNDERSTANDING UPDATE');
     expect(prompt).toContain('User: 我在想工作的事');
     expect(prompt).toContain('Chinese (Simplified)');
   });
@@ -60,6 +60,49 @@ describe('buildExtractPrompt', () => {
   it('switches the output language for English', () => {
     const prompt = buildExtractPrompt('en', 'User: thinking about work');
     expect(prompt).toContain('Output language for ALL fields: English');
+  });
+
+  it('JOB 2 is an Understanding Update, not a one-sentence summary (founder decision)', () => {
+    const zh = buildExtractPrompt('zh', 'User: 随便聊聊');
+    // Guiding principle: improve understanding, never summarize.
+    expect(zh).toContain("the goal is NOT to summarize today's conversation");
+    expect(zh).toContain("improve Seen's current understanding of the user");
+    // Answers exactly one question — what understanding should be updated.
+    expect(zh).toContain('What understanding should be updated after today');
+    // Updates may be new, refined, strengthened, or revised — not only new.
+    expect(zh).toContain('REFINEMENT, STRENGTHENING, or REVISION');
+    // One short paragraph, approximately 100 Chinese characters (soft range).
+    expect(zh).toContain('Exactly one short paragraph');
+    expect(zh).toContain('approximately 100 Chinese characters');
+    expect(zh).toContain('roughly 60–120 when needed');
+    expect(zh).toContain('Clarity matters more than fitting a number');
+    // Forbidden behaviours from the decision.
+    expect(zh).toContain('Do NOT summarize the conversation');
+    expect(zh).toContain('Do NOT restate or quote');
+    expect(zh).toContain('Do NOT define personality');
+    expect(zh).toContain('Do NOT try to cover everything');
+    // Humble, user-approved inference.
+    expect(zh).toContain('tentative understanding, not fact');
+    // Writing calibration (founder, 2026-07-28): varied openings, update
+    // framing, and openness to future refinement.
+    expect(zh).toContain('VARY the opening');
+    expect(zh).toContain('Do NOT default to one fixed formula');
+    expect(zh).toContain("moved one small step forward");
+    expect(zh).toContain('never "here is who you are"');
+    expect(zh).toContain('leave the understanding open');
+    expect(zh).toContain('NEVER paste a stock closing line');
+    // The old concepts are gone: one-sentence reflection and hard 60–100 limit.
+    expect(zh).not.toContain('THE REFLECTION (');
+    expect(zh).not.toContain('THEIR OWN WORDS');
+    expect(zh).not.toContain('One or two short sentences');
+    expect(zh).not.toContain('60–100 Chinese characters.');
+  });
+
+  it('English prompt carries an equivalent soft length rule', () => {
+    const en = buildExtractPrompt('en', 'User: thinking about work');
+    expect(en).toContain('approximately 70 words');
+    expect(en).toContain('roughly 40–90 when needed');
+    expect(en).not.toContain('approximately 100 Chinese characters');
   });
 });
 

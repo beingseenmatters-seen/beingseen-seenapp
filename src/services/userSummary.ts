@@ -208,7 +208,7 @@ export async function extractSummaryFromBackend(
   });
 
   const extraction: ConversationExtraction = {
-    // EX-001: surface the gentle reflection. `summary` (10-layer synthesis)
+    // Surface the Understanding Update. `summary` (10-layer synthesis)
     // stays internal and is only a fallback for older Lambda deployments.
     summaryText: response.reflection || response.summary || '',
     thinkingStyle: [],

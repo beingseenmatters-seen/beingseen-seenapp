@@ -8,7 +8,7 @@ type Dict = Record<string, Record<string, string>>;
 const zhReflect = (zh as unknown as Dict).reflect;
 const enReflect = (en as unknown as Dict).reflect;
 
-describe('five-mode user-facing labels', () => {
+describe('six-mode user-facing labels', () => {
   it('uses the approved Chinese titles and descriptions', () => {
     expect(zhReflect.mode_reflect_title).toBe('听见我');
     expect(zhReflect.mode_reflect_desc).toBe('先理解我的感受，不急着分析或建议');
@@ -22,13 +22,19 @@ describe('five-mode user-facing labels', () => {
     expect(zhReflect.mode_discover_desc).toBe('温和指出我可能还没有看见的另一面');
   });
 
+  it('uses the exact approved copy for 一起想想 (EXPLORE)', () => {
+    expect(zhReflect.mode_explore_title).toBe('一起想想');
+    expect(zhReflect.mode_explore_desc).toBe('一起聊聊生活中值得思考的事，看看有没有新的理解和方向。');
+  });
+
   it('uses the approved English titles', () => {
     expect(enReflect.mode_reflect_title).toBe('Hear me');
     expect(enReflect.mode_untangle_title).toBe('Help me untangle');
     expect(enReflect.mode_express_title).toBe('Help me express it');
     expect(enReflect.mode_connect_title).toBe('Understand the relationship');
     expect(enReflect.mode_discover_title).toBe('Show me another angle');
-    for (const mode of ['reflect', 'untangle', 'express', 'connect', 'discover']) {
+    expect(enReflect.mode_explore_title).toBe('Think it through together');
+    for (const mode of ['reflect', 'untangle', 'express', 'connect', 'discover', 'explore']) {
       expect(enReflect[`mode_${mode}_desc`]).toBeTruthy();
     }
   });
@@ -36,6 +42,20 @@ describe('five-mode user-facing labels', () => {
   it('keeps the control label 回应方式 / Response mode', () => {
     expect(zhReflect.mode_label).toBe('回应方式');
     expect(enReflect.mode_label).toBe('Response mode');
+  });
+});
+
+describe('selector wiring', () => {
+  it('the Reflect selector renders every canonical mode (EXPLORE included) from RESPONSE_MODES', async () => {
+    const source = readFileSync(resolve(__dirname, '..', 'pages/Reflect.tsx'), 'utf8');
+    // The dropdown maps over the canonical array with shared typography /
+    // checkmark markup, so all six modes render identically and in order.
+    expect(source).toContain('RESPONSE_MODES.map((mode) => ({');
+    expect(source).toContain('t(`reflect.mode_${mode}_title`)');
+    expect(source).toContain('t(`reflect.mode_${mode}_desc`)');
+    const { RESPONSE_MODES } = await import('../types/responseMode');
+    expect(RESPONSE_MODES).toContain('explore');
+    expect(RESPONSE_MODES.indexOf('explore')).toBe(RESPONSE_MODES.indexOf('discover') + 1);
   });
 });
 

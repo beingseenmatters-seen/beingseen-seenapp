@@ -895,7 +895,7 @@ export default function Reflect() {
     transition: { duration: 0.4, ease: "easeOut" as const }
   };
 
-  // Five canonical response modes — user intents, not AI roles.
+  // Six canonical response modes — user intents, not AI roles.
   const modeOptions = RESPONSE_MODES.map((mode) => ({
     mode,
     title: t(`reflect.mode_${mode}_title`),
@@ -1415,12 +1415,14 @@ export default function Reflect() {
               <div className={`space-y-6 ${isDesktop ? 'max-w-lg mx-auto' : ''}`}>
                 <div className="space-y-2">
                   <h3 className="text-xl font-light text-primary">
-                    {effectiveLanguage === 'zh' ? '留下这句话，如果它是真的。' : 'Keep this, if it feels true.'}
+                    {effectiveLanguage === 'zh'
+                      ? '这是 Seen 根据我们的交流，对你的一点理解。'
+                      : 'From our conversation, this is a small piece of how Seen understands you.'}
                   </h3>
                   <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-line">
                     {effectiveLanguage === 'zh'
-                      ? '这是你刚才所说中，最真实的一点 —— 用你自己的话，稍微清晰了一些。\n你可以留下它，也可以放下。'
-                      : 'This is the one thing that felt true in what you said \u2014 in your own words, a little clearer.\nIt is yours to keep, or to let go.'}
+                      ? '这是 Seen 根据刚才的交流，结合目前的理解，整理出的一段话。\n它不一定完全正确。\n如果你觉得符合现在的自己，可以留下。\n如果不太符合，也可以不保留。'
+                      : "Based on our conversation and what Seen understands so far, this is a short note Seen has put together.\nIt may not be entirely right.\nIf it fits who you are right now, you can keep it.\nIf it doesn't quite fit, you don't have to."}
                   </p>
                 </div>
 
@@ -1446,14 +1448,14 @@ export default function Reflect() {
                   >
                     {isSavingDecision
                       ? (effectiveLanguage === 'zh' ? '正在留下…' : 'Keeping…')
-                      : (effectiveLanguage === 'zh' ? '留下' : 'Keep this')}
+                      : (effectiveLanguage === 'zh' ? '符合我，留下' : 'Feels like me — keep it')}
                   </button>
                   <button
                     onClick={handleRejectSummary}
                     disabled={isSavingDecision}
                     className="w-full py-3 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {effectiveLanguage === 'zh' ? '放下' : 'Let it go'}
+                    {effectiveLanguage === 'zh' ? '不太符合，不保留' : "Doesn't quite fit — don't keep it"}
                   </button>
                 </div>
               </div>

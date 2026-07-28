@@ -18,8 +18,12 @@ import {
 const calm = { isDistressed: false };
 
 describe('backend mode normalisation', () => {
-  it('exposes the five canonical modes', () => {
-    expect(CANONICAL_MODES).toEqual(['reflect', 'untangle', 'express', 'connect', 'discover']);
+  it('exposes the six canonical modes', () => {
+    expect(CANONICAL_MODES).toEqual(['reflect', 'untangle', 'express', 'connect', 'discover', 'explore']);
+  });
+
+  it('explore is canonical and never falls back to another mode', () => {
+    expect(normalizeResponseMode('explore')).toBe('explore');
   });
 
   it('maps every legacy value through the approved mapping', () => {
@@ -41,7 +45,7 @@ describe('backend mode normalisation', () => {
     const ts = await import('../types/responseMode');
     for (const value of [
       'mirror', 'organizer', 'helper', 'expression_help', 'guide',
-      'reflect', 'untangle', 'express', 'connect', 'discover', 'junk',
+      'reflect', 'untangle', 'express', 'connect', 'discover', 'explore', 'junk',
     ]) {
       expect(normalizeResponseMode(value)).toBe(ts.normalizeResponseMode(value));
     }
@@ -51,6 +55,8 @@ describe('backend mode normalisation', () => {
 describe('released-client request compatibility (resolveRequestMode)', () => {
   it('prefers canonical responseMode when present', () => {
     expect(resolveRequestMode({ responseMode: 'connect', responseStyle: 'mirror' })).toBe('connect');
+    expect(resolveRequestMode({ responseMode: 'explore', responseStyle: 'mirror' })).toBe('explore');
+    expect(resolveRequestMode({ responseMode: 'explore' })).toBe('explore');
   });
 
   it('released mobile clients sending legacy responseStyle keep working', () => {
@@ -76,13 +82,14 @@ describe('released-client request compatibility (resolveRequestMode)', () => {
     expect(toLegacyModeField('express')).toBe('expression');
     expect(toLegacyModeField('discover')).toBe('guide');
     expect(toLegacyModeField('connect')).toBe('connect');
+    expect(toLegacyModeField('explore')).toBe('explore');
   });
 });
 
 describe('mode-specific prompt contracts (zh)', () => {
-  it('all five modes produce genuinely different instructions', () => {
+  it('all six modes produce genuinely different instructions', () => {
     const prompts = CANONICAL_MODES.map((m: string) => buildModeInstructions(m, 'zh', calm));
-    expect(new Set(prompts).size).toBe(5);
+    expect(new Set(prompts).size).toBe(6);
   });
 
   it('every mode shares the universal layer (mirror-not-oracle, no diagnosis, no fixed labels)', () => {
@@ -149,6 +156,29 @@ describe('mode-specific prompt contracts (zh)', () => {
     expect(p).toContain('打开');
     expect(p).toContain('不是"纠正"');
   });
+
+  it('EXPLORE analyses real problems collaboratively and offers practical next steps', () => {
+    const p = buildModeInstructions('explore', 'zh', calm);
+    expect(p).toContain('一起想想（EXPLORE）');
+    expect(p).toContain('现实问题');
+    expect(p).toContain('我们可以一起看看');
+    expect(p).toContain('可行的选项或下一步');
+    expect(p).toContain('不把假设说成定论');
+    expect(p).toContain('不把每个话题都往关系分析上引');
+    expect(p).toContain('只在缺少关键信息时才问');
+  });
+
+  it('EXPLORE and DISCOVER stay functionally distinct (perspective vs practical solution)', () => {
+    const discover = buildModeInstructions('discover', 'zh', calm);
+    const explore = buildModeInstructions('explore', 'zh', calm);
+    expect(explore).not.toBe(discover);
+    // DISCOVER opens another interpretation and never focuses on building solutions.
+    expect(discover).toContain('另一种解读');
+    expect(discover).not.toContain('可行的选项或下一步');
+    // EXPLORE builds practical options and is not limited to relationships.
+    expect(explore).toContain('可行的选项或下一步');
+    expect(explore).toContain('工作、家庭、学业、职业、人生方向');
+  });
 });
 
 describe('mode-specific prompt contracts (en)', () => {
@@ -172,6 +202,12 @@ describe('mode-specific prompt contracts (en)', () => {
     const discover = buildModeInstructions('discover', 'en', calm);
     expect(discover).toContain('hypotheses, not conclusions');
     expect(discover).toContain('opening, not corrective');
+
+    const explore = buildModeInstructions('explore', 'en', calm);
+    expect(explore).toContain('Think it through together (EXPLORE)');
+    expect(explore).toContain('practical problem');
+    expect(explore).toContain('realistic, concrete options or next steps');
+    expect(explore).toContain('never present assumptions as certainty');
   });
 });
 

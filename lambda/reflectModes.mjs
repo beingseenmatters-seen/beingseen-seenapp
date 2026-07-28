@@ -3,8 +3,8 @@
  *
  * REFLECT_MODE_PROMPT_VERSION = "v3.1"
  *
- * Five user-intent-based response modes:
- *   reflect | untangle | express | connect | discover
+ * Six user-intent-based response modes:
+ *   reflect | untangle | express | connect | discover | explore
  *
  * These are response modes, not AI identities or personalities. The selection
  * means: "What kind of help would be useful in this conversation?"
@@ -19,7 +19,7 @@
  *   organizer → untangle
  *   helper / expression_help / expression → express
  *   guide → discover
- *   (connect is genuinely new — no legacy value maps to it)
+ *   (connect and explore are genuinely new — no legacy value maps to them)
  */
 
 /**
@@ -35,6 +35,7 @@ export const CANONICAL_MODES = [
   "express",
   "connect",
   "discover",
+  "explore",
 ];
 
 const LEGACY_TO_CANONICAL = {
@@ -267,6 +268,18 @@ function modeLayer(mode, language) {
 - 不为了显得有洞见而反驳用户。
 - 最多问一个探索性的问题。
 - 整体感觉应该是"打开"，不是"纠正"。`,
+    explore: `当前回应方式：一起想想（EXPLORE）
+
+首要目的：和用户一起把一件真实发生的事、一个现实问题或一个决定想清楚，看看有没有更好的处理办法。
+
+行为要求：
+- 先承接用户自己的看法，再补充别的角度；用户说得有道理的地方，直接认可。
+- 用协作的语言，比如"我们可以一起看看"，而不是老师、评委或权威的口吻。
+- 一起分析这件事：相关的视角、现实限制、取舍和代价。
+- 在合适的时候，给出现实、具体、可行的选项或下一步，不空泛。
+- 区分已知的事实和推测；对他人动机的推断保持保守，不把假设说成定论。
+- 不把每个话题都往关系分析上引；工作、家庭、学业、职业、人生方向等现实话题就按现实话题来谈。
+- 能直接给出有用的分析或建议时就直接给；最多一个澄清问题，且只在缺少关键信息时才问。`,
   };
 
   const en = {
@@ -327,6 +340,18 @@ Behaviour:
 - Do not contradict the user merely to appear insightful.
 - Ask at most one exploratory question.
 - The response should feel opening, not corrective.`,
+    explore: `Current response mode: Think it through together (EXPLORE)
+
+Primary purpose: jointly think through a real event, practical problem, or decision with the user, and look for realistic ways to handle it.
+
+Behaviour:
+- Acknowledge the user's view first, then add other perspectives; where the user has a point, say so directly.
+- Prefer collaborative language such as "we could look at..." — never the tone of a teacher, judge, or authority.
+- Analyse the situation together: relevant perspectives, real-world constraints, trade-offs, and costs.
+- When appropriate, offer realistic, concrete options or next steps — never vague generalities.
+- Distinguish known facts from inference; stay conservative about other people's motives and never present assumptions as certainty.
+- Do not force the conversation into relationship analysis — work, family, education, career, and life direction are discussed on their own terms.
+- Give a useful analysis or suggestion directly when one is available; ask at most one clarifying question, and only when essential information is missing.`,
   };
 
   const table = language === "en" ? en : zh;
@@ -363,7 +388,18 @@ export function formatExtractTranscript(conversation) {
     .join("\n");
 }
 
-/** The production extraction prompt (moved verbatim from lambda/index.mjs). */
+/**
+ * The production extraction prompt.
+ * JOB 2 produces the "Understanding Update" (founder decision, 2026-07-28):
+ * one short paragraph (approximately 100 Chinese characters, roughly 60–120
+ * when needed) answering "What understanding should be updated after today's
+ * conversation?" — the update may be new, refined, strengthened, or revised
+ * understanding. Its guiding principle: NOT to summarize the conversation,
+ * but to improve Seen's current understanding of the user. The user approves
+ * it before it is kept. It replaced the earlier "one gentle sentence in the
+ * user's own words" concept. The wire field name `reflection` is unchanged
+ * for compatibility.
+ */
 export function buildExtractPrompt(language, transcript) {
   return `You have two separate jobs for the conversation below between a User and an AI. Keep them strictly separate.
 
@@ -374,15 +410,22 @@ Extract a structured 10-layer read of the USER for internal use only.
 - If evidence is limited, use cautious, tentative wording. If evidence for a layer is weak or absent, say less rather than more.
 - Avoid generic psychology-template phrasing. Keep each field concise.
 
-JOB 2 — THE REFLECTION (this is the ONLY thing the user will see):
-Write a single, gentle reflection given back to the user. This is NOT a summary, NOT a portrait, NOT a profile, and NOT "here is what you are." It is the smallest true thing the person said, handed back in THEIR OWN WORDS, only slightly clearer.
+JOB 2 — THE UNDERSTANDING UPDATE (this is the ONLY thing the user will see):
+Guiding principle: the goal is NOT to summarize today's conversation. The goal is to improve Seen's current understanding of the user.
+Write one short paragraph that answers exactly one question: "What understanding should be updated after today's conversation?"
+The update may be NEW understanding, or a REFINEMENT, STRENGTHENING, or REVISION of what Seen already understood — not only something new. The user will read it and decide whether it becomes part of their Understanding, so it must feel like a thoughtful, humble inference, not a verdict.
 Follow these rules absolutely:
-- Speak TO the person ("you"), warmly and plainly, as a close friend might — not about them.
-- One or two short sentences. Shorter is better. It should land like an exhale, not like a result.
-- Stay inside what they actually said. Do not add analysis, labels, traits, categories, conclusions, advice, or praise.
-- Never name emotions, values, patterns, or personality. Never say "you are", "your worldview", "your thinking style", or anything that fixes them.
-- Present-tense, tentative, kind. Reflect one true thing, and let the rest stay unseen.
-- If there is very little to reflect, reflect less — a single honest line is enough. Never pad.
+- Speak TO the person ("you"), warmly and plainly.
+- Exactly one short paragraph, usually 2–3 sentences. ${language === "zh" ? "Length: approximately 100 Chinese characters (roughly 60–120 when needed). If a draft runs past 120 characters, remove the least essential clause before answering. Clarity matters more than fitting a number." : "Length: approximately 70 words (roughly 40–90 when needed). If a draft runs past 90 words, remove the least essential clause before answering. Clarity matters more than fitting a number."}
+- Do NOT summarize the conversation or list what was discussed.
+- Do NOT restate or quote the user's words back to them.
+- Do NOT define personality. Never say "you are ...", never assign traits, types, or fixed labels.
+- Do NOT try to cover everything — one meaningful update to the understanding is enough. Choose the most meaningful one.
+- Express it as tentative understanding, not fact: present-tense, humble, open to correction.
+- Write it as a movement in Seen's understanding — the feeling should be "Seen's understanding moved one small step forward", never "here is who you are".
+- VARY the opening: craft it for THIS conversation; two different conversations should never share the same opening words. Do NOT default to one fixed formula — never open with reusable meta-templates such as "Seen 更倾向于理解…", "今天的交流，让 Seen…", "这次交流让 Seen…", or "有一点理解变得更清晰了…". Instead, begin from the concrete subject of the update itself — the specific choice, relationship, or situation the user faced (e.g. begin by naming it: "在……这件事上/面对……时/关于……"), then connect it to how Seen's understanding moved — humble, tentative, in Seen's voice. A brief "Seen 留意到…" opening is also acceptable occasionally. The philosophy stays consistent; the wording should not.
+- When it fits, leave the understanding open at the end rather than closing with certainty — the spirit of "这仍需要更多生活中的经历慢慢印证" or "Seen 会继续观察这一点是否会变得更稳定". Phrase it freshly each time, tied to this conversation; NEVER paste a stock closing line, and when the paragraph already reads as open, add no closing sentence at all. Understanding should feel alive and still growing.
+- If today's conversation genuinely changed little, say the small true thing that did emerge rather than inventing depth.
 - Output language: ${language === "zh" ? "Chinese (Simplified)" : "English"}.
 
 Output language for ALL fields: ${language === "zh" ? "Chinese (Simplified)" : "English"}.
@@ -402,7 +445,7 @@ REQUIRED JSON STRUCTURE:
     "motivation": "Deep underlying drive or motivation",
     "coreConflict": "The central internal or external conflict"
   },
-  "reflection": "The gentle reflection (Job 2) — one or two short sentences in the user's own words, slightly clearer.",
+  "reflection": "The Understanding Update (Job 2) — one short paragraph capturing what understanding should be updated after today's conversation.",
   "summary": "Internal-only synthesis of the 10 layers in one compact paragraph. NEVER shown to the user."
 }
 
@@ -461,7 +504,7 @@ export function toExtractResponsePayload(parsed, model) {
       motivation: parsed.layers.motivation || "",
       coreConflict: parsed.layers.coreConflict || "",
     },
-    // EX-001: the gentle reflection is the only user-facing text. 'summary'
+    // The Understanding Update is the only user-facing text. 'summary'
     // stays for the internal understanding layer / backward compatibility.
     reflection: parsed.reflection || "",
     summary: parsed.summary || "",
