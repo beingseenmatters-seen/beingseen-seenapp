@@ -19,7 +19,7 @@ import type {
   SketchSummary,
 } from '../../types/moments';
 import { getActiveMoments } from './config';
-import { generateSketch } from './sketchEngine';
+import { generateSketchV2 } from './sketchEngineV2';
 
 /** Minimal async key-value boundary a future Firestore adapter can implement. */
 export interface KeyValueStore {
@@ -265,7 +265,10 @@ export class MomentsService {
    * with the session and moves it to history. Completing an already-completed
    * session returns the stored result unchanged (duplicate protection).
    */
-  async completeSession(sessionId: string): Promise<MomentsSession> {
+  async completeSession(
+    sessionId: string,
+    language: 'zh' | 'en' = 'zh',
+  ): Promise<MomentsSession> {
     const data = await this.read();
 
     const already = data.completedSessions.find((s) => s.id === sessionId);
@@ -280,22 +283,50 @@ export class MomentsService {
       throw new Error(`Session incomplete: ${unanswered.length} unanswered`);
     }
 
-    const result = generateSketch(session.snapshots, session.answers);
+    // Sketch Engine V2: continuity + delta. Prior retained sessions provide
+    // the pre-session Behaviour Understanding; the last two sketches'
+    // provenance drives cooldowns and framing rotation.
+    const retained = data.completedSessions.filter((s) => s.sketch);
+    const sketchNumber = data.completedSessions.length + 1;
+    const result = generateSketchV2({
+      session,
+      priorSessions: retained,
+      recentProvenance: retained
+        .slice(-2)
+        .map((s) => s.sketch!.provenance)
+        .filter((p): p is NonNullable<typeof p> => !!p),
+      sketchNumber,
+      language,
+    });
     const ts = this.now();
     session.status = 'completed';
     session.completedAt = ts;
     session.updatedAt = ts;
     session.sketch = {
-      number: data.completedSessions.length + 1,
+      number: sketchNumber,
       text: result.text,
       generatedAt: ts,
       engineVersion: result.engineVersion,
-      language: 'zh',
+      language,
+      provenance: result.provenance,
     };
     data.completedSessions.push(session);
     data.activeSession = null;
     await this.write(data);
     return session;
+  }
+
+  /**
+   * Delete one retained session (and its sketch). Its Behaviour evidence is
+   * withdrawn with it: understanding is always recombined from the retained
+   * sessions that remain, so every later sketch computes without it.
+   */
+  async deleteCompletedSession(sessionId: string): Promise<void> {
+    const data = await this.read();
+    const next = data.completedSessions.filter((s) => s.id !== sessionId);
+    if (next.length === data.completedSessions.length) return;
+    data.completedSessions = next;
+    await this.write(data);
   }
 
   /** Deliberate discard of an unfinished session (UI must confirm first). */

@@ -6,6 +6,7 @@ import { useLanguage } from '../../i18n';
 import { momentsClient } from '../../services/moments/momentsClient';
 import type { MomentsSession } from '../../types/moments';
 import { localizedText } from '../../services/moments/config';
+import { displaySketchText } from '../../services/moments/sketchEngineV2';
 
 function formatDate(ts: number, language: 'zh' | 'en'): string {
   return new Date(ts).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', {
@@ -79,7 +80,9 @@ export default function SketchDetail() {
           </div>
 
           <div className="p-5 bg-gray-50 rounded-2xl border border-gray-100">
-            <p className="text-sm text-primary font-light leading-loose">{sketch.text}</p>
+            <p className="text-sm text-primary font-light leading-loose">
+              {displaySketchText(sketch, effectiveLanguage)}
+            </p>
           </div>
 
           {/* Collapsed review of the choices, from immutable snapshots */}

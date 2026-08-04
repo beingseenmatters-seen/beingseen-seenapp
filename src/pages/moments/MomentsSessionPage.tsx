@@ -87,7 +87,7 @@ export default function MomentsSessionPage() {
       const updated = await momentsClient.saveAnswer(session.id, snapshot.momentId, selection);
       setSession({ ...updated });
       if (isLast) {
-        const completed = await momentsClient.completeSession(session.id);
+        const completed = await momentsClient.completeSession(session.id, effectiveLanguage);
         navigate(`/moments/result/${completed.id}`, { replace: true });
       } else {
         setIndex(index + 1);

@@ -64,14 +64,15 @@ function tinyLibrary(scenarioZh = '场景一'): MomentDefinition[] {
 }
 
 describe('session creation and locking', () => {
-  it('creates a session with all 10 active Moments, locked ids, versions and snapshots', async () => {
+  it('creates a session of 10 Moments drawn from the active pool, locked ids, versions and snapshots', async () => {
     const service = makeService();
     const session = await service.createSession();
     expect(session.momentIds).toHaveLength(10);
     expect(new Set(session.momentIds).size).toBe(10);
     expect(session.snapshots).toHaveLength(10);
-    for (const m of MOMENT_LIBRARY) {
-      expect(session.momentVersions[m.id]).toBe(m.version);
+    for (const momentId of session.momentIds) {
+      const m = MOMENT_LIBRARY.find((x) => x.id === momentId)!;
+      expect(session.momentVersions[momentId]).toBe(m.version);
     }
     expect(session.id).toMatch(/^ms_/);
     expect(session.createdAt).toBeGreaterThan(0);

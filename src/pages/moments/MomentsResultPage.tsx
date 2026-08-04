@@ -6,10 +6,12 @@ import { momentsClient } from '../../services/moments/momentsClient';
 import type { MomentsSession } from '../../types/moments';
 import { MOMENTS_META } from '../../data/moments/library';
 import { localizedText } from '../../services/moments/config';
+import { displaySketchText } from '../../services/moments/sketchEngineV2';
 
 /**
  * /moments/result/:sessionId — the stored sketch for a completed session.
- * Always displays the text generated at completion time; never regenerates.
+ * Selection is frozen at completion; wording follows the active UI language
+ * when Sketch V2 provenance is present.
  */
 export default function MomentsResultPage() {
   const navigate = useNavigate();
@@ -82,7 +84,9 @@ export default function MomentsResultPage() {
           </div>
 
           <div className="p-5 bg-gray-50 rounded-2xl border border-gray-100">
-            <p className="text-sm text-primary font-light leading-loose">{sketch.text}</p>
+            <p className="text-sm text-primary font-light leading-loose">
+              {displaySketchText(sketch, effectiveLanguage)}
+            </p>
           </div>
 
           <p className="text-[11px] text-muted font-light leading-relaxed whitespace-pre-line">
