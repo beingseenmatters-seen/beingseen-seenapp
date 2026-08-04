@@ -2,8 +2,8 @@
  * Test-only fixtures for the Moments framework.
  *
  * The ranking Moment below exists ONLY to exercise the generic ranking
- * renderer/validation — there is no approved production ranking Moment and
- * this fixture must never be added to the production library.
+ * renderer/validation in isolation (production ranking Moments M-P11/M-P12
+ * now exist too). This fixture must never be added to the production library.
  */
 
 import type { MomentDefinition } from '../../types/moments';
@@ -50,6 +50,9 @@ export const SAMPLE_PROFILE_A: Record<string, string[]> = {
   'M-P08': ['C'],
   'M-P09': ['D'],
   'M-P10': ['D'],
+  // Ranking Moments: top-3 selections in order (founder-approved expansion).
+  'M-P11': ['C', 'F', 'B'],
+  'M-P12': ['A', 'D', 'G'],
 };
 
 export const SAMPLE_PROFILE_B: Record<string, string[]> = {
@@ -63,4 +66,6 @@ export const SAMPLE_PROFILE_B: Record<string, string[]> = {
   'M-P08': ['A'],
   'M-P09': ['A'],
   'M-P10': ['A'],
+  'M-P11': ['I', 'H', 'G'],
+  'M-P12': ['F', 'C', 'G'],
 };
