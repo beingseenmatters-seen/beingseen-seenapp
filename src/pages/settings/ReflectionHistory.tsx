@@ -11,6 +11,13 @@ import { useKeptReflections } from '../../hooks/useKeptReflections';
  *   - Firestore: users/{uid}/keptReflections/{id}
  *   - Offline: seen_kept_reflections
  *
+ * Founder Decision (2026-08-05):
+ * 「我留下的理解」is a temporary user surface — a history of user-approved
+ * Reflect Understanding Updates only. It is NOT Current Understanding.
+ * When Current Understanding ships later, these records remain historical
+ * and must not automatically become Current Understanding (which is derived,
+ * not equal to saved updates).
+ *
  * Reads only user-approved kept reflections (text + date).
  * Delete is not exposed here — remote delete is best-effort and can
  * reappear after hydrate if it fails (report separately).

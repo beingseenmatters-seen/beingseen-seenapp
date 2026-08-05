@@ -113,7 +113,7 @@ export default function Me() {
             </>
           )}
 
-          {/* Reflect kept understandings — separate from Moments sketches */}
+          {/* Reflect kept-understanding history (temporary surface; not Current Understanding) */}
           <MenuItem
             title={t('me.kept_understandings_title')}
             subtitle={

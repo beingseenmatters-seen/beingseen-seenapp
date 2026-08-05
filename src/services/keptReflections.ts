@@ -13,7 +13,10 @@
  *  - Writes are write-through: cache first (instant), then Firestore best-effort.
  *  - On sign-in, `hydrateKeptReflections` reconciles cache and Firestore.
  *
- * The Me page surfaces this in Sprint 3 via `useKeptReflections`.
+ * The Me page surfaces this via `useKeptReflections` as「我留下的理解」—
+ * a history of user-approved Reflect Understanding Updates only.
+ * Founder Decision: this is NOT Current Understanding and must not be
+ * promoted into Current Understanding automatically.
  */
 
 import { auth, db } from './firebase';
