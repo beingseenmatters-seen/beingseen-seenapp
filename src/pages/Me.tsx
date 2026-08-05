@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../i18n';
 import { useAuth } from '../auth';
 import { usePlatform } from '../hooks/usePlatform';
+import { useKeptReflections } from '../hooks/useKeptReflections';
 import { momentsClient } from '../services/moments/momentsClient';
 import type { MomentsOverview } from '../services/moments/momentsService';
 
@@ -12,12 +13,15 @@ export default function Me() {
   const { t } = useLanguage();
   const { signOut } = useAuth();
   const { isDesktop } = usePlatform();
+  const { reflections } = useKeptReflections();
 
   const [moments, setMoments] = useState<MomentsOverview | null>(null);
 
   useEffect(() => {
     momentsClient.getOverview().then(setMoments).catch(() => setMoments(null));
   }, []);
+
+  const keptCount = reflections.length;
 
   const handleLogout = async () => {
     await signOut();
@@ -108,6 +112,18 @@ export default function Me() {
               />
             </>
           )}
+
+          {/* Reflect kept understandings — separate from Moments sketches */}
+          <MenuItem
+            title={t('me.kept_understandings_title')}
+            subtitle={
+              keptCount === 0
+                ? t('me.kept_understandings_empty')
+                : t('me.kept_understandings_count').replace('{{count}}', String(keptCount))
+            }
+            description={t('me.kept_understandings_sub')}
+            onClick={() => navigate('/me/reflect-understandings')}
+          />
         </Section>
 
         {/* ==================== C. 数据与隐私 ==================== */}
@@ -160,17 +176,30 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function MenuItem({ title, subtitle, onClick }: { title: string; subtitle: string; onClick?: () => void }) {
+function MenuItem({
+  title,
+  subtitle,
+  description,
+  onClick,
+}: {
+  title: string;
+  subtitle: string;
+  description?: string;
+  onClick?: () => void;
+}) {
   return (
     <button
       onClick={onClick}
       className="w-full flex items-center justify-between p-5 bg-white border border-gray-100 rounded-2xl hover:border-gray-300 transition-all duration-300 group shadow-sm"
     >
-      <div className="text-left">
-        <h4 className="text-base font-medium text-primary mb-1">{title}</h4>
+      <div className="text-left space-y-1">
+        <h4 className="text-base font-medium text-primary">{title}</h4>
+        {description && (
+          <p className="text-xs text-secondary font-light leading-relaxed">{description}</p>
+        )}
         <p className="text-xs text-muted group-hover:text-secondary transition-colors">{subtitle}</p>
       </div>
-      <ChevronRight size={18} className="text-gray-400 group-hover:text-primary transition-colors" />
+      <ChevronRight size={18} className="text-gray-400 group-hover:text-primary transition-colors shrink-0 ml-3" />
     </button>
   );
 }

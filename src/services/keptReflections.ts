@@ -77,9 +77,15 @@ function toFirestore(r: KeptReflection): Record<string, unknown> {
   return payload;
 }
 
-/** All kept reflections (from the local cache), most recent first. */
+/** All kept reflections (from the local cache), most recent first. Deduped by stable id. */
 export function getKeptReflections(): KeptReflection[] {
-  return readAll().sort((a, b) => b.createdAt - a.createdAt);
+  const byId = new Map<string, KeptReflection>();
+  for (const r of readAll()) {
+    if (!r?.id || !r.text?.trim()) continue;
+    const prev = byId.get(r.id);
+    if (!prev || r.createdAt > prev.createdAt) byId.set(r.id, r);
+  }
+  return Array.from(byId.values()).sort((a, b) => b.createdAt - a.createdAt);
 }
 
 /**

@@ -357,6 +357,18 @@
     "menu_latest_sketch_sub": "See how Seen recently sketched you",
     "menu_all_sketches": "My Sketches",
     "menu_all_sketches_sub": "{{n}} sketches so far",
+    "kept_understandings_title": "Understandings I Kept",
+    "kept_understandings_sub": "These are the understandings you chose to keep after Reflect conversations.",
+    "kept_understandings_empty": "No kept understandings yet",
+    "kept_understandings_count": "{{count}} kept",
+    "reflections": {
+      "page_header": "Kept understandings",
+      "page_title": "Understandings I Kept",
+      "page_desc": "These are the understandings you chose to keep after Reflect conversations. They stay here until you decide to let them go.",
+      "empty_title": "No kept understandings yet",
+      "empty_desc": "After a Reflect conversation, if an understanding feels like you, you can keep it.",
+      "empty_action": "Go to Reflect"
+    },
     "section_data": "Data & Privacy",
     "menu_privacy": "Privacy & Data",
     "menu_privacy_sub": "Export or Delete Data",

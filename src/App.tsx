@@ -25,6 +25,7 @@ import MomentsSessionPage from './pages/moments/MomentsSessionPage';
 import MomentsResultPage from './pages/moments/MomentsResultPage';
 import MySketches from './pages/me/MySketches';
 import SketchDetail from './pages/me/SketchDetail';
+import ReflectionHistory from './pages/settings/ReflectionHistory';
 
 function SplashScreen() {
   return (
@@ -155,6 +156,7 @@ function AppRoutes() {
       <Route path="/moments/result/:sessionId" element={<MomentsResultPage />} />
       <Route path="/me/sketches" element={<MySketches />} />
       <Route path="/me/sketches/:sessionId" element={<SketchDetail />} />
+      <Route path="/me/reflect-understandings" element={<ReflectionHistory />} />
       <Route path="/delete-account" element={<DeleteAccount />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

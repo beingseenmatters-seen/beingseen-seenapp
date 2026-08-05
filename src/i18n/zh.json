@@ -357,6 +357,18 @@
     "menu_latest_sketch_sub": "看看 Seen 最近画下的你",
     "menu_all_sketches": "我的速写",
     "menu_all_sketches_sub": "已有 {{n}} 幅速写",
+    "kept_understandings_title": "我留下的理解",
+    "kept_understandings_sub": "这些是你在对话结束时确认保留的理解。",
+    "kept_understandings_empty": "还没有留下的理解",
+    "kept_understandings_count": "已留下 {{count}} 条",
+    "reflections": {
+      "page_header": "留下的理解",
+      "page_title": "我留下的理解",
+      "page_desc": "这些是你在 Reflect 对话结束时确认保留的理解。它们会一直留在这里，直到你决定放下。",
+      "empty_title": "还没有留下的理解",
+      "empty_desc": "结束一次 Reflect 对话后，如果某段理解符合你，可以选择留下。",
+      "empty_action": "去 Reflect 聊聊"
+    },
     "section_data": "数据与隐私",
     "menu_privacy": "隐私与数据",
     "menu_privacy_sub": "导出或删除我的数据",
