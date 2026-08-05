@@ -434,7 +434,11 @@
     "back_to_me": "回到「我」",
     "completed": "已完成",
     "review_choices": "回看这次选择",
-    "history_empty": "还没有速写。\n完成一组 Moments，Seen 会为你画下第一幅。"
+    "history_empty": "还没有速写。\n完成一组 Moments，Seen 会为你画下第一幅。",
+    "invite_title": "看看生活中你会怎么做",
+    "invite_body": "10 个生活片段，大约 2 分钟。\nSeen 会从你的选择开始，一点一点理解你。",
+    "invite_cta_start": "开始体验",
+    "invite_cta_later": "以后再说"
   },
   "settings": {
     "profile": {
