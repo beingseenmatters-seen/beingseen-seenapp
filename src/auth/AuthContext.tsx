@@ -16,6 +16,7 @@ import * as appleNative from './providers/appleNative';
 import * as firestoreOps from './firestore';
 import { registerDeepLinkListener } from './deepLink';
 import { isNative, isWeb } from './platform';
+import { detachKeptReflectionsOnLogout } from '../services/keptReflections';
 
 // ---------------------------------------------------------------------------
 // State
@@ -416,21 +417,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const deleteAccount = useCallback(async () => {
     if (!state.firebaseUser) throw new Error('No authenticated user');
+    const uid = state.firebaseUser.uid;
     dispatch({ type: 'LOADING' });
     try {
-      console.log('[auth] starting account deletion for', state.firebaseUser.uid);
+      console.log('[auth] starting account deletion for', uid);
       // 1. Delete user document from Firestore
-      await firestoreOps.deleteUserDocument(state.firebaseUser.uid);
+      await firestoreOps.deleteUserDocument(uid);
       console.log('[auth] firestore document deleted');
       
       // 2. Delete user from Firebase Auth
       await state.firebaseUser.delete();
       console.log('[auth] firebase auth user deleted');
       
-      // 3. Clear local storage
+      // 3. Clear local storage + detach kept-understandings mirror (account isolation)
       emailLink.clearStoredEmail();
       localStorage.removeItem('seen_user');
       localStorage.removeItem('seen_reflect_session');
+      detachKeptReflectionsOnLogout(uid);
       
       dispatch({ type: 'SET_USER', firebaseUser: null, seenUser: null });
       console.log('[auth] account deletion completed');
@@ -443,16 +446,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOutAction = useCallback(async () => {
     dispatch({ type: 'LOADING' });
+    // Capture uid before Firebase clears auth.currentUser.
+    const uid = auth.currentUser?.uid ?? state.firebaseUser?.uid ?? null;
     try {
       await firebaseSignOut(auth);
       emailLink.clearStoredEmail();
       localStorage.removeItem('seen_user');
+      detachKeptReflectionsOnLogout(uid);
       dispatch({ type: 'SET_USER', firebaseUser: null, seenUser: null });
       console.log('[auth] user signed out');
     } catch (err) {
       dispatch({ type: 'SET_ERROR', error: friendlyErrorKey(err) });
     }
-  }, []);
+  }, [state.firebaseUser]);
 
   const clearError = useCallback(() => {
     dispatch({ type: 'CLEAR_ERROR' });

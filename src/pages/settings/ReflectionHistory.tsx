@@ -7,9 +7,8 @@ import { useKeptReflections } from '../../hooks/useKeptReflections';
 /**
  * Kept Reflect Understanding Updates (Me surface).
  *
- * Source of truth: keptReflections store
- *   - Firestore: users/{uid}/keptReflections/{id}
- *   - Offline: seen_kept_reflections
+ * Source of truth: Firestore users/{uid}/keptReflections/{id}
+ * Offline mirror: seen_kept_reflections_v2_{uid} (uid-scoped; never global)
  *
  * Founder Decision (2026-08-05):
  * 「我留下的理解」is a temporary user surface — a history of user-approved

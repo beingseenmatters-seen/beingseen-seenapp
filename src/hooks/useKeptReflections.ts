@@ -12,9 +12,9 @@ import {
 /**
  * Reflection History reader (Phase 4 · Sprint 3).
  *
- * Reads from the local cache for instant, offline-friendly access, and keeps it
- * reconciled with the durable Firestore backing store on sign-in (cross-device
- * persistence). The Me page consumes this to surface kept Reflections.
+ * Offline mirror is uid-scoped. On sign-in, hydrate REPLACES that uid's mirror
+ * from Firestore (source of truth). On sign-out, AuthContext detaches the
+ * previous uid's mirror so another account never inherits it.
  */
 export function useKeptReflections() {
   const [reflections, setReflections] = useState<KeptReflection[]>([]);
@@ -26,8 +26,13 @@ export function useKeptReflections() {
   useEffect(() => {
     refresh();
     const unsubscribeStore = subscribeKeptReflections(refresh);
-    // Reconcile with Firestore whenever auth resolves/changes; refresh after.
-    const unsubscribeAuth = onAuthStateChanged(auth, () => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        // Logout detach already cleared the mirror; render empty immediately.
+        refresh();
+        return;
+      }
+      // Replace local mirror with this uid's Firestore only — never merge.
       void hydrateKeptReflections().then(refresh);
     });
     return () => {

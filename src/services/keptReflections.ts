@@ -1,17 +1,13 @@
 /**
  * Reflection History — durable data capability (Phase 4 · Sprint 3).
  *
- * EX-001 §2/§8: history is the person's collection of *approved Reflections* —
- * "the smallest true thing" they chose to keep — never conversation transcripts.
- * Reflections stay until the person removes them (no expiry, no counts, no streaks).
- *
- * Storage model (per founder review):
- *  - The local abstraction REMAINS: a localStorage cache is the fast, offline,
- *    and signed-out store. Reads are synchronous from this cache.
- *  - Firestore (`users/{uid}/keptReflections/{id}`) is the durable BACKING store
- *    so reflections persist across devices once the person is signed in.
- *  - Writes are write-through: cache first (instant), then Firestore best-effort.
- *  - On sign-in, `hydrateKeptReflections` reconciles cache and Firestore.
+ * Account isolation (P0):
+ *  - Local cache is uid-scoped. Never a device-global list.
+ *  - Firestore (`users/{uid}/keptReflections/{id}`) is the source of truth.
+ *  - Local cache is only an offline mirror for that uid.
+ *  - Hydration REPLACES the mirror for the current uid. Never merges
+ *    another user's cache. Never migrates records across uids.
+ *  - Logout detaches the previous user's local mirror completely.
  *
  * The Me page surfaces this via `useKeptReflections` as「我留下的理解」—
  * a history of user-approved Reflect Understanding Updates only.
@@ -38,13 +34,33 @@ export interface KeptReflection {
   sessionId?: string;
 }
 
-const STORAGE_KEY = 'seen_kept_reflections';
+/** Legacy device-global key — must never be used as a live store. */
+const LEGACY_GLOBAL_KEY = 'seen_kept_reflections';
+
+const STORAGE_KEY_PREFIX = 'seen_kept_reflections_v2_';
+
 /** Fired (same-tab) whenever the kept-reflections store changes. */
 export const KEPT_REFLECTIONS_EVENT = 'seen:kept-reflections-changed';
 
-function readAll(): KeptReflection[] {
+export function keptReflectionsStorageKey(uid: string): string {
+  return `${STORAGE_KEY_PREFIX}${uid}`;
+}
+
+function currentUid(): string | null {
+  return auth.currentUser?.uid ?? null;
+}
+
+function purgeLegacyGlobalCache(): void {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    localStorage.removeItem(LEGACY_GLOBAL_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function readAllForUid(uid: string): KeptReflection[] {
+  try {
+    const raw = localStorage.getItem(keptReflectionsStorageKey(uid));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as KeptReflection[];
     return Array.isArray(parsed) ? parsed : [];
@@ -53,17 +69,26 @@ function readAll(): KeptReflection[] {
   }
 }
 
-function writeAll(reflections: KeptReflection[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(reflections));
+function writeAllForUid(uid: string, reflections: KeptReflection[]): void {
+  localStorage.setItem(keptReflectionsStorageKey(uid), JSON.stringify(reflections));
+  notifyKeptReflectionsChanged();
+}
+
+function removeAllForUid(uid: string): void {
+  try {
+    localStorage.removeItem(keptReflectionsStorageKey(uid));
+  } catch {
+    // ignore
+  }
+  notifyKeptReflectionsChanged();
+}
+
+function notifyKeptReflectionsChanged(): void {
   try {
     window.dispatchEvent(new CustomEvent(KEPT_REFLECTIONS_EVENT));
   } catch {
     // SSR / non-browser — no-op
   }
-}
-
-function currentUid(): string | null {
-  return auth.currentUser?.uid ?? null;
 }
 
 function reflectionsCollection(uid: string) {
@@ -80,10 +105,32 @@ function toFirestore(r: KeptReflection): Record<string, unknown> {
   return payload;
 }
 
-/** All kept reflections (from the local cache), most recent first. Deduped by stable id. */
+function normalizeRemoteDoc(
+  id: string,
+  data: Partial<KeptReflection>,
+): KeptReflection | null {
+  const text = typeof data.text === 'string' ? data.text.trim() : '';
+  if (!text) return null;
+  return {
+    id,
+    text,
+    createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
+    language: data.language === 'en' ? 'en' : 'zh',
+    sessionId: typeof data.sessionId === 'string' ? data.sessionId : undefined,
+  };
+}
+
+/**
+ * All kept reflections for the signed-in uid (offline mirror), most recent first.
+ * Signed out → empty. Never reads another uid's mirror or the legacy global key.
+ */
 export function getKeptReflections(): KeptReflection[] {
+  purgeLegacyGlobalCache();
+  const uid = currentUid();
+  if (!uid) return [];
+
   const byId = new Map<string, KeptReflection>();
-  for (const r of readAll()) {
+  for (const r of readAllForUid(uid)) {
     if (!r?.id || !r.text?.trim()) continue;
     const prev = byId.get(r.id);
     if (!prev || r.createdAt > prev.createdAt) byId.set(r.id, r);
@@ -92,9 +139,8 @@ export function getKeptReflections(): KeptReflection[] {
 }
 
 /**
- * Persist an approved reflection. Returns the stored record, or null when the
- * reflection has no meaningful text. Writes the cache synchronously, then the
- * Firestore backing store best-effort (when signed in).
+ * Persist an approved reflection for the current uid only.
+ * Requires a signed-in user — never writes a device-global cache.
  */
 export function saveKeptReflection(input: {
   text: string;
@@ -104,6 +150,12 @@ export function saveKeptReflection(input: {
   const text = input.text?.trim();
   if (!text) return null;
 
+  const uid = currentUid();
+  if (!uid) {
+    console.warn('[KeptReflections] refuse save without signed-in uid (account isolation)');
+    return null;
+  }
+
   const reflection: KeptReflection = {
     id: crypto.randomUUID(),
     text,
@@ -112,77 +164,79 @@ export function saveKeptReflection(input: {
     sessionId: input.sessionId,
   };
 
-  const all = readAll();
+  const all = readAllForUid(uid);
   all.unshift(reflection);
-  writeAll(all);
+  writeAllForUid(uid, all);
 
-  const uid = currentUid();
-  if (uid) {
-    void setDoc(doc(reflectionsCollection(uid), reflection.id), toFirestore(reflection)).catch(
-      (err) => console.warn('[KeptReflections] Firestore write failed (cached locally):', err),
-    );
-  }
+  void setDoc(doc(reflectionsCollection(uid), reflection.id), toFirestore(reflection)).catch(
+    (err) => console.warn('[KeptReflections] Firestore write failed (mirrored locally):', err),
+  );
 
   return reflection;
 }
 
-/** Remove a single kept reflection from cache and the backing store. */
+/** Remove a single kept reflection from this uid's mirror and Firestore. */
 export function deleteKeptReflection(id: string): void {
-  writeAll(readAll().filter((r) => r.id !== id));
-
   const uid = currentUid();
-  if (uid) {
-    void deleteDoc(doc(reflectionsCollection(uid), id)).catch((err) =>
-      console.warn('[KeptReflections] Firestore delete failed:', err),
-    );
-  }
-}
+  if (!uid) return;
 
-/** Remove every kept reflection from the local cache (does not bulk-clear Firestore). */
-export function clearKeptReflections(): void {
-  writeAll([]);
+  writeAllForUid(
+    uid,
+    readAllForUid(uid).filter((r) => r.id !== id),
+  );
+
+  void deleteDoc(doc(reflectionsCollection(uid), id)).catch((err) =>
+    console.warn('[KeptReflections] Firestore delete failed:', err),
+  );
 }
 
 /**
- * Reconcile the local cache with the Firestore backing store for the signed-in
- * user. Firestore is authoritative for reflections it already holds; any
- * cache-only reflections (e.g. created while signed out) are migrated up so the
- * person never loses a kept reflection when they sign in. Safe to call on auth
- * changes; no-ops when signed out.
+ * Clear the current uid's local offline mirror (does not bulk-clear Firestore).
+ * Prefer `detachKeptReflectionsOnLogout` on sign-out.
+ */
+export function clearKeptReflections(): void {
+  purgeLegacyGlobalCache();
+  const uid = currentUid();
+  if (!uid) {
+    notifyKeptReflectionsChanged();
+    return;
+  }
+  removeAllForUid(uid);
+}
+
+/**
+ * Logout / account switch: completely detach this uid's local mirror and the
+ * legacy global key so the next account cannot see or inherit prior data.
+ * Call with the uid captured BEFORE Firebase signOut clears auth.currentUser.
+ */
+export function detachKeptReflectionsOnLogout(uid: string | null | undefined): void {
+  purgeLegacyGlobalCache();
+  if (uid) removeAllForUid(uid);
+  else notifyKeptReflectionsChanged();
+}
+
+/**
+ * Replace the current uid's offline mirror with Firestore for that uid only.
+ * Never merges another user's cache. Never uploads local-only rows into Firestore.
  */
 export async function hydrateKeptReflections(): Promise<void> {
+  purgeLegacyGlobalCache();
+
   const uid = currentUid();
   if (!uid) return;
 
   try {
     const snapshot = await getDocs(reflectionsCollection(uid));
-    const remote: KeptReflection[] = snapshot.docs.map((d) => {
-      const data = d.data() as Partial<KeptReflection>;
-      return {
-        id: d.id,
-        text: typeof data.text === 'string' ? data.text : '',
-        createdAt: typeof data.createdAt === 'number' ? data.createdAt : Date.now(),
-        language: data.language === 'en' ? 'en' : 'zh',
-        sessionId: typeof data.sessionId === 'string' ? data.sessionId : undefined,
-      };
-    });
-
-    const remoteIds = new Set(remote.map((r) => r.id));
-    const cacheOnly = readAll().filter((r) => !remoteIds.has(r.id) && r.text.trim());
-
-    // Migrate cache-only reflections to the durable backing store.
-    await Promise.all(
-      cacheOnly.map((r) =>
-        setDoc(doc(reflectionsCollection(uid), r.id), toFirestore(r)).catch((err) =>
-          console.warn('[KeptReflections] Firestore migrate failed:', err),
-        ),
-      ),
-    );
-
-    const merged = [...remote, ...cacheOnly].sort((a, b) => b.createdAt - a.createdAt);
-    writeAll(merged);
+    const remote: KeptReflection[] = [];
+    for (const d of snapshot.docs) {
+      const row = normalizeRemoteDoc(d.id, d.data() as Partial<KeptReflection>);
+      if (row) remote.push(row);
+    }
+    remote.sort((a, b) => b.createdAt - a.createdAt);
+    // REPLACE — never merge prior device cache into this uid.
+    writeAllForUid(uid, remote);
   } catch (err) {
-    console.warn('[KeptReflections] Firestore hydrate failed (using local cache):', err);
+    console.warn('[KeptReflections] Firestore hydrate failed (keeping uid mirror if any):', err);
   }
 }
 
@@ -193,7 +247,12 @@ export async function hydrateKeptReflections(): Promise<void> {
 export function subscribeKeptReflections(callback: () => void): () => void {
   const onChange = () => callback();
   const onStorage = (e: StorageEvent) => {
-    if (e.key === STORAGE_KEY) callback();
+    if (
+      e.key === LEGACY_GLOBAL_KEY ||
+      (typeof e.key === 'string' && e.key.startsWith(STORAGE_KEY_PREFIX))
+    ) {
+      callback();
+    }
   };
   window.addEventListener(KEPT_REFLECTIONS_EVENT, onChange);
   window.addEventListener('storage', onStorage);

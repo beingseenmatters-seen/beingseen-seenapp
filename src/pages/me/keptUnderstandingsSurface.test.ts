@@ -45,6 +45,17 @@ describe('Reflect kept understandings Me surface', () => {
     expect(rejectBlock).not.toContain('saveApprovedSummary');
   });
 
+  it('kept store is uid-scoped, logout detaches, hydrate replaces without merge', () => {
+    const store = read('services/keptReflections.ts');
+    expect(store).toContain('seen_kept_reflections_v2_');
+    expect(store).toContain('detachKeptReflectionsOnLogout');
+    expect(store).toMatch(/REPLACE|Replace/);
+    expect(store).not.toMatch(/cacheOnly/);
+    expect(store).not.toMatch(/Migrate cache-only/);
+    const auth = read('auth/AuthContext.tsx');
+    expect(auth).toContain('detachKeptReflectionsOnLogout');
+  });
+
   it('bilingual Me copy exists and avoids Sketch / Current Understanding labels', () => {
     const zh = JSON.parse(read('i18n/zh.json'));
     const en = JSON.parse(read('i18n/en.json'));
