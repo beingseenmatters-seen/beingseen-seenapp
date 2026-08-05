@@ -434,7 +434,11 @@
     "back_to_me": "Back to Me",
     "completed": "Completed",
     "review_choices": "Review these choices",
-    "history_empty": "No sketches yet.\nComplete a set of Moments and Seen will draw the first one."
+    "history_empty": "No sketches yet.\nComplete a set of Moments and Seen will draw the first one.",
+    "invite_title": "See how you'd respond in everyday life",
+    "invite_body": "10 everyday moments. About 2 minutes.\nSeen begins to understand you through the choices you make.",
+    "invite_cta_start": "Start Moments",
+    "invite_cta_later": "Maybe later"
   },
   "settings": {
     "profile": {

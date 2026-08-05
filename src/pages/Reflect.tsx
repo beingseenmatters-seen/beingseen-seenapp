@@ -44,6 +44,8 @@ import {
 import type { ConversationExtraction } from '../types/userSummary';
 import { saveKeptReflection } from '../services/keptReflections';
 import { getResonateCandidate } from '../services/connections';
+import MomentsInvitationCard from '../components/moments/MomentsInvitationCard';
+import { useMomentsInvitation } from '../hooks/useMomentsInvitation';
 
 interface Message {
   role: 'user' | 'ai' | 'system';
@@ -145,6 +147,10 @@ export default function Reflect() {
 
   // Recent conversations for desktop sidebar + mobile drawer
   const { conversations: recentConversations, refresh: refreshRecentConversations } = useRecentConversations();
+
+  // Lightweight Moments discovery (post-onboarding, step 0 only). Does not
+  // touch Reflect evidence / CU / matching. Me Moments card remains the natural entry.
+  const momentsInvite = useMomentsInvitation();
 
   // Voice input (mobile native only)
   const voice = useVoiceRecorder();
@@ -1281,6 +1287,16 @@ export default function Reflect() {
                     {effectiveLanguage === 'zh' ? '继续了解 →' : 'Continue understanding →'}
                   </span>
                 </button>
+              )}
+
+              {momentsInvite.visible && (
+                <div className={`${isDesktop ? 'mb-3' : 'mx-auto w-full max-w-sm mb-3'}`}>
+                  <MomentsInvitationCard
+                    onStart={() => void momentsInvite.start()}
+                    onDismiss={momentsInvite.dismiss}
+                    starting={momentsInvite.starting}
+                  />
+                </div>
               )}
 
               <div className={`${isDesktop ? 'space-y-2 pb-3' : 'mx-auto w-full max-w-sm space-y-2.5'}`}>
