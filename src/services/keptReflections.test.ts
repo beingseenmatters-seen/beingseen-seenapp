@@ -33,10 +33,10 @@ const collection = vi.fn((...segments: string[]) => ({ path: segments.join('/') 
 
 vi.mock('firebase/firestore', () => ({
   collection: (...args: string[]) => collection(...args),
-  deleteDoc: (...args: unknown[]) => deleteDoc(...args),
-  doc: (...args: unknown[]) => doc(...args),
-  getDocs: (...args: unknown[]) => getDocs(...args),
-  setDoc: (...args: unknown[]) => setDoc(...args),
+  deleteDoc: (...args: unknown[]) => deleteDoc(...(args as [])),
+  doc: (...args: unknown[]) => doc(...(args as [unknown, string])),
+  getDocs: (...args: unknown[]) => getDocs(...(args as [])),
+  setDoc: (...args: unknown[]) => setDoc(...(args as [])),
 }));
 
 import {
