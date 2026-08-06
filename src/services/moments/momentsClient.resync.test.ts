@@ -5,10 +5,10 @@ const ensureReady = vi.fn(async () => undefined);
 
 vi.mock('./libraryClient', () => {
   class MomentLibraryClient {
-    constructor(
-      _store: unknown,
-      public getRegion: () => string,
-    ) {}
+    getRegion: () => string;
+    constructor(_store: unknown, getRegion: () => string) {
+      this.getRegion = getRegion;
+    }
     ensureReady = ensureReady;
     syncRemote = syncRemote;
     getActiveMoments = () => [];
