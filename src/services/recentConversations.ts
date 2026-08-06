@@ -8,8 +8,8 @@
  *  - Once completed, generate one Understanding Update; user chooses
  *    符合我，留下 / 不太符合，不保留.
  *  - If kept: persist ONLY the approved Understanding Update (Me「我留下的理解」).
- *    The original transcript must NOT become permanent user-facing history;
- *    discard it when the short-term retention window ends.
+ *    The original transcript must NOT remain user-facing after the Keep/Reject
+ *    decision — dispose immediately (tombstone retained row + clear session).
  *  - Long-term user-facing Reflect artifact = approved Understanding Updates only.
  *  - Moments keep Sketches; Reflect keeps Understanding Updates; channels stay
  *    independent. Current Understanding is derived later from evidence — never
@@ -103,6 +103,15 @@ function writeAll(convos: RetainedConversation[]): void {
   const uid = currentUid();
   if (!uid) return;
   localStorage.setItem(retainedConversationsStorageKey(uid), JSON.stringify(convos));
+  notifyRetainedConversationsChanged();
+}
+
+/** Fired after retained conversation storage changes (Sidebar / drawer refresh). */
+export const RETAINED_CONVERSATIONS_CHANGED_EVENT = 'seen:retained-conversations-changed';
+
+export function notifyRetainedConversationsChanged(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(RETAINED_CONVERSATIONS_CHANGED_EVENT));
 }
 
 function generateTitle(messages: ConversationMessage[], language: string): string {
@@ -146,7 +155,14 @@ function generateTitle(messages: ConversationMessage[], language: string): strin
 /** Visible short-term conversations for the signed-in uid only. */
 export function getVisibleConversations(): RetainedConversation[] {
   const now = Date.now();
-  return readAll().filter(c => !c.deletedAt && c.expiresAt > now && c.retentionDays > 0);
+  return readAll().filter(
+    (c) =>
+      !c.deletedAt &&
+      c.expiresAt > now &&
+      c.retentionDays > 0 &&
+      // Completed conversations retain no user-facing transcript.
+      c.status !== 'completed',
+  );
 }
 
 export function saveConversation(
@@ -178,6 +194,14 @@ export function saveConversation(
   const all = readAll();
   const existingIndex = all.findIndex(c => c.id === id);
   const existing = existingIndex >= 0 ? all[existingIndex] : undefined;
+
+  // Autosave must not recreate a completed / tombstoned conversation.
+  if (existing?.deletedAt || existing?.status === 'completed') {
+    return null;
+  }
+  if (opts?.status === 'completed') {
+    return null;
+  }
 
   // Reopening a conversation must not change its title, timestamp, expiry or
   // position — only a genuine content change (a new message) refreshes them.
@@ -247,10 +271,36 @@ export function deleteConversation(id: string): void {
   writeAll(all);
 }
 
+/**
+ * Immediate disposal after Keep / Reject (frozen Reflect retention).
+ * Tombstones the retained row (clears messages) and excludes it from the
+ * visible short-term list. Does not touch kept Understanding Updates.
+ */
+export function disposeCompletedConversation(
+  id: string,
+  decision?: ConversationDecision,
+): void {
+  if (!currentUid() || !id) return;
+  const all = readAll().map((c) =>
+    c.id === id
+      ? {
+          ...c,
+          status: 'completed' as const,
+          decision: decision ?? c.decision,
+          pendingExtraction: null,
+          deletedAt: Date.now(),
+          messages: [],
+        }
+      : c,
+  );
+  writeAll(all);
+}
+
 export function getConversationById(id: string): RetainedConversation | null {
   const now = Date.now();
   const c = readAll().find(c => c.id === id);
-  if (!c || c.deletedAt || c.expiresAt <= now) return null;
+  // Completed / tombstoned rows are not restorable as chats.
+  if (!c || c.deletedAt || c.expiresAt <= now || c.status === 'completed') return null;
   return c;
 }
 
