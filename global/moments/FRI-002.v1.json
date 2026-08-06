@@ -1,0 +1,143 @@
+{
+  "id": "FRI-002",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "🤝",
+  "title": {
+    "zh": "被朋友误会",
+    "en": "Misunderstood by a friend"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "生活中，你被朋友误会了一件事。\n你更可能会——",
+    "en": "A friend has misunderstood something you did.\nWhat are you most likely to do?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "尽快把事情说清楚，不希望误会继续下去",
+        "en": "Explain it as soon as possible so the misunderstanding does not continue."
+      },
+      "interpretation": {
+        "zh": "你可能更在意把误会尽快拆开——不让它在关系里继续发酵。",
+        "en": "You may care most about clearing it quickly — before it keeps growing between you."
+      },
+      "immediate": "用户以直接说明消除误会，优先修复信息落差。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EXP-01",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-01",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "看彼此的关系：重要的朋友会解释，普通关系就随它去",
+        "en": "It depends on the relationship. I would explain to a close friend, but let it go with someone I am not close to."
+      },
+      "interpretation": {
+        "zh": "你可能会把解释的力气，留给真正重要的关系。",
+        "en": "You may save the effort of explaining for the relationships that truly matter."
+      },
+      "immediate": "用户按关系亲疏分配解释成本，选择性沟通。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "REL-09",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EXP-03",
+          "delta": 0.3,
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "不主动解释，真正了解我的人自然会明白",
+        "en": "I would not explain. People who truly know me will understand."
+      },
+      "interpretation": {
+        "zh": "你可能更信默契——真正懂你的人，不必靠当场解释来证明。",
+        "en": "You may trust unspoken knowing — people who truly know you should not need a speech."
+      },
+      "immediate": "用户以信任替代当面澄清，含蓄处理误会。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-01",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EXP-02",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "暂时不解释，相信时间和后面的行动会说明一切",
+        "en": "I would leave it for now and let time and my actions show the truth."
+      },
+      "interpretation": {
+        "zh": "你可能更愿意用后续的行动，而不是当下的辩白，来慢慢证明。",
+        "en": "You may prefer later actions — not an immediate defence — to show what is true."
+      },
+      "immediate": "用户延后说明，以时间与行动延续信任。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-07",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EXP-02",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "text": {
+        "zh": "先听听对方为什么这样想，再决定要不要解释",
+        "en": "I would first ask what led them to think that, then decide whether to explain."
+      },
+      "interpretation": {
+        "zh": "你可能先想听懂对方怎么走到这一步，再决定自己要不要开口。",
+        "en": "You may want to understand how they got there before you decide whether to speak."
+      },
+      "immediate": "用户先做视角采撷，再决定是否直接说明。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-05",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EXP-03",
+          "delta": 0.3,
+          "confidence": "medium"
+        }
+      ]
+    }
+  ]
+}

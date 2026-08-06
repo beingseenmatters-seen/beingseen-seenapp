@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "libraryVersion": 1,
+  "libraryVersion": 2,
   "region": "GLOBAL",
   "signalCatalogVersion": 1,
   "publishedAt": "2026-08-06T00:00:00.000Z",
@@ -159,9 +159,23 @@
       "status": "active",
       "path": "moments/BUS-002.v1.json",
       "contentHash": "b7fa19a7e4f29addb3eee0f62b575b7573210b96a5bf25d935bfd563a191f00e"
+    },
+    {
+      "id": "FRI-002",
+      "version": 1,
+      "status": "active",
+      "path": "moments/FRI-002.v1.json",
+      "contentHash": "182f6016a36b467f1933bc4856a2f07b6a785711cae2e8df04494d09bbf671a2"
+    },
+    {
+      "id": "PAR-001",
+      "version": 1,
+      "status": "active",
+      "path": "moments/PAR-001.v1.json",
+      "contentHash": "99b4c974a4fa9c95071c0555c454ab929a61d137241cc4159f894bb1ddddc796"
     }
   ],
-  "packPath": "library.v1.pack.json",
-  "packHash": "2eb7f1b864937f0d1278e1253b863e4d55d4fa99fe864c177941c435389dfbea",
+  "packPath": "library.v2.pack.json",
+  "packHash": "d2f202a692dd41f636d74c340c3a27f63efc87e2e981f42960212eee6891376d",
   "ab": null
 }
