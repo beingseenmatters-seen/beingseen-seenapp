@@ -2,7 +2,18 @@
 
 **Status:** Founder Frozen  
 **Scope:** Moment identifiers, versioning, session snapshots, Moment Registry  
-**Does not change:** Reflect, Sketch Engine, HUE, Matching, UI surfaces
+**Does not change:** Reflect, Sketch Engine, HUE, Matching, UI surfaces  
+
+Workflow: Moment Library is the **primary content asset**. Moments are product
+content, not application code. New Moments ship as Library Versions without
+app rebuild unless renderer / interaction / ontology / Signal IDs change.
+
+**Immutable meaning:** Signal meaning and Movement meaning are immutable.
+Backward compatibility is mandatory; historical understanding must always
+remain reproducible.
+
+Every Library Version requires Release Notes (Added / Updated / Retired /
+Signal changes / Breaking changes). See [`../RELEASE.md`](../RELEASE.md).
 
 ---
 

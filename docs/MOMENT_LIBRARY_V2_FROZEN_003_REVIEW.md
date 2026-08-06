@@ -1,7 +1,10 @@
 # Moment Library v2 — Founder Frozen Set 003 Review
 
-**Branch:** `feat/moment-library-v2-frozen-003`  
-**Status:** Prepared for Founder review. **Not promoted to production CDN.**  
+**Workflow:** Library content ships as Library Versions without app rebuild —
+see [`../RELEASE.md`](../RELEASE.md).
+
+**Branch (historical):** `feat/moment-library-v2-frozen-003`  
+**Original review status:** Prepared for Founder review / CDN promotion process.  
 **Date:** 2026-08-06
 
 ## What shipped in this pack

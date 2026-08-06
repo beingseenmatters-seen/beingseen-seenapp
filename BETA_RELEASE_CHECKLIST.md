@@ -1,6 +1,11 @@
 # Seen V1 Beta Release Checklist
 
-Release branch: `release/v1-beta`  
+> **Superseded for day-to-day releases.** Permanent release workspace and
+> commands are defined in **[RELEASE.md](./RELEASE.md)** (Founder Frozen
+> Development Workflow). This checklist remains as the historical V1 beta
+> smoke list; do not treat `release/v1-beta` as the ongoing release branch.
+
+Release branch (historical): `release/v1-beta`  
 Scope: Moment Library (21 Moments) + Sketch Engine V2 + bilingual Moments/Sketches  
 Base: production `main` @ `f2d2bde`  
 **Excluded:** Evidence Playground, Current Understanding UI, matching changes, Lambda/prompt edits, UI redesign

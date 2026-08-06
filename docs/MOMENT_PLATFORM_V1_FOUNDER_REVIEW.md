@@ -1,7 +1,12 @@
 # Moment Platform V1 — Founder Review Report
 
-**Branch:** `feat/moment-platform-v1` (from `origin/main` @ `8cc4b1d`)  
-**Status:** Implemented locally. **Not pushed. Not published to production.**  
+**Status (2026-08-06):** Architecture **Founder Frozen**. Ongoing release
+policy and workspace rules: [`../RELEASE.md`](../RELEASE.md). This document
+is the historical review report; do not treat its “not pushed” notes as
+current ops state.
+
+**Branch (historical):** `feat/moment-platform-v1` (from `origin/main` @ `8cc4b1d`)  
+**Original review status:** Implemented locally during review.  
 **Date:** 2026-08-06
 
 ## Architecture updates applied
@@ -61,17 +66,17 @@ vitest: moments dataRegion, libraryClient, libraryHosts, config,
 npm run build → success
 ```
 
-## Production publication (blocked)
+## Production publication (historical review notes)
 
-Do **not** push or publish until Founder accepts this report.
+Platform architecture is frozen. Day-to-day Moment content ships as **Library
+Version** only (no app rebuild). Application release rules: `RELEASE.md`.
 
-Before production:
+Ops reminders that remain valid:
 
-1. Set `VITE_MOMENT_LIBRARY_GLOBAL_BASE` to GLOBAL CDN base serving `moment-library/v1/global`.
-2. Set `VITE_MOMENT_LIBRARY_CN_BASE` to domestic CN CDN (never Firebase).
-3. Decide default `SeenUser.dataRegion` assignment policy for new accounts.
-4. Publish seed-equivalent v1 packs only; then optionally publish Founder-approved v2 (replace `TEST-PLAT-001` with a real Moment).
-5. Push `feat/moment-platform-v1` and open PR after approval.
+1. `VITE_MOMENT_LIBRARY_GLOBAL_BASE` — GLOBAL CDN base (baked into app builds).
+2. `VITE_MOMENT_LIBRARY_CN_BASE` — domestic CN CDN only when configured; never fall back to GLOBAL/Firebase for CN.
+3. Seed remains offline bootstrap; remote packs are the normal update path.
+4. Formal packs must not include `TEST-*` Moment ids.
 
 ## Ops commands (local)
 
