@@ -19,14 +19,6 @@ const store = new LocalStorageStore();
 let accountDataRegion: DataRegion | null = null;
 let signedIn = false;
 
-export function setMomentLibraryAccountRegion(
-  region: DataRegion | null | undefined,
-  isUserSignedIn: boolean,
-): void {
-  accountDataRegion = region === 'CN' || region === 'GLOBAL' ? region : null;
-  signedIn = isUserSignedIn;
-}
-
 function currentLibraryRegion(): DataRegion {
   const locale =
     typeof navigator !== 'undefined' ? navigator.language : undefined;
@@ -56,6 +48,42 @@ export async function startMomentLibrary(): Promise<void> {
     await momentLibraryClient.syncRemote();
   } catch (err) {
     console.warn('[MomentLibrary] start failed; seed/cache still used if available', err);
+  }
+}
+
+/**
+ * Re-run remote sync after auth/region is known.
+ * Needed because the first bootstrap often runs while signed-out; zh locales
+ * resolve to CN (no host configured) and would otherwise stay on seed forever.
+ */
+export async function refreshMomentLibraryFromRemote(): Promise<void> {
+  try {
+    await momentLibraryClient.ensureReady();
+    await momentLibraryClient.syncRemote();
+  } catch (err) {
+    console.warn('[MomentLibrary] refresh failed; keeping seed/cache', err);
+  }
+}
+
+/**
+ * Update account region from Auth. When the resolved library region changes,
+ * or the user signs in, trigger another remote sync so GLOBAL clients on
+ * zh devices pick up the published library after login.
+ */
+export function setMomentLibraryAccountRegion(
+  region: DataRegion | null | undefined,
+  isUserSignedIn: boolean,
+): void {
+  const prevRegion = currentLibraryRegion();
+  const prevSignedIn = signedIn;
+
+  accountDataRegion = region === 'CN' || region === 'GLOBAL' ? region : null;
+  signedIn = isUserSignedIn;
+
+  const nextRegion = currentLibraryRegion();
+  const signedInNow = isUserSignedIn && !prevSignedIn;
+  if (nextRegion !== prevRegion || signedInNow) {
+    void refreshMomentLibraryFromRemote();
   }
 }
 
