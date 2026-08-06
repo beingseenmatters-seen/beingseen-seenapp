@@ -32,7 +32,7 @@ Founder Architecture Approval + Required Revisions are locked into the review ca
 - `src/auth/providers/types.ts` — `SeenUser.dataRegion`
 - `src/auth/AuthContext.tsx` — sync account region into library client (no UI change)
 - `scripts/exportMomentLibrary.ts`, `scripts/buildLibraryV2TestMoment.ts`
-- Local fixtures: `moment-library/v1/{global,cn}/`, `moment-library/v2/global/` (test Moment only)
+- Local fixtures: `moment-library/v1/{global,cn}/`, `moment-library/fixtures/test-v2/global/` (test Moment only)
 
 **Not modified:** UI pages, Reflect, Sketch Engine content, Movement ontology, Matching, Me surfaces (aside from Auth wiring for `dataRegion`).
 
@@ -46,7 +46,7 @@ Founder Architecture Approval + Required Revisions are locked into the review ca
 | 4 | Offline first launch uses seed | Tested |
 | 5 | Offline later launch uses last validated cache | Tested |
 | 6 | Corrupt/incompatible v2 rejected; sessions untouched | Tested |
-| 7 | Net-new Moment as library v2 | Local fixture `TEST-PLAT-001` built — **not production-published** |
+| 7 | Net-new Moment as library v2 | Fixture under `moment-library/fixtures/test-v2` with `TEST-PLAT-001`; formal sync rejects `TEST-*` |
 | 8 | Existing installs receive v2 without app rebuild | Requires production CDN publish + env bases (blocked pending approval) |
 | 9 | Existing sessions/sketches unchanged via snapshots | Provenance additive; rejection test keeps active session |
 

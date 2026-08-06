@@ -161,8 +161,15 @@ describe('MomentLibraryClient', () => {
       hostFactory: () => host,
     });
     await syncing.ensureReady();
-    const result = await syncing.syncRemote();
-    expect(result.promoted).toBe(true);
+    // Remote sync must refuse TEST-* even if a host serves them.
+    const remoteRejected = await syncing.syncRemote();
+    expect(remoteRejected.promoted).toBe(false);
+    expect(remoteRejected.errors?.some((e) => e.includes('TEST-PLAT-001'))).toBe(true);
+    expect(syncing.getActivePack().libraryVersion).toBe(1);
+
+    // Explicit test-only promote path may accept TEST-* for acceptance harnesses.
+    const allowed = await syncing.tryPromotePack(v2, { allowTestMomentIds: true });
+    expect(allowed.promoted).toBe(true);
     expect(syncing.getActivePack().libraryVersion).toBe(2);
     expect(syncing.getActiveMoments().some((m) => m.id === 'TEST-PLAT-001')).toBe(true);
   });

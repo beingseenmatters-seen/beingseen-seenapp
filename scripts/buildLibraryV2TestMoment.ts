@@ -68,7 +68,7 @@ async function main() {
     packHash: await hashLibraryPackBody(partial),
   };
 
-  const outRoot = join(root, 'moment-library/v2/global');
+  const outRoot = join(root, 'moment-library/fixtures/test-v2/global');
   mkdirSync(join(outRoot, 'moments'), { recursive: true });
   writeFileSync(join(outRoot, 'library.v2.pack.json'), `${JSON.stringify(pack, null, 2)}\n`);
   writeFileSync(

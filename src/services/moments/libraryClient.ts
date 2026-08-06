@@ -139,7 +139,11 @@ export class MomentLibraryClient {
       const candidate = await host.fetchPack(manifest);
       await this.store.set(LIBRARY_CACHE_STAGING_KEY, JSON.stringify(candidate));
 
-      const result = await validateLibraryPack(candidate, { verifyHashes: true });
+      // Formal remote sync never allows TEST-* Moments into the active library.
+      const result = await validateLibraryPack(candidate, {
+        verifyHashes: true,
+        allowTestMomentIds: false,
+      });
       if (!result.ok) {
         await this.store.remove(LIBRARY_CACHE_STAGING_KEY);
         return {
@@ -169,14 +173,20 @@ export class MomentLibraryClient {
   }
 
   /** Test/helper: attempt to promote an in-memory pack (still atomic). */
-  async tryPromotePack(candidate: MomentLibraryPack): Promise<{
+  async tryPromotePack(
+    candidate: MomentLibraryPack,
+    options?: { allowTestMomentIds?: boolean },
+  ): Promise<{
     promoted: boolean;
     reason: string;
     errors?: string[];
   }> {
     await this.ensureReady();
     await this.store.set(LIBRARY_CACHE_STAGING_KEY, JSON.stringify(candidate));
-    const result = await validateLibraryPack(candidate, { verifyHashes: true });
+    const result = await validateLibraryPack(candidate, {
+      verifyHashes: true,
+      allowTestMomentIds: options?.allowTestMomentIds ?? false,
+    });
     if (!result.ok) {
       await this.store.remove(LIBRARY_CACHE_STAGING_KEY);
       return {

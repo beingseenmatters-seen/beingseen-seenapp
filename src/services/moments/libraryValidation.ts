@@ -24,6 +24,16 @@ export interface ValidatePackOptions {
   expectedSchemaVersion?: number;
   /** When true, verify packHash and per-moment contentHash. */
   verifyHashes?: boolean;
+  /**
+   * Allow Moment ids matching TEST-* / TEST_*.
+   * Default false — production / formal promote path must never accept test Moments.
+   */
+  allowTestMomentIds?: boolean;
+}
+
+/** Test-only Moment ids — never promote into a production formal pack. */
+export function isTestMomentId(id: string): boolean {
+  return /^TEST[-_]/i.test(id);
 }
 
 /**
@@ -41,6 +51,7 @@ export async function validateLibraryPack(
     options.supportedInteractionTypes ?? SUPPORTED_INTERACTION_TYPES;
   const expectedSchema = options.expectedSchemaVersion ?? MOMENT_LIBRARY_SCHEMA_VERSION;
   const verifyHashes = options.verifyHashes ?? true;
+  const allowTestMomentIds = options.allowTestMomentIds ?? false;
 
   if (!pack || typeof pack !== 'object') {
     return { ok: false, reason: 'missing pack', errors: ['pack is missing'] };
@@ -93,6 +104,11 @@ export async function validateLibraryPack(
   }
 
   for (const entry of pack.momentIndex) {
+    if (!allowTestMomentIds && isTestMomentId(entry.id)) {
+      errors.push(
+        `${entry.id}@${entry.version}: test Moment ids are not allowed in formal packs`,
+      );
+    }
     const moment = byKey.get(`${entry.id}@${entry.version}`);
     if (!moment) {
       errors.push(`index entry ${entry.id}@${entry.version} missing moment body`);
