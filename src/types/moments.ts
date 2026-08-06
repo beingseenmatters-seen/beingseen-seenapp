@@ -142,9 +142,17 @@ export interface MomentOptionSnapshot {
   signals: MomentSignalEmission[];
 }
 
-/** Immutable snapshot of one Moment as it was when the session was created. */
+/**
+ * Immutable snapshot of one Moment as it was when the session was created.
+ *
+ * Permanent ID Convention (Founder Frozen): new sessions always store
+ * Moment ID, Moment Version, Library Version, Schema Version, and
+ * Signal Catalog Version. See docs/MOMENT_ID_CONVENTION.md.
+ */
 export interface MomentSnapshot {
+  /** Permanent Moment ID (never reused or renumbered). */
   momentId: string;
+  /** Moment content version (wording / signal mappings may bump; ID stays). */
   version: number;
   interactionType: MomentInteractionType;
   title: LocalizedText;
@@ -156,7 +164,7 @@ export interface MomentSnapshot {
   maxRank?: number;
   options: MomentOptionSnapshot[];
   /**
-   * Moment Platform V1 provenance — required on newly created sessions.
+   * Moment Platform V1 pack provenance — required on newly created sessions.
    * Optional for legacy snapshots created before the platform upgrade.
    */
   libraryVersion?: number;

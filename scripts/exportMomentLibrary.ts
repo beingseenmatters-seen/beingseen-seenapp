@@ -10,6 +10,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MOMENT_LIBRARY, MOMENTS_META } from '../src/data/moments/library';
 import {
+  getMomentRegistryEntry,
+  isShipableRegistryId,
+} from '../src/data/moments/momentRegistry';
+import {
   MOMENT_LIBRARY_SCHEMA_VERSION,
   SEED_LIBRARY_VERSION,
   SIGNAL_CATALOG_VERSION,
@@ -18,6 +22,23 @@ import {
 import { buildIndexEntry } from '../src/services/moments/libraryValidation';
 import { hashLibraryPackBody } from '../src/services/moments/libraryHash';
 import type { MomentLibraryPack } from '../src/types/momentLibrary';
+
+function assertLibraryMatchesRegistry() {
+  const problems: string[] = [];
+  for (const m of MOMENT_LIBRARY) {
+    const entry = getMomentRegistryEntry(m.id);
+    if (!entry) {
+      problems.push(`${m.id}: missing from Moment Registry (SSOT)`);
+    } else if (!isShipableRegistryId(m.id)) {
+      problems.push(`${m.id}: registry status "${entry.status}" is not shipable`);
+    }
+  }
+  if (problems.length) {
+    throw new Error(
+      `Moment Registry check failed:\n${problems.map((p) => `  - ${p}`).join('\n')}`,
+    );
+  }
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
@@ -56,6 +77,7 @@ function writeJson(path: string, value: unknown) {
 }
 
 async function main() {
+  assertLibraryMatchesRegistry();
   const globalPack = await buildPack('GLOBAL');
   const cnPack = await buildPack('CN');
 

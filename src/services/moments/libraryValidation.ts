@@ -14,6 +14,10 @@ import {
   SIGNAL_CATALOG_VERSION,
   SUPPORTED_INTERACTION_TYPES,
 } from '../../data/moments/platformConstants';
+import {
+  getMomentRegistryEntry,
+  isShipableRegistryId,
+} from '../../data/moments/momentRegistry';
 import { validateMomentConfig, validateMomentLibrary } from './config';
 import { hashLibraryPackBody, hashMomentDocument } from './libraryHash';
 
@@ -108,6 +112,19 @@ export async function validateLibraryPack(
       errors.push(
         `${entry.id}@${entry.version}: test Moment ids are not allowed in formal packs`,
       );
+    }
+    // Permanent ID Convention: formal packs may only ship registered, active IDs.
+    if (!allowTestMomentIds && !isTestMomentId(entry.id)) {
+      const reg = getMomentRegistryEntry(entry.id);
+      if (!reg) {
+        errors.push(
+          `${entry.id}@${entry.version}: Moment ID is not in the Moment Registry`,
+        );
+      } else if (entry.status === 'active' && !isShipableRegistryId(entry.id)) {
+        errors.push(
+          `${entry.id}@${entry.version}: registry status is "${reg.status}" (not shipable)`,
+        );
+      }
     }
     const moment = byKey.get(`${entry.id}@${entry.version}`);
     if (!moment) {
