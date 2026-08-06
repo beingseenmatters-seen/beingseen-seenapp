@@ -4,8 +4,12 @@
  * GLOBAL: Firebase Storage / GCS + CDN (via VITE_MOMENT_LIBRARY_GLOBAL_BASE).
  * CN: domestic object storage + CDN (via VITE_MOMENT_LIBRARY_CN_BASE).
  * Firebase must never be used as the CN production host.
+ *
+ * Native (iOS/Android): use CapacitorHttp explicitly. Patched window.fetch via
+ * CapacitorHttp.enabled has been unreliable for CDN JSON on Android.
  */
 
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import type { DataRegion, MomentLibraryManifest, MomentLibraryPack } from '../../types/momentLibrary';
 
 export interface MomentLibraryHost {
@@ -41,7 +45,42 @@ export class MomentLibraryHttpError extends Error {
   }
 }
 
+function headerValue(
+  headers: Record<string, string> | undefined,
+  name: string,
+): string | null {
+  if (!headers) return null;
+  const target = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === target) return value;
+  }
+  return null;
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
+  // Native: CapacitorHttp.get (bypass patched-fetch quirks on Android WebView).
+  if (Capacitor.isNativePlatform()) {
+    const response = await CapacitorHttp.get({
+      url,
+      headers: {
+        Accept: 'application/json',
+        'Cache-Control': 'no-cache',
+      },
+      responseType: 'json',
+    });
+    const contentType = headerValue(response.headers, 'content-type');
+    if (response.status < 200 || response.status >= 300) {
+      throw new MomentLibraryHttpError(url, response.status, contentType);
+    }
+    if (response.data == null) {
+      throw new MomentLibraryHttpError(url, response.status, contentType);
+    }
+    if (typeof response.data === 'string') {
+      return JSON.parse(response.data) as T;
+    }
+    return response.data as T;
+  }
+
   const res = await fetch(url, { cache: 'no-cache' });
   const contentType = res.headers.get('content-type');
   if (!res.ok) {
