@@ -1,0 +1,273 @@
+{
+  "id": "M-P11",
+  "version": 1,
+  "status": "active",
+  "interactionType": "ranking",
+  "emoji": "💍",
+  "title": {
+    "zh": "重选伴侣",
+    "en": "Choosing a partner"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "如果重新选择一位长期人生伴侣，下面哪些条件对你来说更重要？",
+    "en": "If you were choosing a long-term life partner all over again, which of these would matter most to you?"
+  },
+  "hint": {
+    "zh": "请按重要程度排序。按顺序点选最重要的 3 项。",
+    "en": "Rank by importance — tap your top 3, in order."
+  },
+  "maxRank": 3,
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "身材长相",
+        "en": "Looks and physical attraction"
+      },
+      "interpretation": {
+        "zh": "你可能更看重相处里最直接的感受与吸引力。",
+        "en": "You may put weight on the most immediate feelings of being together — attraction included."
+      },
+      "immediate": "用户在伴侣选择中把外在吸引力放在前列。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-01",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-06",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "年龄相仿",
+        "en": "Similar age"
+      },
+      "interpretation": {
+        "zh": "你可能更在意两个人处在相近的人生节奏里。",
+        "en": "You may care about being in the same season of life together."
+      },
+      "immediate": "用户似乎看重人生阶段的同步带来的安稳。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-08",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-07",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "经济能力",
+        "en": "Financial stability"
+      },
+      "interpretation": {
+        "zh": "你可能希望共同生活先有一个稳当的底。",
+        "en": "You may want the life you build together to start on solid ground."
+      },
+      "immediate": "用户在亲密关系里优先考虑物质安全垫。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-08",
+          "delta": 0.5,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-12",
+          "delta": 0.3,
+          "confidence": "low"
+        },
+        {
+          "signal": "CHG-09",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "教育程度",
+        "en": "Education"
+      },
+      "interpretation": {
+        "zh": "你可能相信教育背景会影响两个人的沟通与路径。",
+        "en": "You may believe education shapes how two people talk — and where they’re headed."
+      },
+      "immediate": "用户倾向于用结构性条件预判长期匹配。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-12",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-10",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "text": {
+        "zh": "有上进心",
+        "en": "Drive and ambition"
+      },
+      "interpretation": {
+        "zh": "你可能更看重一个人往前走的劲头，而不是现在的位置。",
+        "en": "You may care more about the push in someone than where they currently stand."
+      },
+      "immediate": "用户重视成长性与主动性胜过存量条件。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-03",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-02",
+          "delta": 0.3,
+          "confidence": "low"
+        },
+        {
+          "signal": "MEA-10",
+          "delta": 0.3,
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "F",
+      "text": {
+        "zh": "家庭背景",
+        "en": "Family background"
+      },
+      "interpretation": {
+        "zh": "你可能觉得一个人从哪里来，会影响你们往哪里去。",
+        "en": "You may feel where someone comes from shapes where the two of you would go."
+      },
+      "immediate": "用户倾向于把原生结构纳入长期关系判断。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-12",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-08",
+          "delta": 0.3,
+          "confidence": "low"
+        },
+        {
+          "signal": "REL-07",
+          "delta": 0.2,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "G",
+      "text": {
+        "zh": "共同兴趣爱好",
+        "en": "Shared interests"
+      },
+      "interpretation": {
+        "zh": "你可能希望日常里有可以一起投入的事。",
+        "en": "You may want everyday things the two of you can throw yourselves into together."
+      },
+      "immediate": "用户看重共享体验作为关系的养分。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-01",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "REL-09",
+          "delta": 0.3,
+          "confidence": "low"
+        },
+        {
+          "signal": "CHG-10",
+          "delta": 0.2,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "H",
+      "text": {
+        "zh": "责任感",
+        "en": "Sense of responsibility"
+      },
+      "interpretation": {
+        "zh": "你可能最在意关键时刻对方接不接得住。",
+        "en": "You may care most about whether they can catch things when it counts."
+      },
+      "immediate": "用户把可靠与担当放在伴侣特质的核心。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-04",
+          "delta": 0.5,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-02",
+          "delta": 0.35,
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "I",
+      "text": {
+        "zh": "价值观接近",
+        "en": "Similar values"
+      },
+      "interpretation": {
+        "zh": "你可能相信长久走下去，靠的是底层的一致。",
+        "en": "You may believe the long road depends on being aligned underneath."
+      },
+      "immediate": "用户以内在一致性作为长期关系的锚点。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-05",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "REL-09",
+          "delta": 0.3,
+          "confidence": "low"
+        },
+        {
+          "signal": "CHG-07",
+          "delta": 0.2,
+          "confidence": "low"
+        }
+      ]
+    }
+  ]
+}
