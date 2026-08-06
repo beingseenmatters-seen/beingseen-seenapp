@@ -1,9 +1,10 @@
 /**
  * Region resolution for Moment Library (Founder rule).
  *
- * Signed-in: account.dataRegion is source of truth.
- * Signed-out first-run: channel / device / locale may suggest a region,
- * but must never override account.dataRegion after login.
+ * Signed-out: locale / channel / device may *suggest* a region only.
+ * Signed-in: account.dataRegion is source of truth and overrides suggestions.
+ * Signed-in with unset dataRegion: legacy default GLOBAL (not device language).
+ * CN must never implicitly fall back to the GLOBAL CDN host.
  */
 
 import type { DataRegion } from '../../types/momentLibrary';

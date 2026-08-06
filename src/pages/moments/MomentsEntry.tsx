@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../../i18n';
-import { momentsClient } from '../../services/moments/momentsClient';
+import {
+  momentsClient,
+  refreshMomentLibraryFromRemote,
+} from '../../services/moments/momentsClient';
 import type { MomentsOverview } from '../../services/moments/momentsService';
 import { MOMENTS_META } from '../../data/moments/library';
 import { localizedText } from '../../services/moments/config';
@@ -19,13 +22,27 @@ export default function MomentsEntry() {
   const [confirmRestart, setConfirmRestart] = useState(false);
 
   useEffect(() => {
-    momentsClient.getOverview().then(setOverview).catch(() => setOverview(null));
+    let cancelled = false;
+    (async () => {
+      // Native/zh: cold start may have resolved CN (no host). Re-sync on entry.
+      await refreshMomentLibraryFromRemote({ force: true });
+      if (cancelled) return;
+      try {
+        setOverview(await momentsClient.getOverview());
+      } catch {
+        setOverview(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleStart = async () => {
     if (busy) return;
     setBusy(true);
     try {
+      await refreshMomentLibraryFromRemote({ force: true });
       const session = await momentsClient.createSession();
       navigate(`/moments/session/${session.id}`);
     } finally {
@@ -37,6 +54,7 @@ export default function MomentsEntry() {
     if (busy) return;
     setBusy(true);
     try {
+      await refreshMomentLibraryFromRemote({ force: true });
       await momentsClient.discardActiveSession();
       const session = await momentsClient.createSession();
       navigate(`/moments/session/${session.id}`);

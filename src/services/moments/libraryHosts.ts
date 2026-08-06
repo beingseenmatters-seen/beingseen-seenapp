@@ -10,26 +10,49 @@ import type { DataRegion, MomentLibraryManifest, MomentLibraryPack } from '../..
 
 export interface MomentLibraryHost {
   readonly region: DataRegion;
+  readonly baseUrl: string;
   fetchManifest(): Promise<MomentLibraryManifest>;
   /** Atomic pack download preferred for V1 formal versions. */
   fetchPack(manifest: MomentLibraryManifest): Promise<MomentLibraryPack>;
+}
+
+export interface ResolvedLibraryHost {
+  host: MomentLibraryHost | null;
+  remoteBase: string | null;
+  /** Null when a host was created. */
+  failReason: string | null;
 }
 
 function trimSlash(url: string): string {
   return url.replace(/\/+$/, '');
 }
 
+export class MomentLibraryHttpError extends Error {
+  status: number;
+  contentType: string | null;
+  url: string;
+
+  constructor(url: string, status: number, contentType: string | null) {
+    super(`Moment library fetch failed ${status} for ${url}`);
+    this.name = 'MomentLibraryHttpError';
+    this.url = url;
+    this.status = status;
+    this.contentType = contentType;
+  }
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { cache: 'no-cache' });
+  const contentType = res.headers.get('content-type');
   if (!res.ok) {
-    throw new Error(`Moment library fetch failed ${res.status} for ${url}`);
+    throw new MomentLibraryHttpError(url, res.status, contentType);
   }
   return (await res.json()) as T;
 }
 
 export class HttpMomentLibraryHost implements MomentLibraryHost {
   readonly region: DataRegion;
-  private baseUrl: string;
+  readonly baseUrl: string;
 
   constructor(region: DataRegion, baseUrl: string) {
     this.region = region;
@@ -69,10 +92,12 @@ export class HttpMomentLibraryHost implements MomentLibraryHost {
 /** In-memory host for tests / local fixtures. */
 export class MemoryMomentLibraryHost implements MomentLibraryHost {
   readonly region: DataRegion;
+  readonly baseUrl: string;
   private packs: Map<number, MomentLibraryPack>;
 
-  constructor(region: DataRegion, packs: MomentLibraryPack[]) {
+  constructor(region: DataRegion, packs: MomentLibraryPack[], baseUrl = 'memory://library') {
     this.region = region;
+    this.baseUrl = baseUrl;
     this.packs = new Map(packs.map((p) => [p.libraryVersion, p]));
   }
 
@@ -104,22 +129,61 @@ export class MemoryMomentLibraryHost implements MomentLibraryHost {
   }
 }
 
-export function createHostForRegion(region: DataRegion): MomentLibraryHost | null {
-  const globalBase = import.meta.env.VITE_MOMENT_LIBRARY_GLOBAL_BASE as string | undefined;
-  const cnBase = import.meta.env.VITE_MOMENT_LIBRARY_CN_BASE as string | undefined;
+/** Normalize Vite env bases (empty / the literal "undefined" count as unset). */
+function readEnvBase(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === 'undefined') return null;
+  return trimmed;
+}
+
+/**
+ * Resolve host for a region. Never falls CN → GLOBAL (Founder rule).
+ * Callers must surface failReason — do not silently treat as seed-only.
+ */
+export function resolveLibraryHost(region: DataRegion): ResolvedLibraryHost {
+  const globalBase = readEnvBase(import.meta.env.VITE_MOMENT_LIBRARY_GLOBAL_BASE);
+  const cnBase = readEnvBase(import.meta.env.VITE_MOMENT_LIBRARY_CN_BASE);
 
   if (region === 'GLOBAL') {
-    if (!globalBase) return null;
-    return new HttpMomentLibraryHost('GLOBAL', globalBase);
+    if (!globalBase) {
+      return {
+        host: null,
+        remoteBase: null,
+        failReason: 'global_host_unconfigured',
+      };
+    }
+    const base = trimSlash(globalBase);
+    return {
+      host: new HttpMomentLibraryHost('GLOBAL', base),
+      remoteBase: base,
+      failReason: null,
+    };
   }
 
-  // CN must use domestic base — never fall back to Firebase/GLOBAL URL.
-  if (!cnBase) return null;
-  if (/firebase|googleapis\.com|firebasestorage/i.test(cnBase)) {
-    console.error(
-      '[MomentLibrary] CN host looks like Firebase/GCS — refusing (Founder rule).',
-    );
-    return null;
+  if (!cnBase) {
+    return {
+      host: null,
+      remoteBase: null,
+      // Stable diagnostic code for acceptance (signed-out zh suggestion, no CN CDN).
+      failReason: 'cn_host_unconfigured',
+    };
   }
-  return new HttpMomentLibraryHost('CN', cnBase);
+  if (/firebase|googleapis\.com|firebasestorage/i.test(cnBase)) {
+    return {
+      host: null,
+      remoteBase: cnBase,
+      failReason: 'cn_host_firebase_refused',
+    };
+  }
+  const base = trimSlash(cnBase);
+  return {
+    host: new HttpMomentLibraryHost('CN', base),
+    remoteBase: base,
+    failReason: null,
+  };
+}
+
+export function createHostForRegion(region: DataRegion): MomentLibraryHost | null {
+  return resolveLibraryHost(region).host;
 }
