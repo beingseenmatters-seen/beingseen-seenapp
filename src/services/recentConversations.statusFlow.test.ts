@@ -30,6 +30,7 @@ import {
   getConversationById,
   getVisibleConversations,
   deleteConversation,
+  disposeCompletedConversation,
   retainedConversationsStorageKey,
   type RetainedConversation,
 } from './recentConversations';
@@ -171,36 +172,53 @@ describe('awaiting-decision persistence', () => {
   });
 });
 
-describe('completed conversations (留下 / 放下)', () => {
-  it('留下 marks completed with decision "kept" and clears the pending extraction', () => {
+describe('completed conversations (留下 / 放下) — immediate disposal', () => {
+  it('留下 disposes transcript: not visible, not restorable', () => {
     saveConversation('c1', MESSAGES, '3days', 'zh');
     updateConversation('c1', { status: 'awaiting_decision', pendingExtraction: EXTRACTION });
-    updateConversation('c1', { status: 'completed', decision: 'kept', pendingExtraction: null });
+    disposeCompletedConversation('c1', 'kept');
 
-    const done = getConversationById('c1')!;
-    expect(done.status).toBe('completed');
-    expect(done.decision).toBe('kept');
-    expect(done.pendingExtraction).toBeNull();
+    expect(getConversationById('c1')).toBeNull();
+    expect(getVisibleConversations().map((c) => c.id)).not.toContain('c1');
+
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') as RetainedConversation[];
+    const tombstone = raw.find((c) => c.id === 'c1')!;
+    expect(tombstone.status).toBe('completed');
+    expect(tombstone.decision).toBe('kept');
+    expect(tombstone.messages).toEqual([]);
+    expect(tombstone.deletedAt).toBeTypeOf('number');
   });
 
-  it('放下 keeps the retained transcript according to the retention choice', () => {
+  it('放下 also disposes transcript immediately (no user-facing chat)', () => {
     saveConversation('c1', MESSAGES, '7days', 'zh');
-    const before = getConversationById('c1')!;
-    updateConversation('c1', { status: 'completed', decision: 'released', pendingExtraction: null });
+    disposeCompletedConversation('c1', 'released');
 
-    const done = getConversationById('c1')!;
-    expect(done.decision).toBe('released');
-    // 放下 never deletes a transcript the user chose to retain.
-    expect(done.messages).toEqual(before.messages);
-    expect(done.expiresAt).toBe(before.expiresAt);
-    expect(getVisibleConversations().map(c => c.id)).toContain('c1');
+    expect(getConversationById('c1')).toBeNull();
+    expect(getVisibleConversations().map((c) => c.id)).not.toContain('c1');
+
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') as RetainedConversation[];
+    const tombstone = raw.find((c) => c.id === 'c1')!;
+    expect(tombstone.decision).toBe('released');
+    expect(tombstone.messages).toEqual([]);
   });
 
-  it('completing does not extend the raw transcript retention', () => {
+  it('autosave cannot recreate a disposed conversation', () => {
     saveConversation('c1', MESSAGES, '3days', 'zh');
-    const before = getConversationById('c1')!;
-    updateConversation('c1', { status: 'completed', decision: 'kept', pendingExtraction: null });
-    expect(getConversationById('c1')!.expiresAt).toBe(before.expiresAt);
+    disposeCompletedConversation('c1', 'kept');
+
+    const resurrected = saveConversation('c1', MESSAGES, '3days', 'zh', {
+      status: 'active',
+    });
+    expect(resurrected).toBeNull();
+    expect(getConversationById('c1')).toBeNull();
+    expect(getVisibleConversations().map((c) => c.id)).not.toContain('c1');
+  });
+
+  it('saveConversation refuses status completed writes', () => {
+    expect(
+      saveConversation('c1', MESSAGES, '3days', 'zh', { status: 'completed', decision: 'kept' }),
+    ).toBeNull();
+    expect(getVisibleConversations()).toEqual([]);
   });
 });
 

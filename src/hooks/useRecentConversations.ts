@@ -5,6 +5,7 @@ import {
   getVisibleConversations,
   deleteConversation,
   purgeExpired,
+  RETAINED_CONVERSATIONS_CHANGED_EVENT,
   type RetainedConversation,
 } from '../services/recentConversations';
 
@@ -26,12 +27,14 @@ export function useRecentConversations() {
     const unsubscribeAuth = onAuthStateChanged(auth, () => {
       refresh();
     });
-    const onDetach = () => refresh();
-    window.addEventListener('seen:user-local-storage-detached', onDetach);
+    const onListChange = () => refresh();
+    window.addEventListener('seen:user-local-storage-detached', onListChange);
+    window.addEventListener(RETAINED_CONVERSATIONS_CHANGED_EVENT, onListChange);
     const interval = setInterval(refresh, 60_000);
     return () => {
       unsubscribeAuth();
-      window.removeEventListener('seen:user-local-storage-detached', onDetach);
+      window.removeEventListener('seen:user-local-storage-detached', onListChange);
+      window.removeEventListener(RETAINED_CONVERSATIONS_CHANGED_EVENT, onListChange);
       clearInterval(interval);
     };
   }, [refresh]);

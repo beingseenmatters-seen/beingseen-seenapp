@@ -25,7 +25,7 @@ import type { RetentionOption } from '../types/insight';
 import {
   saveConversation,
   getConversationById,
-  updateConversation,
+  disposeCompletedConversation,
   type ConversationStatus,
   type ConversationDecision
 } from '../services/recentConversations';
@@ -44,13 +44,13 @@ import {
 import type { ConversationExtraction } from '../types/userSummary';
 import { saveKeptReflection } from '../services/keptReflections';
 import { getResonateCandidate } from '../services/connections';
+import MomentsInvitationCard from '../components/moments/MomentsInvitationCard';
+import { useMomentsInvitation } from '../hooks/useMomentsInvitation';
 import {
   clearReflectSession,
   loadReflectSessionRaw,
   saveReflectSessionRaw,
 } from '../services/reflectSessionStore';
-import MomentsInvitationCard from '../components/moments/MomentsInvitationCard';
-import { useMomentsInvitation } from '../hooks/useMomentsInvitation';
 
 interface Message {
   role: 'user' | 'ai' | 'system';
@@ -267,11 +267,12 @@ export default function Reflect() {
    * - active: normal editable chat
    * - awaiting_decision: show the saved extracted sentence + 留下/放下 again
    *   (never re-extract just because the person reopened it)
-   * - completed: read-only transcript with a clear "ended" state
-   * Returns false when the conversation no longer exists / has expired.
+   * - completed: not restorable (disposed after Keep/Reject)
+   * Returns false when the conversation no longer exists / has expired / completed.
    */
   const restoreConversationById = (convoId: string): boolean => {
     const convo = getConversationById(convoId);
+    // getConversationById already excludes completed / tombstoned rows.
     if (!convo) return false;
 
     // The conversation's own current mode wins over the global last-used one.
@@ -290,12 +291,9 @@ export default function Reflect() {
       convo.status === 'awaiting_decision' &&
       typeof pendingExtraction?.summaryText === 'string' &&
       pendingExtraction.summaryText.trim().length > 0;
-    const status: ConversationStatus =
-      convo.status === 'completed'
-        ? 'completed'
-        : hasRestorableExtraction
-          ? 'awaiting_decision'
-          : 'active';
+    const status: ConversationStatus = hasRestorableExtraction
+      ? 'awaiting_decision'
+      : 'active';
 
     setRoleDropdownOpen(false);
     setRetentionDropdownOpen(false);
@@ -367,6 +365,13 @@ export default function Reflect() {
     if (saved) {
       try {
         const session: SavedSession = JSON.parse(saved);
+        if (session.status === 'completed') {
+          disposeCompletedConversation(session.sessionId, session.decision);
+          clearReflectSession();
+          setHasSavedSession(false);
+          refreshRecentConversations();
+          return;
+        }
         if (session.keepContext) {
           setHasSavedSession(true);
         }
@@ -377,60 +382,66 @@ export default function Reflect() {
     } else {
       setHasSavedSession(false);
     }
-  }, [uid]);
+  }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (sessionId) {
-      // `currentResponseMode` is the turn-level field (mode for the NEXT
-      // turn). `responseMode` mirrors it for pre-2C readers, and legacy
-      // `sessionStyle` / `selectedMode` are still written (old four-role
-      // vocabulary) so any older reader keeps working; CONNECT has no legacy
-      // equivalent and writes undefined/null there.
-      const legacyStyle = toLegacyResponseStyle(currentResponseMode);
-      const legacySelectedMode = toLegacySelectedMode(currentResponseMode);
-      const session: SavedSession = {
-        messages,
-        step,
-        keepContext,
-        retention,
-        sessionId,
-        currentResponseMode,
-        responseMode: currentResponseMode,
-        sessionStyle: legacyStyle,
-        consecutiveQuestionTurns,
-        selectedMode: legacySelectedMode,
-        timestamp: Date.now(),
-        status: conversationStatus,
-        decision: conversationDecision,
-        pendingExtraction: conversationStatus === 'awaiting_decision' ? pendingSummary : null
-      };
-      saveReflectSessionRaw(JSON.stringify(session));
+    if (!sessionId) return;
 
-      if (retention !== 'none' && messages.filter(m => m.role === 'user' && m.text.trim()).length > 0) {
-        saveConversation(
-          sessionId,
-          // Persist per-turn mode metadata with each AI message (never debug).
-          messages.map(m => ({
-            role: m.role,
-            text: m.text,
-            requestedMode: m.requestedMode,
-            effectiveMode: m.effectiveMode,
-          })),
-          retention,
-          effectiveLanguage === 'zh' ? 'zh' : 'en',
-          {
-            responseMode: currentResponseMode,
-            sessionStyle: legacyStyle,
-            selectedMode: legacySelectedMode,
-            status: conversationStatus,
-            decision: conversationDecision,
-            pendingExtraction:
-              conversationStatus === 'awaiting_decision' && pendingSummary
-                ? (pendingSummary as unknown as Record<string, unknown>)
-                : null
-          }
-        );
-      }
+    // Completed conversations must not be re-mirrored by autosave.
+    if (conversationStatus === 'completed') {
+      clearReflectSession();
+      return;
+    }
+
+    // `currentResponseMode` is the turn-level field (mode for the NEXT
+    // turn). `responseMode` mirrors it for pre-2C readers, and legacy
+    // `sessionStyle` / `selectedMode` are still written (old four-role
+    // vocabulary) so any older reader keeps working; CONNECT has no legacy
+    // equivalent and writes undefined/null there.
+    const legacyStyle = toLegacyResponseStyle(currentResponseMode);
+    const legacySelectedMode = toLegacySelectedMode(currentResponseMode);
+    const session: SavedSession = {
+      messages,
+      step,
+      keepContext,
+      retention,
+      sessionId,
+      currentResponseMode,
+      responseMode: currentResponseMode,
+      sessionStyle: legacyStyle,
+      consecutiveQuestionTurns,
+      selectedMode: legacySelectedMode,
+      timestamp: Date.now(),
+      status: conversationStatus,
+      decision: conversationDecision,
+      pendingExtraction: conversationStatus === 'awaiting_decision' ? pendingSummary : null
+    };
+    saveReflectSessionRaw(JSON.stringify(session));
+
+    if (retention !== 'none' && messages.filter(m => m.role === 'user' && m.text.trim()).length > 0) {
+      saveConversation(
+        sessionId,
+        // Persist per-turn mode metadata with each AI message (never debug).
+        messages.map(m => ({
+          role: m.role,
+          text: m.text,
+          requestedMode: m.requestedMode,
+          effectiveMode: m.effectiveMode,
+        })),
+        retention,
+        effectiveLanguage === 'zh' ? 'zh' : 'en',
+        {
+          responseMode: currentResponseMode,
+          sessionStyle: legacyStyle,
+          selectedMode: legacySelectedMode,
+          status: conversationStatus,
+          decision: conversationDecision,
+          pendingExtraction:
+            conversationStatus === 'awaiting_decision' && pendingSummary
+              ? (pendingSummary as unknown as Record<string, unknown>)
+              : null
+        }
+      );
     }
   }, [messages, step, keepContext, retention, sessionId, currentResponseMode, consecutiveQuestionTurns, effectiveLanguage, conversationStatus, conversationDecision, pendingSummary]);
 
@@ -498,12 +509,18 @@ export default function Reflect() {
           session.status === 'awaiting_decision' &&
           typeof pendingExtraction?.summaryText === 'string' &&
           pendingExtraction.summaryText.trim().length > 0;
-        const status: ConversationStatus =
-          session.status === 'completed'
-            ? 'completed'
-            : hasRestorableExtraction
-              ? 'awaiting_decision'
-              : 'active';
+        // Completed sessions must not reappear via Continue — dispose leftover mirrors.
+        if (session.status === 'completed') {
+          disposeCompletedConversation(session.sessionId, session.decision);
+          clearReflectSession();
+          setHasSavedSession(false);
+          refreshRecentConversations();
+          return;
+        }
+
+        const status: ConversationStatus = hasRestorableExtraction
+          ? 'awaiting_decision'
+          : 'active';
 
         setMessages(session.messages);
         setStep(session.step === 0 ? 2 : session.step);
@@ -563,16 +580,46 @@ export default function Reflect() {
     return userTurns >= 1 && aiTurns >= 1;
   };
 
-  /** Mark the conversation ended, in state and in the retained record. */
-  const markConversationCompleted = (
+  /**
+   * After Keep / Reject (or quiet end): dispose transcript immediately.
+   * Preserves kept Understanding Updates (written before this runs on Keep).
+   */
+  const disposeReflectAfterDecision = (
     decision: ConversationDecision | undefined,
-    convoId: string | undefined
+    convoId: string | undefined,
+    nextStep: 0 | 1 | 3,
   ) => {
-    setConversationStatus('completed');
-    setConversationDecision(decision);
     if (convoId) {
-      updateConversation(convoId, { status: 'completed', decision, pendingExtraction: null });
+      disposeCompletedConversation(convoId, decision);
     }
+    clearReflectSession();
+    setHasSavedSession(false);
+    setRetention('3days');
+    setSessionId(undefined);
+    setCurrentResponseMode(loadLastUsedResponseMode(uid));
+    setModeChangeNotice(null);
+    setMessages([]);
+    setConsecutiveQuestionTurns(0);
+    setJustCleared(true);
+    setPendingSummary(null);
+    setPendingInsightAction(null);
+    setShowSummaryConfirmation(false);
+    setConversationStatus('active');
+    setConversationDecision(undefined);
+    setSummaryError(false);
+    setDecisionError(false);
+    setIsSavingDecision(false);
+    setStaleConversationNotice(false);
+    setRoleDropdownOpen(false);
+    setRetentionDropdownOpen(false);
+    setMobileDrawerOpen(false);
+    restoredConvoRef.current = null;
+    if (searchParams.get('conversation')) {
+      setSearchParams({}, { replace: true });
+    }
+    refreshRecentConversations();
+    setStep(nextStep);
+    console.log('[Reflect] disposed_completed_conversation', { convoId, decision, nextStep });
   };
 
   /**
@@ -669,9 +716,8 @@ export default function Reflect() {
         return; // decision overlay or retry state is showing
       }
     }
-    // Nothing to extract from — end quietly.
-    markConversationCompleted(undefined, sessionId);
-    setStep(3);
+    // Nothing to extract from — end quietly and dispose any short-term transcript.
+    disposeReflectAfterDecision(undefined, sessionId, 3);
   };
 
   /** 再试一次 — exactly one new extraction request per retry. */
@@ -751,42 +797,31 @@ export default function Reflect() {
       return;
     }
     setIsSavingDecision(false);
-    markConversationCompleted('kept', currentSessionId);
-
+    // Keep Understanding Update already saved above; dispose transcript now.
     if (pendingInsightAction === 'new') {
-      performClear();
-      setStep(1);
+      disposeReflectAfterDecision('kept', currentSessionId, 1);
       return;
     }
     if (pendingInsightAction === 'clear') {
-      performClear();
+      disposeReflectAfterDecision('kept', currentSessionId, 0);
       return;
     }
-    setPendingSummary(null);
-    setPendingInsightAction(null);
-    setShowSummaryConfirmation(false);
-    setStep(3);
+    disposeReflectAfterDecision('kept', currentSessionId, 3);
   };
 
   const handleRejectSummary = () => {
-    // 放下 — nothing is written as a kept reflection; the raw transcript keeps
-    // (or loses) itself purely by the retention choice. Never re-extract.
+    // 放下 — no kept Understanding Update; dispose transcript immediately.
     if (isSavingDecision) return;
-    markConversationCompleted('released', sessionId);
-
+    const currentSessionId = sessionId;
     if (pendingInsightAction === 'new') {
-      performClear();
-      setStep(1);
+      disposeReflectAfterDecision('released', currentSessionId, 1);
       return;
     }
     if (pendingInsightAction === 'clear') {
-      performClear();
+      disposeReflectAfterDecision('released', currentSessionId, 0);
       return;
     }
-    setPendingSummary(null);
-    setPendingInsightAction(null);
-    setShowSummaryConfirmation(false);
-    setStep(3);
+    disposeReflectAfterDecision('released', currentSessionId, 3);
   };
 
   const handleReply = async () => {

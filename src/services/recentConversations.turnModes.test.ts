@@ -151,11 +151,14 @@ describe('migration safety with pre-2C records', () => {
 });
 
 describe('lifecycle patches leave turn metadata alone', () => {
-  it('marking completed does not strip per-turn mode metadata', () => {
+  it('awaiting_decision keeps per-turn mode metadata on the unfinished transcript', () => {
     saveConversation('c1', TURN_MESSAGES, '3days', 'zh', { responseMode: 'untangle' });
-    updateConversation('c1', { status: 'completed', decision: 'kept', pendingExtraction: null });
+    updateConversation('c1', {
+      status: 'awaiting_decision',
+      pendingExtraction: { summaryText: 'x' },
+    });
     const restored = getConversationById('c1')!;
-    expect(restored.status).toBe('completed');
+    expect(restored.status).toBe('awaiting_decision');
     expect(restored.messages[1].effectiveMode).toBe('reflect');
     expect(restored.messages[3].effectiveMode).toBe('untangle');
     expect(restored.responseMode).toBe('untangle');
