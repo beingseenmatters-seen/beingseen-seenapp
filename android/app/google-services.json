@@ -14,6 +14,30 @@
       },
       "oauth_client": [
         {
+          "client_id": "219057410128-7fbtqbr6fejilk59vs6k5d8arj87a2gb.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.beingseenmatters.seen",
+            "certificate_hash": "8a6a09437ec70096f045dc9f857bdbf38c783b35"
+          }
+        },
+        {
+          "client_id": "219057410128-l5grvnkutg0su4clea5sv51bpo13n7qt.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.beingseenmatters.seen",
+            "certificate_hash": "5361bc4c697f239bea7280d8e462f34b8415e54b"
+          }
+        },
+        {
+          "client_id": "219057410128-nbrjml1b1k7jst9vpmtrkfssq45ooevh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.beingseenmatters.seen",
+            "certificate_hash": "a0d4506450c613820d68c06648b73bbef8b9f930"
+          }
+        },
+        {
           "client_id": "219057410128-v7eerjlunje7p1k8lopfvtuo6vonhha5.apps.googleusercontent.com",
           "client_type": 3
         }

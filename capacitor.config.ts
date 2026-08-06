@@ -13,10 +13,9 @@ const config: CapacitorConfig = {
     iosScheme: 'capacitor'
   },
   plugins: {
-    CapacitorHttp: {
-      // Enable native HTTP for all requests
-      enabled: true
-    },
+    // Do NOT globally enable CapacitorHttp — it patches fetch/XHR and breaks
+    // Firestore's WebChannel transport on Android (writes hang forever).
+    // Moment Library native fetches use CapacitorHttp explicitly where needed.
     FirebaseAuthentication: {
       providers: ['apple.com', 'google.com'],
     }

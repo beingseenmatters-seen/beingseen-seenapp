@@ -16,8 +16,14 @@ export async function linkGoogleToCurrentUser() {
       return result.user;
     } else {
       // On native iOS/Android, use capacitor-firebase plugin
-      const result = await FirebaseAuthentication.signInWithGoogle();
-      const credential = GoogleAuthProvider.credential(result.credential?.idToken);
+      const result = await FirebaseAuthentication.signInWithGoogle({
+        skipNativeAuth: true,
+      });
+      const idToken = result.credential?.idToken;
+      if (!idToken) {
+        throw new Error('Google sign-in did not return an ID token.');
+      }
+      const credential = GoogleAuthProvider.credential(idToken);
       const linkResult = await linkWithCredential(auth.currentUser, credential);
       await ensureUserDocument(linkResult.user, 'google', result.user?.displayName);
       return linkResult.user;
