@@ -1,0 +1,135 @@
+{
+  "id": "M-P10",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "⏳",
+  "title": {
+    "zh": "那个日期",
+    "en": "The date"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "如果可以知道自己去世的准确日期，你想知道吗？",
+    "en": "If you could know the exact date of your own death, would you want to?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "想知道，这样可以提前安排好人生",
+        "en": "Yes — then I could plan my life around it"
+      },
+      "interpretation": {
+        "zh": "你可能更愿意直面确定性，把它变成规划。",
+        "en": "You may prefer facing certainty head-on and turning it into a plan."
+      },
+      "immediate": "用户似乎倾向于把未知拉向已知，并用规划接住它。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-09",
+          "delta": 0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-08",
+          "delta": 0.45,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": 12
+      }
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "绝对不想知道",
+        "en": "Absolutely not"
+      },
+      "interpretation": {
+        "zh": "你似乎想护住当下的心境，不让终点提前入场。",
+        "en": "You seem to protect how today feels — the ending doesn’t get to arrive early."
+      },
+      "immediate": "用户似乎倾向于有意不看某些沉重的答案，以保护现在的生活。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EMW-05",
+          "delta": 0.55,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-09",
+          "delta": -0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": -8
+      }
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "会犹豫，但最后还是会看",
+        "en": "I’d hesitate — but I’d look in the end"
+      },
+      "interpretation": {
+        "zh": "你可能会在不安和想知道之间拉扯——最后还是想知道。",
+        "en": "You might be torn between dread and curiosity — and wanting to know wins."
+      },
+      "immediate": "用户似乎在犹豫之后，仍会让「想看」赢。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-10",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EMW-03",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": 4
+      }
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "无所谓，反正知道了也改变不了",
+        "en": "Doesn’t matter — knowing wouldn’t change anything"
+      },
+      "interpretation": {
+        "zh": "你似乎对不可控的事有一种平静的账：不给它情绪预算。",
+        "en": "You seem to keep a calm ledger for what can’t be controlled: no emotional budget for it."
+      },
+      "immediate": "用户似乎倾向于不在不可控的事情上投入情绪。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EMW-04",
+          "delta": 0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EMW-01",
+          "delta": 0.35,
+          "confidence": "low"
+        },
+        {
+          "signal": "CHG-03",
+          "delta": -0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": -10
+      }
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+{
+  "id": "COM-001",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "📄",
+  "title": {
+    "zh": "明天要交",
+    "en": "Due tomorrow"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "你答应帮朋友完成一件事。\n明天就要交。\n今晚发现只完成了一半。\n你最可能会——",
+    "en": "You promised to help a friend finish something.\nIt’s due tomorrow.\nTonight you realize you’re only halfway done.\nWhat would you most likely do?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "熬夜完成，按时交",
+        "en": "Pull an all-nighter and deliver on time"
+      },
+      "interpretation": {
+        "zh": "答应了的事，你可能宁可自己扛一晚，也不想让它落空。",
+        "en": "Once you’ve said yes, you may rather carry a rough night than let it fall through."
+      },
+      "immediate": "用户把承诺兑现放在自己的成本之前。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-04",
+          "delta": 0.5,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-02",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "现在就告诉对方可能要晚一点",
+        "en": "Tell them right now it might be late"
+      },
+      "interpretation": {
+        "zh": "你可能觉得，坏消息越早说，越是对对方负责。",
+        "en": "Bad news early may feel to you like the responsible version of bad news."
+      },
+      "immediate": "用户及时同步风险，直面而不拖延。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EXP-01",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-05",
+          "delta": 0.35,
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "先把完成的一部分发过去",
+        "en": "Send over the finished half first"
+      },
+      "interpretation": {
+        "zh": "你可能习惯先交出手里有的——让事情先走起来。",
+        "en": "You may like handing over what you have — keep things moving first."
+      },
+      "immediate": "用户用可交付的部分先推进，务实止损。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-02",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-03",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "明天交的时候再解释",
+        "en": "Explain tomorrow when I hand it in"
+      },
+      "interpretation": {
+        "zh": "你可能更愿意先把今晚过完，把解释留给明天的自己。",
+        "en": "You may prefer to finish tonight in peace and leave the explaining to tomorrow’s you."
+      },
+      "immediate": "用户暂缓摩擦性沟通，先维持表面的平稳。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "REL-10",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EXP-02",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    }
+  ]
+}

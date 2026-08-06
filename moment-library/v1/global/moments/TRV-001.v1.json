@@ -1,0 +1,118 @@
+{
+  "id": "TRV-001",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "🧳",
+  "title": {
+    "zh": "收拾行李",
+    "en": "Packing"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "准备和朋友（或伴侣）一起出远门旅行。\n你收拾行李时，更接近哪一种？",
+    "en": "You’re heading off on a long trip with a friend (or your partner).\nWhen you pack, which is closest to you?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "能准备的尽量准备齐",
+        "en": "Pack everything I possibly can"
+      },
+      "interpretation": {
+        "zh": "你可能更安心于「都带上了」——路上少一点意外，多一点从容。",
+        "en": "“It’s all in the bag” may be what settles you — fewer surprises, more ease."
+      },
+      "immediate": "用户倾向以充分准备换取确定感。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-08",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-09",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "能轻装就轻装，缺什么到当地再买",
+        "en": "Pack light — buy whatever’s missing when we get there"
+      },
+      "interpretation": {
+        "zh": "你可能更喜欢把路留给路上——缺了什么，就当是旅行的一部分。",
+        "en": "You may like leaving the road to the road — whatever’s missing becomes part of the trip."
+      },
+      "immediate": "用户对不确定放松，把灵活看得比周全重。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-09",
+          "delta": -0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-09",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "特别重视应急用品（常备药、创可贴等）",
+        "en": "Prioritize the emergency kit (meds, band-aids…)"
+      },
+      "interpretation": {
+        "zh": "你可能习惯先把最坏的情况垫好底，再放心出发。",
+        "en": "You may like cushioning the worst case first, then setting off with a clear head."
+      },
+      "immediate": "用户优先覆盖风险，以安全垫换安心。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-08",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-03",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "会准备不少吃的，以防路上需要",
+        "en": "Bring plenty of snacks, just in case"
+      },
+      "interpretation": {
+        "zh": "你可能用最实在的方式照顾同行的人——饿不着，就稳了一半。",
+        "en": "You may take care of your travel companions in the most concrete way — nobody hungry, half the battle won."
+      },
+      "immediate": "用户以食物这类具体供给照顾自己和同伴。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-03",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-08",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    }
+  ]
+}

@@ -10,6 +10,7 @@ import {
 import { onAuthStateChanged, signOut as firebaseSignOut, type User } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import type { SeenUser, LoginMethod } from './providers/types';
+import { setMomentLibraryAccountRegion } from '../services/moments/momentsClient';
 import * as emailLink from './providers/emailLink';
 import * as googleWeb from './providers/googleWeb';
 import * as appleNative from './providers/appleNative';
@@ -67,6 +68,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
       } as SeenUser;
       const updatedUser = { ...baseUser, ...action.data };
       syncLocalStorage(updatedUser);
+      syncMomentLibraryRegion(updatedUser, true);
       return { ...state, seenUser: updatedUser };
     }
     default:
@@ -220,12 +222,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           dispatch({ type: 'SET_USER', firebaseUser: user, seenUser });
           syncLocalStorage(seenUser);
+          syncMomentLibraryRegion(seenUser, true);
         } catch (err) {
           console.error('[auth] error fetching user document:', err);
           dispatch({ type: 'SET_USER', firebaseUser: user, seenUser: null });
+          syncMomentLibraryRegion(null, true);
         }
       } else {
         dispatch({ type: 'SET_USER', firebaseUser: null, seenUser: null });
+        syncMomentLibraryRegion(null, false);
       }
     });
 
@@ -309,6 +314,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const seenUser = await firestoreOps.getUserDocument(user.uid);
         dispatch({ type: 'SET_USER', firebaseUser: user, seenUser });
         syncLocalStorage(seenUser);
+        syncMomentLibraryRegion(seenUser, true);
         console.log('[auth] provider sign-in succeeded:', method);
       } catch (err) {
         const code = (err as { code?: string })?.code;
@@ -514,4 +520,9 @@ function syncLocalStorage(seenUser: SeenUser | null) {
   } catch {
     // Ignore localStorage errors
   }
+}
+
+/** Moment Platform: account.dataRegion is source of truth when signed in. */
+function syncMomentLibraryRegion(seenUser: SeenUser | null, isSignedIn: boolean) {
+  setMomentLibraryAccountRegion(seenUser?.dataRegion ?? null, isSignedIn);
 }

@@ -1,0 +1,38 @@
+{
+  "id": "TEST-PLAT-001",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "title": {
+    "zh": "平台测试瞬间",
+    "en": "Platform test moment"
+  },
+  "scenario": {
+    "zh": "这是一个仅用于 Moment Platform 验收的测试瞬间。",
+    "en": "A test moment used only for Moment Platform acceptance."
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "选项 A",
+        "en": "Option A"
+      },
+      "signals": [
+        {
+          "signal": "EMW-01",
+          "delta": 1,
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "选项 B",
+        "en": "Option B"
+      },
+      "signals": []
+    }
+  ]
+}

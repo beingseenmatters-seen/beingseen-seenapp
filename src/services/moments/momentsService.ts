@@ -18,8 +18,13 @@ import type {
   MomentsUserData,
   SketchSummary,
 } from '../../types/moments';
+import type { MomentLibraryProvenance } from '../../types/momentLibrary';
 import { getActiveMoments } from './config';
 import { generateSketchV2 } from './sketchEngineV2';
+import {
+  MOMENT_LIBRARY_SCHEMA_VERSION,
+  SIGNAL_CATALOG_VERSION,
+} from '../../data/moments/platformConstants';
 
 /** Minimal async key-value boundary a future Firestore adapter can implement. */
 export interface KeyValueStore {
@@ -76,7 +81,10 @@ function shuffle<T>(items: T[], rng: () => number): T[] {
   return arr;
 }
 
-function toSnapshot(moment: MomentDefinition): MomentSnapshot {
+function toSnapshot(
+  moment: MomentDefinition,
+  provenance?: MomentLibraryProvenance | null,
+): MomentSnapshot {
   return {
     momentId: moment.id,
     version: moment.version,
@@ -93,8 +101,13 @@ function toSnapshot(moment: MomentDefinition): MomentSnapshot {
       text: o.text,
       interpretation: o.interpretation,
       weight: o.weight,
-      signals: o.signals,
+      /** Exact option-to-signal mapping used for this session. */
+      signals: o.signals.map((s) => ({ ...s })),
     })),
+    libraryVersion: provenance?.libraryVersion,
+    schemaVersion: provenance?.schemaVersion ?? MOMENT_LIBRARY_SCHEMA_VERSION,
+    signalCatalogVersion:
+      provenance?.signalCatalogVersion ?? SIGNAL_CATALOG_VERSION,
   };
 }
 
@@ -156,6 +169,7 @@ export class MomentsService {
   private store: KeyValueStore;
   private getUid: () => string | null;
   private library: () => MomentDefinition[];
+  private getLibraryProvenance: () => MomentLibraryProvenance | null;
   private rng: () => number;
   private now: () => number;
 
@@ -165,12 +179,14 @@ export class MomentsService {
     library: () => MomentDefinition[] = getActiveMoments,
     rng: () => number = Math.random,
     now: () => number = Date.now,
+    getLibraryProvenance: () => MomentLibraryProvenance | null = () => null,
   ) {
     this.store = store;
     this.getUid = getUid;
     this.library = library;
     this.rng = rng;
     this.now = now;
+    this.getLibraryProvenance = getLibraryProvenance;
   }
 
   /** Uid-scoped only — never a shared `anonymous` device bucket. */
@@ -227,7 +243,7 @@ export class MomentsService {
       status: 'active',
       momentIds: selected.map((m) => m.id),
       momentVersions: Object.fromEntries(selected.map((m) => [m.id, m.version])),
-      snapshots: selected.map(toSnapshot),
+      snapshots: selected.map((m) => toSnapshot(m, this.getLibraryProvenance())),
       answers: {},
       createdAt: ts,
       updatedAt: ts,

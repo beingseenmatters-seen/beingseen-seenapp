@@ -155,6 +155,13 @@ export interface MomentSnapshot {
   maxSelection?: number;
   maxRank?: number;
   options: MomentOptionSnapshot[];
+  /**
+   * Moment Platform V1 provenance — required on newly created sessions.
+   * Optional for legacy snapshots created before the platform upgrade.
+   */
+  libraryVersion?: number;
+  schemaVersion?: number;
+  signalCatalogVersion?: number;
 }
 
 /**

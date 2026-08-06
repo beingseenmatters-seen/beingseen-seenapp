@@ -1,0 +1,147 @@
+{
+  "id": "M-P03",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "🐈",
+  "title": {
+    "zh": "流浪猫",
+    "en": "The stray cat"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "一只流浪猫总来你家门口，你会怎么做？",
+    "en": "A stray cat keeps showing up at your door. What would you do?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "偶尔喂它，但不收养",
+        "en": "Feed it sometimes, but not take it in"
+      },
+      "interpretation": {
+        "zh": "你可能温和而有边界：愿意付出，但保留空间。",
+        "en": "Warm but boundaried: willing to give, while keeping some space."
+      },
+      "immediate": "用户似乎倾向于付出善意的同时保留边界。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-01",
+          "delta": 0.5,
+          "confidence": "medium"
+        },
+        {
+          "signal": "REL-04",
+          "delta": 0.4,
+          "confidence": "low"
+        },
+        {
+          "signal": "REL-05",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "n": 5,
+        "h": 3
+      }
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "把它带回家收养",
+        "en": "Take it home and adopt it"
+      },
+      "interpretation": {
+        "zh": "你似乎愿意为一段联结承担长期的责任。",
+        "en": "You seem willing to take on long-term responsibility for a bond."
+      },
+      "immediate": "用户似乎倾向于较快承接一段长期责任。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-02",
+          "delta": 0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-04",
+          "delta": 0.45,
+          "confidence": "low"
+        },
+        {
+          "signal": "CHG-02",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "n": 12
+      }
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "不喂它，怕它以后形成依赖",
+        "en": "Not feed it — I don’t want it depending on me"
+      },
+      "interpretation": {
+        "zh": "你可能更看重界限，不想建立自己无法负责的期待。",
+        "en": "You may value boundaries — no expectations you can’t be responsible for."
+      },
+      "immediate": "用户似乎倾向于提前避免自己无法负责的期待。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "REL-04",
+          "delta": 0.55,
+          "confidence": "medium"
+        },
+        {
+          "signal": "REL-05",
+          "delta": 0.4,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "n": -12
+      }
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "联系动物救助机构，请他们处理",
+        "en": "Call an animal rescue to take care of it"
+      },
+      "interpretation": {
+        "zh": "你更倾向用可持续的方式解决问题，而不只是回应情绪。",
+        "en": "You lean toward sustainable fixes, not just responding to the feeling of the moment."
+      },
+      "immediate": "用户似乎倾向于引入系统资源来解决问题。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-03",
+          "delta": 0.55,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-02",
+          "delta": 0.3,
+          "confidence": "low"
+        },
+        {
+          "signal": "CAR-01",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": 8,
+        "n": 3
+      }
+    }
+  ]
+}

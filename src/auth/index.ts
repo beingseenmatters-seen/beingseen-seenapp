@@ -4,6 +4,7 @@ export { getPlatform, isNative, isIOS, isAndroid, isWeb } from './platform';
 export type { Platform } from './platform';
 export type {
   AboutMeQ5Choice,
+  AccountDataRegion,
   AiResponseStyleId,
   LoginMethod,
   SeenUser,

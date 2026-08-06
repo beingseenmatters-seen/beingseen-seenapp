@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://beingseenmatters.com/schemas/momentLibrary.pack.v1.json",
+  "title": "MomentLibraryPack",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "libraryVersion",
+    "region",
+    "signalCatalogVersion",
+    "publishedAt",
+    "minAppCapability",
+    "moments",
+    "momentIndex",
+    "packHash"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "libraryVersion": { "type": "integer", "minimum": 1 },
+    "region": { "type": "string", "enum": ["GLOBAL", "CN"] },
+    "signalCatalogVersion": { "type": "integer", "minimum": 1 },
+    "publishedAt": { "type": "string", "format": "date-time" },
+    "minAppCapability": {
+      "type": "object",
+      "required": ["interactionTypes", "signalCatalogVersion"],
+      "properties": {
+        "interactionTypes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["single_choice", "multiple_choice", "ranking"]
+          }
+        },
+        "signalCatalogVersion": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "moments": { "type": "array", "items": { "type": "object" } },
+    "momentIndex": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "version", "status", "path", "contentHash"],
+        "properties": {
+          "id": { "type": "string" },
+          "version": { "type": "integer", "minimum": 1 },
+          "status": { "type": "string", "enum": ["draft", "active", "retired"] },
+          "path": { "type": "string" },
+          "contentHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    },
+    "packHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "ab": {
+      "description": "Reserved for future A/B — ignored by V1 clients",
+      "type": ["object", "null"]
+    },
+    "meta": { "type": "object" }
+  },
+  "additionalProperties": false
+}

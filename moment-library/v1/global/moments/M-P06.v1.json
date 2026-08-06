@@ -1,0 +1,141 @@
+{
+  "id": "M-P06",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "🏡",
+  "title": {
+    "zh": "住在哪",
+    "en": "Where to live"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "你更愿意住在哪里？",
+    "en": "Where would you rather live?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "认识所有邻居的小镇",
+        "en": "A small town where you know every neighbor"
+      },
+      "interpretation": {
+        "zh": "你可能喜欢被熟悉的人围绕的日子——生活有人情的回声。",
+        "en": "You may like days surrounded by familiar faces — a life with human echoes in it."
+      },
+      "immediate": "用户似乎倾向于选择熟人密度高的生活环境。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "REL-07",
+          "delta": 0.55,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-08",
+          "delta": 0.35,
+          "confidence": "low"
+        },
+        {
+          "signal": "CHG-07",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "n": 10,
+        "a": -6
+      }
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "谁也不认识谁的大城市",
+        "en": "A big city where nobody knows anybody"
+      },
+      "interpretation": {
+        "zh": "你似乎珍惜匿名带来的自由和不被打扰。",
+        "en": "You seem to treasure the freedom — and the peace — of being anonymous."
+      },
+      "immediate": "用户似乎倾向于选择不被注视的生活环境。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "REL-08",
+          "delta": 0.55,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-09",
+          "delta": 0.4,
+          "confidence": "low"
+        },
+        {
+          "signal": "TRU-06",
+          "delta": 0.35,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "n": -12
+      }
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "有几个熟人的城郊",
+        "en": "The outskirts, with a few people you know"
+      },
+      "interpretation": {
+        "zh": "你更倾向少而真的联结——朋友不用多，要真的。",
+        "en": "You lean toward fewer, realer connections — friends don’t need to be many, they need to be real."
+      },
+      "immediate": "用户似乎倾向于保持少量而真实的联结。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "REL-09",
+          "delta": 0.5,
+          "confidence": "medium"
+        },
+        {
+          "signal": "REL-04",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "n": 2
+      }
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "经常搬，住在哪里都可以",
+        "en": "Moving often — anywhere works"
+      },
+      "interpretation": {
+        "zh": "你可能不把归属感绑在某个地方，而是带在身上。",
+        "en": "You may carry your sense of belonging with you, instead of tying it to a place."
+      },
+      "immediate": "用户似乎倾向于不被地点绑定，对居所保持流动。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-09",
+          "delta": 0.55,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-05",
+          "delta": 0.35,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "a": 12
+      }
+    }
+  ]
+}

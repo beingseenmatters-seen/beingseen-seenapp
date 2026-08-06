@@ -1,0 +1,158 @@
+{
+  "id": "M-P01",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "🛗",
+  "title": {
+    "zh": "电梯坏了",
+    "en": "Broken elevator"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "电梯坏了，你要爬10楼。你的第一反应是？",
+    "en": "The elevator’s out and you have to climb ten floors. What’s your first reaction?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "正好当锻炼",
+        "en": "Free workout"
+      },
+      "interpretation": {
+        "zh": "你可能更倾向把小麻烦转成对自己有利的事。",
+        "en": "You may tend to turn small annoyances into something that works for you."
+      },
+      "immediate": "用户似乎倾向于把突发的不便重新解读为对自己有利的机会。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-01",
+          "delta": 0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-02",
+          "delta": 0.3,
+          "confidence": "low"
+        },
+        {
+          "signal": "CHG-03",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": 12,
+        "t": 6
+      }
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "这物业真不行",
+        "en": "This building is so badly run"
+      },
+      "interpretation": {
+        "zh": "你似乎对规则和责任比较敏感，出了问题，该有人负责。",
+        "en": "You seem tuned in to rules and responsibility — when something breaks, someone should answer for it."
+      },
+      "immediate": "用户似乎倾向于先定位责任方，把问题归入「有人失责」。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-05",
+          "delta": 0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "TRU-04",
+          "delta": 0.4,
+          "confidence": "low"
+        },
+        {
+          "signal": "TRU-03",
+          "delta": -0.2,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "h": -8,
+        "c": 4
+      }
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "今天运气差",
+        "en": "Just my luck today"
+      },
+      "interpretation": {
+        "zh": "你可能倾向用运气解释外部事件。",
+        "en": "You may lean on luck to explain what the world throws at you."
+      },
+      "immediate": "用户似乎暂时倾向于用运气解释外部的不顺。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-11",
+          "delta": 0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EMW-01",
+          "delta": 0.3,
+          "confidence": "low"
+        },
+        {
+          "signal": "CHG-03",
+          "delta": -0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": -12
+      }
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "无所谓，爬就是了",
+        "en": "Whatever — just take the stairs"
+      },
+      "interpretation": {
+        "zh": "你似乎更倾向接受现实，不在小事上消耗情绪。",
+        "en": "You seem to accept what’s in front of you without spending emotion on the small stuff."
+      },
+      "immediate": "用户似乎倾向于直接接受眼前情况，并继续行动。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EMW-01",
+          "delta": 0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-02",
+          "delta": 0.35,
+          "confidence": "low"
+        },
+        {
+          "signal": "EMW-02",
+          "delta": 0.3,
+          "confidence": "low"
+        },
+        {
+          "signal": "CHG-03",
+          "delta": 0.1,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "a": -8,
+        "c": -3
+      }
+    }
+  ]
+}

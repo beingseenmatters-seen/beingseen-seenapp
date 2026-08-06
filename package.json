@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "moments:export-library": "vite-node scripts/exportMomentLibrary.ts",
+    "moments:build-v2-test": "vite-node scripts/buildLibraryV2TestMoment.ts"
   },
   "dependencies": {
     "@capacitor-firebase/authentication": "^8.1.0",

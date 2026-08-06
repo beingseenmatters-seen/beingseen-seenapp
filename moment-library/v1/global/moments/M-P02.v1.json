@@ -1,0 +1,145 @@
+{
+  "id": "M-P02",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "👀",
+  "title": {
+    "zh": "没人扶",
+    "en": "Nobody helps"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "路边有人摔倒，周围没人扶。你觉得多数人不扶是因为？",
+    "en": "Someone slips and falls on the street, and nobody stops to help. Why do you think most people walk past?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "怕被讹",
+        "en": "They’re afraid of being blamed — or sued"
+      },
+      "interpretation": {
+        "zh": "你可能认为环境会影响善意的成本，对现实保持清醒。",
+        "en": "You may see how much a good deed can cost, and stay clear-eyed about it."
+      },
+      "immediate": "用户似乎倾向于用现实风险解释人们的克制。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-02",
+          "delta": 0.5,
+          "confidence": "medium"
+        },
+        {
+          "signal": "TRU-03",
+          "delta": -0.4,
+          "confidence": "low"
+        },
+        {
+          "signal": "TRU-01",
+          "delta": -0.25,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "h": -10
+      }
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "冷漠自私",
+        "en": "People just don’t care"
+      },
+      "interpretation": {
+        "zh": "你似乎对人性的期待偏谨慎，先设防，再靠近。",
+        "en": "Your expectations of people seem cautious — guard up first, warm up later."
+      },
+      "immediate": "用户似乎暂时倾向于用人性品质解释他人的不作为。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-01",
+          "delta": -0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "TRU-02",
+          "delta": 0.35,
+          "confidence": "low"
+        },
+        {
+          "signal": "TRU-05",
+          "delta": -0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "h": -12
+      }
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "没注意到",
+        "en": "They probably didn’t notice"
+      },
+      "interpretation": {
+        "zh": "你更倾向给出中性的解释，不轻易下判断。",
+        "en": "You lean toward neutral explanations and don’t rush to judge."
+      },
+      "immediate": "用户似乎倾向于先给出不涉动机的情境解释。",
+      "weight": "Very Light",
+      "signals": [
+        {
+          "signal": "TRU-05",
+          "delta": 0.5,
+          "confidence": "medium"
+        },
+        {
+          "signal": "TRU-01",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "h": 8
+      }
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "每个人都有自己的难处",
+        "en": "Everyone’s carrying something of their own"
+      },
+      "interpretation": {
+        "zh": "你似乎习惯站在别人的处境里理解行为。",
+        "en": "You seem used to understanding behavior from inside other people’s situations."
+      },
+      "immediate": "用户似乎倾向于站在他人的处境中理解行为。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-01",
+          "delta": 0.5,
+          "confidence": "medium"
+        },
+        {
+          "signal": "TRU-05",
+          "delta": 0.4,
+          "confidence": "low"
+        },
+        {
+          "signal": "MEA-12",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "h": 12
+      }
+    }
+  ]
+}

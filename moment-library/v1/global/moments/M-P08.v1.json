@@ -1,0 +1,131 @@
+{
+  "id": "M-P08",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "🌙",
+  "title": {
+    "zh": "为什么活着",
+    "en": "Why we live"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "孩子，或者一个比你小很多的人问你：「人为什么要活着？」你更倾向于怎么回答？",
+    "en": "A child — or someone much younger — asks you: “Why do people live?” How would you tend to answer?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "为了体验和感受这个世界",
+        "en": "To experience and feel this world"
+      },
+      "interpretation": {
+        "zh": "你可能相信，活着的意义就藏在经历本身里。",
+        "en": "You may believe the meaning of living is hidden inside experience itself."
+      },
+      "immediate": "用户似乎倾向于把生命的意义定位于体验本身。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-01",
+          "delta": 0.6,
+          "confidence": "medium"
+        }
+      ],
+      "sliders": {
+        "t": 8
+      }
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "为了对别人有用，也让世界变得更好一点",
+        "en": "To be useful to others, and leave the world a little better"
+      },
+      "interpretation": {
+        "zh": "你的意义感似乎和他人、和更大的世界紧紧相连。",
+        "en": "Your sense of meaning seems tightly woven into other people and a bigger world."
+      },
+      "immediate": "用户似乎倾向于在贡献与有用中定位意义。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-02",
+          "delta": 0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-04",
+          "delta": 0.4,
+          "confidence": "low"
+        },
+        {
+          "signal": "CAR-01",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "n": 10
+      }
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "没有特别的原因，活着本身就是意义",
+        "en": "No special reason — being alive is the meaning"
+      },
+      "interpretation": {
+        "zh": "你更倾向接纳存在本身——不必再向外找理由。",
+        "en": "You lean toward accepting existence as it is — no outside reason required."
+      },
+      "immediate": "用户似乎倾向于放下「为什么」，让存在自足。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-03",
+          "delta": 0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EMW-01",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": -8
+      }
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "每个人都需要自己寻找答案",
+        "en": "Everyone has to find their own answer"
+      },
+      "interpretation": {
+        "zh": "你似乎尊重每个人构建自己答案的权利——包括提问的那个孩子。",
+        "en": "You seem to respect each person’s right to build their own answer — including the child who asked."
+      },
+      "immediate": "用户似乎倾向于把意义的主权交还给提问者本人。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-04",
+          "delta": 0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "TRU-05",
+          "delta": 0.35,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": 6,
+        "a": 4
+      }
+    }
+  ]
+}

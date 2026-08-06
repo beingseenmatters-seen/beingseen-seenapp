@@ -1,0 +1,143 @@
+{
+  "id": "REL-004",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "🏡",
+  "title": {
+    "zh": "普通的家",
+    "en": "A modest family"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "刚开始交往。\n后来你发现，对方家庭经济条件比较普通。\n你最可能会怎么想？",
+    "en": "You've recently started dating someone.\nLater you learn that their family has fairly modest financial circumstances.\nWhat would you most likely think?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "我们可能不太适合，我会重新考虑这段关系。",
+        "en": "I may rethink whether we're the right match."
+      },
+      "interpretation": {
+        "zh": "家庭条件对你来说，可能进入了是否继续的判断里。",
+        "en": "Family circumstances may enter your decision about whether to continue."
+      },
+      "immediate": "用户把家庭经济背景纳入关系匹配的筛选。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-12",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "REL-05",
+          "delta": 0.35,
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "我更看重的是这个人，家庭条件不是决定因素。",
+        "en": "I care more about the person than their family background."
+      },
+      "interpretation": {
+        "zh": "你可能把人本身放在结构条件前面。",
+        "en": "You may put the person ahead of the structural conditions around them."
+      },
+      "immediate": "用户以内在的人本身为锚，淡化家庭结构条件。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-05",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "TRU-05",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "顺其自然吧，走到哪一步再看。",
+        "en": "I'll just let the relationship develop naturally and see where it goes."
+      },
+      "interpretation": {
+        "zh": "你可能不急着把这一点变成结论——先让关系自己走。",
+        "en": "You may not rush this into a conclusion — let the relationship move first."
+      },
+      "immediate": "用户对未定事项放松，暂不做基于背景的判断。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EMW-01",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-09",
+          "delta": -0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "我相信未来可以一起努力，把生活过好。",
+        "en": "I believe we can build a good future together through our own efforts."
+      },
+      "interpretation": {
+        "zh": "起点对你来说可能不决定终点——努力还能改写。",
+        "en": "The starting point may not decide the ending for you — effort can still rewrite it."
+      },
+      "immediate": "用户以共同努力归因未来，淡化起点结构。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-10",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-03",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "text": {
+        "zh": "我会先继续了解，不急着因为这一点做决定。",
+        "en": "I'd keep getting to know them before making any judgement."
+      },
+      "interpretation": {
+        "zh": "你可能把判断留到了解更多之后——这一点还不够下定论。",
+        "en": "You may hold judgment until you know more — this alone is not enough to decide."
+      },
+      "immediate": "用户克制过早判断，继续加深了解。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-05",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "REL-05",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    }
+  ]
+}
