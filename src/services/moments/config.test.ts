@@ -98,7 +98,7 @@ describe('active/draft/retired filtering', () => {
     expect(getActiveMoments(library).map((m) => m.id)).toEqual(['ACT-1']);
   });
 
-  it('production library exposes all 21 approved Moments as active', () => {
+  it('production library exposes all 23 approved Moments as active', () => {
     const active = getActiveMoments();
     expect(active.map((m) => m.id)).toEqual([
       'M-P01', 'M-P02', 'M-P03', 'M-P04', 'M-P05',
@@ -108,6 +108,8 @@ describe('active/draft/retired filtering', () => {
       'REL-001', 'SOC-001', 'FRI-001', 'REL-002', 'TRV-001', 'COM-001',
       // Founder Frozen Set 002 (2026-08-04)
       'REL-003', 'REL-004', 'BUS-002',
+      // Founder Frozen Set 003 (2026-08-06) — Moment Library v2
+      'FRI-002', 'PAR-001',
     ]);
   });
 

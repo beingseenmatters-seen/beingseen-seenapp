@@ -10,7 +10,8 @@
     "test": "vitest run",
     "preview": "vite preview",
     "moments:export-library": "vite-node scripts/exportMomentLibrary.ts",
-    "moments:build-v2-test": "vite-node scripts/buildLibraryV2TestMoment.ts"
+    "moments:build-v2-test": "vite-node scripts/buildLibraryV2TestMoment.ts",
+    "moments:build-v2-frozen-003": "vite-node scripts/buildLibraryV2Frozen003.ts"
   },
   "dependencies": {
     "@capacitor-firebase/authentication": "^8.1.0",

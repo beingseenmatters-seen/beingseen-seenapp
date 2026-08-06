@@ -1,0 +1,208 @@
+{
+  "id": "M-P12",
+  "version": 1,
+  "status": "active",
+  "interactionType": "ranking",
+  "emoji": "🚀",
+  "title": {
+    "zh": "创业伙伴",
+    "en": "A business partner"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "你发现了一个很有潜力的创业机会，准备寻找一位长期合作伙伴。\n下面哪些条件对你来说更重要？",
+    "en": "You’ve found a promising business opportunity and you’re looking for a long-term partner.\nWhich of these matter most to you?"
+  },
+  "hint": {
+    "zh": "请按重要程度排序。按顺序点选最重要的 3 项。",
+    "en": "Rank by importance — tap your top 3, in order."
+  },
+  "maxRank": 3,
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "有经济实力",
+        "en": "Financial backing"
+      },
+      "interpretation": {
+        "zh": "你可能希望这件事从一开始就有足够的托底。",
+        "en": "You may want this venture cushioned from day one."
+      },
+      "immediate": "用户在合作里优先考虑资源安全垫。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-08",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-12",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-09",
+          "delta": 0.2,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "头脑灵活，思路开阔",
+        "en": "Sharp, open-minded thinking"
+      },
+      "interpretation": {
+        "zh": "你可能更看重一起把问题想开、想活的能力。",
+        "en": "You may value the ability to think problems open — together."
+      },
+      "immediate": "用户重视认知灵活性与换角度的能力。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-01",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-10",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "做事靠谱，值得信任",
+        "en": "Reliable and trustworthy"
+      },
+      "interpretation": {
+        "zh": "你可能觉得再好的机会，也要先能把事放心交出去。",
+        "en": "Even the best opportunity needs someone you can hand things to without worrying."
+      },
+      "immediate": "用户把可托付性作为合作的第一道筛选。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-04",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-05",
+          "delta": 0.25,
+          "confidence": "low"
+        },
+        {
+          "signal": "TRU-02",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "有人脉资源",
+        "en": "Connections and networks"
+      },
+      "interpretation": {
+        "zh": "你可能相信关系网络能把路走宽。",
+        "en": "You may believe a strong network widens the road."
+      },
+      "immediate": "用户倾向于借助外部网络与结构性资源。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "REL-07",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-12",
+          "delta": 0.35,
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "text": {
+        "zh": "执行力强",
+        "en": "Strong execution"
+      },
+      "interpretation": {
+        "zh": "你可能更相信做出来的，而不是说出来的。",
+        "en": "You may trust what gets done more than what gets said."
+      },
+      "immediate": "用户重视行动落地胜过设想。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-02",
+          "delta": 0.5,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-10",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "F",
+      "text": {
+        "zh": "价值观一致",
+        "en": "Aligned values"
+      },
+      "interpretation": {
+        "zh": "你可能希望走远路的人，方向感是一致的。",
+        "en": "You may want anyone walking the long road with you pointed the same way."
+      },
+      "immediate": "用户以价值一致性作为长期合作前提。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-05",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "REL-09",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "G",
+      "text": {
+        "zh": "愿意长期投入",
+        "en": "Committed for the long haul"
+      },
+      "interpretation": {
+        "zh": "你可能在找愿意一起熬过慢阶段的人。",
+        "en": "You may be looking for someone willing to sit through the slow parts with you."
+      },
+      "immediate": "用户看重长期承诺与持续投入。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-07",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-02",
+          "delta": 0.35,
+          "confidence": "medium"
+        }
+      ]
+    }
+  ]
+}

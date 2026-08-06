@@ -1,0 +1,143 @@
+{
+  "id": "BUS-002",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "🧭",
+  "title": {
+    "zh": "方向分歧",
+    "en": "A fork in direction"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "你和合作伙伴正在讨论公司的下一步发展方向。\n大家意见不同。\n你最可能会——",
+    "en": "You and your business partner disagree about the company's next major direction.\nWhat would you most likely do?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "谁承担的责任和风险更大，就尊重谁最后的决定。",
+        "en": "The person carrying the greater responsibility and risk should make the final decision."
+      },
+      "interpretation": {
+        "zh": "你可能觉得，拍板权应该跟着担子走。",
+        "en": "You may feel the final say should travel with whoever carries the load."
+      },
+      "immediate": "用户以责任与风险的分量分配最终决定权。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-04",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-05",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "我会坚持自己的判断，努力说服大家。",
+        "en": "I'd stand by my view and try my best to convince everyone."
+      },
+      "interpretation": {
+        "zh": "你可能更愿意把自己的判断推到台面上，而不是先让步。",
+        "en": "You may prefer to put your judgment on the table rather than yield first."
+      },
+      "immediate": "用户坚持己见并主动说服，直接表达立场。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EXP-01",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-05",
+          "delta": 0.35,
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "如果最终还是决定不了，我会接受负责人拍板。",
+        "en": "If we still can't agree, I'd accept the final decision from whoever is leading."
+      },
+      "interpretation": {
+        "zh": "谈不拢时，你可能选择把场面先收住——接受有人拍板。",
+        "en": "When talk stalls, you may choose to close the loop — accept that someone leads."
+      },
+      "immediate": "用户在僵局中接受权威拍板，优先推进而非僵持。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EMW-01",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "REL-10",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "大家把依据摆出来，一起分析，谁更有道理就听谁的。",
+        "en": "I'd rather put all the evidence on the table and follow the strongest reasoning."
+      },
+      "interpretation": {
+        "zh": "你可能更信过程——依据摆清楚，道理自己会说话。",
+        "en": "You may trust the process — put the evidence out, and let the stronger case lead."
+      },
+      "immediate": "用户以证据与推理作为分歧解决的优先路径。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-08",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "TRU-04",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "text": {
+        "zh": "如果始终无法达成共识，我会考虑退出合作。",
+        "en": "If we could never reach alignment, I'd consider leaving the partnership."
+      },
+      "interpretation": {
+        "zh": "方向合不拢时，你可能宁可守住自己的边界，也不硬绑在一起。",
+        "en": "When direction never aligns, you may rather keep your boundary than stay forced together."
+      },
+      "immediate": "用户在长期无法对齐时选择退出，守住合作边界。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "REL-04",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-05",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    }
+  ]
+}

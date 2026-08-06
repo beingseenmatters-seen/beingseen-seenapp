@@ -2001,4 +2001,234 @@ export const MOMENT_LIBRARY: MomentDefinition[] = [
       },
     ],
   },
+
+  // -------------------------------------------------------------------------
+  // FOUNDER FROZEN SET 003 (approved 2026-08-06).
+  // Two Moments for Moment Library v2 via Moment Platform.
+  // Existing Frozen Moments above are immutable. Signal IDs only from
+  // SIGNAL_INDEX — no new signals, no Movement Library edits.
+  // Question/option wording is founder-approved verbatim.
+  // -------------------------------------------------------------------------
+  {
+    id: 'FRI-002',
+    version: 1,
+    status: 'active',
+    interactionType: 'single_choice',
+    emoji: '🤝',
+    title: { zh: '被朋友误会', en: 'Misunderstood by a friend' },
+    audience: 'universal',
+    scenario: {
+      zh: '生活中，你被朋友误会了一件事。\n你更可能会——',
+      en: 'A friend has misunderstood something you did.\nWhat are you most likely to do?',
+    },
+    options: [
+      {
+        id: 'A',
+        text: {
+          zh: '尽快把事情说清楚，不希望误会继续下去',
+          en: 'Explain it as soon as possible so the misunderstanding does not continue.',
+        },
+        interpretation: {
+          zh: '你可能更在意把误会尽快拆开——不让它在关系里继续发酵。',
+          en: 'You may care most about clearing it quickly — before it keeps growing between you.',
+        },
+        immediate: '用户以直接说明消除误会，优先修复信息落差。',
+        weight: 'Light',
+        signals: [
+          { signal: 'EXP-01', delta: 0.45, confidence: 'medium' },
+          { signal: 'CAR-01', delta: 0.25, confidence: 'low' },
+        ],
+      },
+      {
+        id: 'B',
+        text: {
+          zh: '看彼此的关系：重要的朋友会解释，普通关系就随它去',
+          en: 'It depends on the relationship. I would explain to a close friend, but let it go with someone I am not close to.',
+        },
+        interpretation: {
+          zh: '你可能会把解释的力气，留给真正重要的关系。',
+          en: 'You may save the effort of explaining for the relationships that truly matter.',
+        },
+        immediate: '用户按关系亲疏分配解释成本，选择性沟通。',
+        weight: 'Light',
+        signals: [
+          { signal: 'REL-09', delta: 0.4, confidence: 'medium' },
+          { signal: 'EXP-03', delta: 0.3, confidence: 'medium' },
+        ],
+      },
+      {
+        id: 'C',
+        text: {
+          zh: '不主动解释，真正了解我的人自然会明白',
+          en: 'I would not explain. People who truly know me will understand.',
+        },
+        interpretation: {
+          zh: '你可能更信默契——真正懂你的人，不必靠当场解释来证明。',
+          en: 'You may trust unspoken knowing — people who truly know you should not need a speech.',
+        },
+        immediate: '用户以信任替代当面澄清，含蓄处理误会。',
+        weight: 'Light',
+        signals: [
+          { signal: 'TRU-01', delta: 0.4, confidence: 'medium' },
+          { signal: 'EXP-02', delta: 0.3, confidence: 'low' },
+        ],
+      },
+      {
+        id: 'D',
+        text: {
+          zh: '暂时不解释，相信时间和后面的行动会说明一切',
+          en: 'I would leave it for now and let time and my actions show the truth.',
+        },
+        interpretation: {
+          zh: '你可能更愿意用后续的行动，而不是当下的辩白，来慢慢证明。',
+          en: 'You may prefer later actions — not an immediate defence — to show what is true.',
+        },
+        immediate: '用户延后说明，以时间与行动延续信任。',
+        weight: 'Light',
+        signals: [
+          { signal: 'CHG-07', delta: 0.35, confidence: 'medium' },
+          { signal: 'EXP-02', delta: 0.25, confidence: 'low' },
+        ],
+      },
+      {
+        id: 'E',
+        text: {
+          zh: '先听听对方为什么这样想，再决定要不要解释',
+          en: 'I would first ask what led them to think that, then decide whether to explain.',
+        },
+        interpretation: {
+          zh: '你可能先想听懂对方怎么走到这一步，再决定自己要不要开口。',
+          en: 'You may want to understand how they got there before you decide whether to speak.',
+        },
+        immediate: '用户先做视角采撷，再决定是否直接说明。',
+        weight: 'Light',
+        signals: [
+          { signal: 'TRU-05', delta: 0.4, confidence: 'medium' },
+          { signal: 'EXP-03', delta: 0.3, confidence: 'medium' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'PAR-001',
+    version: 1,
+    status: 'active',
+    interactionType: 'ranking',
+    emoji: '🌱',
+    title: { zh: '孩子成长中更在意什么', en: 'What matters most as a child grows' },
+    audience: 'universal',
+    maxRank: 6,
+    hint: {
+      zh: '请按真实在意的程度，从「最重要」到「相对可以慢慢培养」排序。',
+      en: 'Rank from “most important to you” to “something that can develop more gradually.”',
+    },
+    scenario: {
+      zh: '在孩子的成长过程中，下面这些方面都很重要。\n请按你真实在意的程度，\n从“最重要”到“相对可以慢慢培养”排序。',
+      en: 'All of these can matter as a child grows up.\nRank them from:\n“Most important to you”\n↓\n“Something that can develop more gradually.”',
+    },
+    options: [
+      {
+        id: 'A',
+        text: {
+          zh: '懂规则，也愿意听取父母和老师的建议',
+          en: 'Understands rules and is willing to listen to guidance',
+        },
+        interpretation: {
+          zh: '你可能更在意孩子先能站在可信任的规则与指引里。',
+          en: 'You may care that a child can stand inside trusted rules and guidance first.',
+        },
+        immediate: '用户重视规则感与接受引导。',
+        weight: 'Light',
+        signals: [
+          { signal: 'TRU-04', delta: 0.45, confidence: 'medium' },
+          { signal: 'CAR-04', delta: 0.3, confidence: 'low' },
+        ],
+      },
+      {
+        id: 'B',
+        text: {
+          zh: '有自己的想法，敢于表达不同意见',
+          en: 'Has their own ideas and is comfortable expressing a different view',
+        },
+        interpretation: {
+          zh: '你可能更希望孩子带着自己的声音长大，而不是只会附和。',
+          en: 'You may want a child to grow with their own voice — not only agreement.',
+        },
+        immediate: '用户重视自主表达与独立判断。',
+        weight: 'Light',
+        signals: [
+          { signal: 'MEA-09', delta: 0.4, confidence: 'medium' },
+          { signal: 'EXP-01', delta: 0.35, confidence: 'medium' },
+        ],
+      },
+      {
+        id: 'C',
+        text: {
+          zh: '学习成绩好，掌握扎实的知识',
+          en: 'Does well academically and builds strong knowledge',
+        },
+        interpretation: {
+          zh: '你可能把扎实的学习，看作孩子站稳未来的一块底板。',
+          en: 'You may see solid learning as a floor that helps a child stand in the future.',
+        },
+        immediate: '用户重视学业努力与知识积累。',
+        weight: 'Light',
+        signals: [
+          { signal: 'MEA-10', delta: 0.45, confidence: 'medium' },
+          { signal: 'MEA-12', delta: 0.25, confidence: 'low' },
+        ],
+      },
+      {
+        id: 'D',
+        text: {
+          zh: '在学校里能与同学相处融洽',
+          en: 'Gets along well with other children at school',
+        },
+        interpretation: {
+          zh: '你可能更在意孩子能不能在同龄人里安稳地相处。',
+          en: 'You may care that a child can settle among peers without constant friction.',
+        },
+        immediate: '用户重视同龄关系中的融入与和睦。',
+        weight: 'Light',
+        signals: [
+          { signal: 'REL-07', delta: 0.4, confidence: 'medium' },
+          { signal: 'CAR-01', delta: 0.3, confidence: 'low' },
+        ],
+      },
+      {
+        id: 'E',
+        text: {
+          zh: '有良好的生活习惯，能够照顾好自己',
+          en: 'Develops good daily habits and can take care of themselves',
+        },
+        interpretation: {
+          zh: '你可能更看重日常里能自己站稳的那部分能力。',
+          en: 'You may value the everyday competence that lets a child take care of themselves.',
+        },
+        immediate: '用户重视生活自理与务实习惯。',
+        weight: 'Light',
+        signals: [
+          { signal: 'CAR-03', delta: 0.4, confidence: 'medium' },
+          { signal: 'CHG-08', delta: 0.3, confidence: 'low' },
+        ],
+      },
+      {
+        id: 'F',
+        text: {
+          zh: '遇到失败或困难后，能够调整并重新尝试',
+          en: 'Can recover from setbacks and try again',
+        },
+        interpretation: {
+          zh: '你可能更在意孩子跌倒之后还能不能自己再站起来。',
+          en: 'You may care most that after a fall, a child can still get up and try again.',
+        },
+        immediate: '用户重视挫折消化与再行动。',
+        weight: 'Light',
+        signals: [
+          { signal: 'EMW-02', delta: 0.45, confidence: 'medium' },
+          { signal: 'CHG-02', delta: 0.35, confidence: 'medium' },
+        ],
+      },
+    ],
+  },
 ];
