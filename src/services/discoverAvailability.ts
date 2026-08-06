@@ -4,26 +4,35 @@
  * Tracks only what the frozen Sprint 4A document requires for the tab indicator:
  * a single subtle dot meaning "there may be someone worth discovering."
  *
- * This layer stores nothing but the id of the possibility the person last saw
- * when they opened Discover. It does NOT do selection or scoring — availability
- * is derived by the caller from the existing candidate selection. The dot:
- *   - appears only for a genuinely new, meaningful possibility,
- *   - clears the moment the person opens Discover (whether or not they act),
- *   - never counts, never nags, never re-surfaces the same possibility.
+ * Offline marker is uid-scoped to the viewer — never device-global.
  */
 
-const LAST_SEEN_KEY = 'seen_discover_last_seen_uid';
+import { auth } from './firebase';
+import { purgeLegacyGlobalUserCaches, userScopedKey } from './userScopedStorage';
+
+const KEY_PREFIX = 'seen_discover_last_seen_v2_';
 /** Fired (same-tab) when the "last seen" marker changes. */
 export const DISCOVER_AVAILABILITY_EVENT = 'seen:discover-availability-changed';
+
+function currentUid(): string | null {
+  return auth.currentUser?.uid ?? null;
+}
+
+function storageKeyForViewer(uid: string): string {
+  return userScopedKey(KEY_PREFIX, uid);
+}
 
 /**
  * The candidate id the person saw the last time they opened Discover.
  * Returns '' when they have opened Discover to an empty room, and null when they
- * have never opened it.
+ * have never opened it / are signed out.
  */
 export function getDiscoverLastSeenUid(): string | null {
+  purgeLegacyGlobalUserCaches();
+  const uid = currentUid();
+  if (!uid) return null;
   try {
-    return localStorage.getItem(LAST_SEEN_KEY);
+    return localStorage.getItem(storageKeyForViewer(uid));
   } catch {
     return null;
   }
@@ -34,8 +43,11 @@ export function getDiscoverLastSeenUid(): string | null {
  * This clears the dot until a genuinely different possibility appears.
  */
 export function markDiscoverOpened(candidateUid: string | null): void {
+  purgeLegacyGlobalUserCaches();
+  const uid = currentUid();
+  if (!uid) return;
   try {
-    localStorage.setItem(LAST_SEEN_KEY, candidateUid ?? '');
+    localStorage.setItem(storageKeyForViewer(uid), candidateUid ?? '');
     window.dispatchEvent(new CustomEvent(DISCOVER_AVAILABILITY_EVENT));
   } catch {
     // non-browser — no-op
@@ -46,7 +58,12 @@ export function markDiscoverOpened(candidateUid: string | null): void {
 export function subscribeDiscoverAvailability(callback: () => void): () => void {
   const onChange = () => callback();
   const onStorage = (e: StorageEvent) => {
-    if (e.key === LAST_SEEN_KEY) callback();
+    if (
+      e.key === 'seen_discover_last_seen_uid' ||
+      (typeof e.key === 'string' && e.key.startsWith(KEY_PREFIX))
+    ) {
+      callback();
+    }
   };
   window.addEventListener(DISCOVER_AVAILABILITY_EVENT, onChange);
   window.addEventListener('storage', onStorage);

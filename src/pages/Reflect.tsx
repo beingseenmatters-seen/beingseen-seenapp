@@ -44,6 +44,11 @@ import {
 import type { ConversationExtraction } from '../types/userSummary';
 import { saveKeptReflection } from '../services/keptReflections';
 import { getResonateCandidate } from '../services/connections';
+import {
+  clearReflectSession,
+  loadReflectSessionRaw,
+  saveReflectSessionRaw,
+} from '../services/reflectSessionStore';
 import MomentsInvitationCard from '../components/moments/MomentsInvitationCard';
 import { useMomentsInvitation } from '../hooks/useMomentsInvitation';
 
@@ -90,8 +95,6 @@ interface SavedSession {
   /** Extraction awaiting 留下/放下 — survives refresh without re-extracting. */
   pendingExtraction?: ConversationExtraction | null;
 }
-
-const STORAGE_KEY = 'seen_reflect_session';
 
 /**
  * Internal diagnostics are opt-in only: dev build AND an explicit flag.
@@ -249,6 +252,13 @@ export default function Reflect() {
    * Completion-first (founder decision): after a Reflection, the person feels
    * complete first. Discover is only offered as an optional invitation, and only
    * when a possibility genuinely exists. Checked once when the bridge appears.
+   *
+   * Founder Architecture Decision — FROZEN (2026-08-06):
+   * Reflect is not a messaging app. Unfinished chats may keep full history for
+   * Continue. After completion + Understanding Update decision: if kept, only
+   * the approved Update is long-term (Me「我留下的理解」); the transcript must
+   * not become permanent user-facing history and expires with short-term
+   * retention. Moments/Reflect remain independent.
    */
   const [discoveryAvailable, setDiscoveryAvailable] = useState(false);
 
@@ -347,9 +357,13 @@ export default function Reflect() {
     }
   }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load saved session on mount
+  // Load saved session on mount (uid-scoped; empty when signed out)
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!uid) {
+      setHasSavedSession(false);
+      return;
+    }
+    const saved = loadReflectSessionRaw();
     if (saved) {
       try {
         const session: SavedSession = JSON.parse(saved);
@@ -358,10 +372,12 @@ export default function Reflect() {
         }
       } catch (e) {
         console.error('Failed to parse saved session', e);
-        localStorage.removeItem(STORAGE_KEY);
+        clearReflectSession();
       }
+    } else {
+      setHasSavedSession(false);
     }
-  }, []);
+  }, [uid]);
 
   useEffect(() => {
     if (sessionId) {
@@ -388,7 +404,7 @@ export default function Reflect() {
         decision: conversationDecision,
         pendingExtraction: conversationStatus === 'awaiting_decision' ? pendingSummary : null
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+      saveReflectSessionRaw(JSON.stringify(session));
 
       if (retention !== 'none' && messages.filter(m => m.role === 'user' && m.text.trim()).length > 0) {
         saveConversation(
@@ -462,7 +478,7 @@ export default function Reflect() {
   };
 
   const handleContinueSession = () => {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = loadReflectSessionRaw();
     if (saved) {
       try {
         const session: SavedSession = JSON.parse(saved);
@@ -670,7 +686,7 @@ export default function Reflect() {
   };
 
   const performClear = () => {
-    localStorage.removeItem(STORAGE_KEY);
+    clearReflectSession();
     setHasSavedSession(false);
     setRetention('3days');
     setSessionId(undefined);

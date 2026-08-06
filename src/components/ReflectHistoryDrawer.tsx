@@ -1,3 +1,10 @@
+/**
+ * Short-term Reflect drawer (Continue unfinished / recent within retention).
+ *
+ * Founder Architecture Decision — FROZEN (2026-08-06):
+ * This is NOT permanent Reflect history. Long-term user-facing Reflect
+ * artifacts live under Me「我留下的理解」(approved Understanding Updates only).
+ */
 import { AnimatePresence, motion, type PanInfo } from 'framer-motion';
 import { MessageSquareText, SquarePen, X } from 'lucide-react';
 import clsx from 'clsx';

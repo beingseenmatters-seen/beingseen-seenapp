@@ -11,8 +11,15 @@
  *
  * The Me page surfaces this via `useKeptReflections` as「我留下的理解」—
  * a history of user-approved Reflect Understanding Updates only.
+ *
  * Founder Decision: this is NOT Current Understanding and must not be
  * promoted into Current Understanding automatically.
+ *
+ * Founder Architecture Decision — FROZEN (2026-08-06):
+ * This store holds the only long-term user-facing Reflect artifact:
+ * approved Understanding Updates. Full conversation transcripts belong only
+ * to short-term unfinished/continue flows and must not become permanent
+ * history here. Moments retain Sketches independently.
  */
 
 import { auth, db } from './firebase';

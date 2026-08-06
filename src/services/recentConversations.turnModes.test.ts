@@ -9,6 +9,20 @@
  *  - lifecycle patches (updateConversation) never touch per-turn metadata
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+
+const authState: { currentUser: { uid: string } | null } = {
+  currentUser: { uid: 'test-user' },
+};
+
+vi.mock('./firebase', () => ({
+  auth: {
+    get currentUser() {
+      return authState.currentUser;
+    },
+  },
+  db: {},
+}));
+
 import {
   saveConversation,
   updateConversation,
@@ -37,6 +51,7 @@ const TURN_MESSAGES = [
 ];
 
 beforeEach(() => {
+  authState.currentUser = { uid: 'test-user' };
   vi.stubGlobal('localStorage', createFakeLocalStorage());
 });
 

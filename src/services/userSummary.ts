@@ -8,6 +8,21 @@
  *
  * Matching should prefer the aggregated understanding model over raw chats.
  * Raw chats remain deletable and are never used as long-term storage.
+ *
+ * LEGACY STATUS (Phase 3A): this pipeline (saveApprovedSummary → reflectModel /
+ * emergentTraits / matchReady) remains the production path and is untouched.
+ * The additive Evidence Layer (src/types/evidence.ts,
+ * src/services/understanding/) is expected to eventually supersede trait
+ * inference for the Living Profile; migration happens in a later phase after
+ * the Evidence Layer is validated independently of matching.
+ *
+ * DEPRECATED (Behaviour & Meaning separation): Reflect must NOT write
+ * directly into memory. The agreed Meaning pipeline is
+ * Reflect → Evidence → Candidate Theme → Current Understanding
+ * (src/services/understanding/currentUnderstanding.ts). This direct-write
+ * path stays functional for production compatibility but must not gain new
+ * capabilities; it will be replaced by the Meaning pipeline when persistence
+ * for the Evidence Layer lands.
  */
 
 import type { AboutMeSignals } from '../auth/providers/types';
@@ -20,21 +35,43 @@ import type {
 
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { extractReflectSummary } from './seenApi';
-import { db } from './firebase';
+import { auth, db } from './firebase';
 import { buildSessionPatterns } from './sessionPattern';
 import { inferEmergentTraits } from './emergentTraitInference';
+import { purgeLegacyGlobalUserCaches, userScopedKey } from './userScopedStorage';
 // T-301.1 — single source of truth for readiness. We import the exact functions
 // the server eligibility gate uses (lambda/resonance.mjs, pure & dependency-free)
 // so the denormalized profile.matchReady flag can never drift from the gate.
 import { assembleRIProfile, isEligibleToMatch } from '../../lambda/resonance.mjs';
 
+function currentUid(): string | null {
+  return auth.currentUser?.uid ?? null;
+}
+
+function purgeInsightLegacyKeys(): void {
+  purgeLegacyGlobalUserCaches();
+  try {
+    localStorage.removeItem(LEGACY_SESSION_INSIGHTS_KEY);
+    localStorage.removeItem(LEGACY_UNDERSTANDING_MODEL_KEY);
+    localStorage.removeItem(LEGACY_EMERGENT_TRAITS_KEY);
+    localStorage.removeItem(LEGACY_PERSONALITY_MODEL_STORAGE_KEY);
+    localStorage.removeItem(LEGACY_SUMMARY_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 export type InsightLanguage = 'zh' | 'en';
 
 type ConversationMessage = { role: 'user' | 'ai' | 'system'; text: string };
 
-const SESSION_INSIGHTS_STORAGE_KEY = 'seen_session_insights';
-const UNDERSTANDING_MODEL_STORAGE_KEY = 'seen_user_understanding_model';
-const EMERGENT_TRAITS_STORAGE_KEY = 'seen_emergent_traits';
+const SESSION_INSIGHTS_KEY_PREFIX = 'seen_session_insights_v2_';
+const UNDERSTANDING_MODEL_KEY_PREFIX = 'seen_user_understanding_model_v2_';
+const EMERGENT_TRAITS_KEY_PREFIX = 'seen_emergent_traits_v2_';
+/** Legacy device-global keys — purged, never migrated. */
+const LEGACY_SESSION_INSIGHTS_KEY = 'seen_session_insights';
+const LEGACY_UNDERSTANDING_MODEL_KEY = 'seen_user_understanding_model';
+const LEGACY_EMERGENT_TRAITS_KEY = 'seen_emergent_traits';
 const LEGACY_PERSONALITY_MODEL_STORAGE_KEY = 'seen_user_personality_model';
 const LEGACY_SUMMARY_STORAGE_KEY = 'seen_user_summary';
 const MIN_INSIGHTS_FOR_MODEL = 1;
@@ -561,11 +598,14 @@ function hasMeaningfulUnderstanding(data: {
   );
 }
 
-// Session insight storage
+// Session insight storage (uid-scoped offline mirror)
 
 export function readSessionInsights(): SessionInsight[] {
+  purgeInsightLegacyKeys();
+  const uid = currentUid();
+  if (!uid) return [];
   try {
-    const raw = localStorage.getItem(SESSION_INSIGHTS_STORAGE_KEY);
+    const raw = localStorage.getItem(userScopedKey(SESSION_INSIGHTS_KEY_PREFIX, uid));
     if (!raw) return [];
 
     const parsed = JSON.parse(raw) as Array<Partial<SessionInsight> | Record<string, unknown>>;
@@ -579,8 +619,11 @@ export function readSessionInsights(): SessionInsight[] {
 }
 
 export function saveSessionInsights(insights: SessionInsight[]): void {
+  purgeInsightLegacyKeys();
+  const uid = currentUid();
+  if (!uid) return;
   try {
-    localStorage.setItem(SESSION_INSIGHTS_STORAGE_KEY, JSON.stringify(insights));
+    localStorage.setItem(userScopedKey(SESSION_INSIGHTS_KEY_PREFIX, uid), JSON.stringify(insights));
     console.log('[UserSummary] Session insights saved:', insights.length);
   } catch (error) {
     console.error('[UserSummary] Failed to save session insights:', error);
@@ -588,15 +631,21 @@ export function saveSessionInsights(insights: SessionInsight[]): void {
 }
 
 export function clearSessionInsights(): void {
-  localStorage.removeItem(SESSION_INSIGHTS_STORAGE_KEY);
+  purgeInsightLegacyKeys();
+  const uid = currentUid();
+  if (!uid) return;
+  localStorage.removeItem(userScopedKey(SESSION_INSIGHTS_KEY_PREFIX, uid));
   console.log('[UserSummary] Session insights cleared');
 }
 
-// Aggregated model storage
+// Aggregated model storage (uid-scoped; never reads legacy global)
 
 export function readUserUnderstandingModel(): UserUnderstandingModel | null {
+  purgeInsightLegacyKeys();
+  const uid = currentUid();
+  if (!uid) return null;
   try {
-    const raw = localStorage.getItem(UNDERSTANDING_MODEL_STORAGE_KEY) ?? localStorage.getItem(LEGACY_PERSONALITY_MODEL_STORAGE_KEY);
+    const raw = localStorage.getItem(userScopedKey(UNDERSTANDING_MODEL_KEY_PREFIX, uid));
     if (!raw) return null;
 
     return normalizeUnderstandingModel(JSON.parse(raw) as Record<string, unknown>);
@@ -607,9 +656,11 @@ export function readUserUnderstandingModel(): UserUnderstandingModel | null {
 }
 
 export function saveUserUnderstandingModel(model: UserUnderstandingModel): void {
+  purgeInsightLegacyKeys();
+  const uid = currentUid();
+  if (!uid) return;
   try {
-    localStorage.setItem(UNDERSTANDING_MODEL_STORAGE_KEY, JSON.stringify(model));
-    localStorage.removeItem(LEGACY_PERSONALITY_MODEL_STORAGE_KEY);
+    localStorage.setItem(userScopedKey(UNDERSTANDING_MODEL_KEY_PREFIX, uid), JSON.stringify(model));
     console.log('[UserSummary] Understanding model saved:', model);
   } catch (error) {
     console.error('[UserSummary] Failed to save understanding model:', error);
@@ -617,14 +668,19 @@ export function saveUserUnderstandingModel(model: UserUnderstandingModel): void 
 }
 
 export function clearUserUnderstandingModel(): void {
-  localStorage.removeItem(UNDERSTANDING_MODEL_STORAGE_KEY);
-  localStorage.removeItem(LEGACY_PERSONALITY_MODEL_STORAGE_KEY);
+  purgeInsightLegacyKeys();
+  const uid = currentUid();
+  if (!uid) return;
+  localStorage.removeItem(userScopedKey(UNDERSTANDING_MODEL_KEY_PREFIX, uid));
   console.log('[UserSummary] Understanding model cleared');
 }
 
 export function readEmergentTraits(): EmergentTrait[] {
+  purgeInsightLegacyKeys();
+  const uid = currentUid();
+  if (!uid) return [];
   try {
-    const raw = localStorage.getItem(EMERGENT_TRAITS_STORAGE_KEY);
+    const raw = localStorage.getItem(userScopedKey(EMERGENT_TRAITS_KEY_PREFIX, uid));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as { traits?: EmergentTrait[] };
     return Array.isArray(parsed.traits) ? parsed.traits : [];
@@ -635,8 +691,14 @@ export function readEmergentTraits(): EmergentTrait[] {
 }
 
 export function saveEmergentTraits(traits: EmergentTrait[], meta: TraitInferenceMeta): void {
+  purgeInsightLegacyKeys();
+  const uid = currentUid();
+  if (!uid) return;
   try {
-    localStorage.setItem(EMERGENT_TRAITS_STORAGE_KEY, JSON.stringify({ traits, meta }));
+    localStorage.setItem(
+      userScopedKey(EMERGENT_TRAITS_KEY_PREFIX, uid),
+      JSON.stringify({ traits, meta }),
+    );
     console.log('[UserSummary] Emergent traits saved:', traits.length);
   } catch (error) {
     console.error('[UserSummary] Failed to save emergent traits:', error);
@@ -644,7 +706,10 @@ export function saveEmergentTraits(traits: EmergentTrait[], meta: TraitInference
 }
 
 export function clearEmergentTraits(): void {
-  localStorage.removeItem(EMERGENT_TRAITS_STORAGE_KEY);
+  purgeInsightLegacyKeys();
+  const uid = currentUid();
+  if (!uid) return;
+  localStorage.removeItem(userScopedKey(EMERGENT_TRAITS_KEY_PREFIX, uid));
 }
 
 // Backward-compatible aliases
@@ -689,6 +754,29 @@ function removeUndefined<T extends Record<string, any>>(obj: T): T {
   }, {} as T);
 }
 
+/** Prevent Reflect "正在留下" from hanging if Firestore never settles (Android WebView). */
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
+ * @deprecated Behaviour & Meaning separation: this writes Reflect output
+ * directly into memory (soulProfile.reflectModel / emergentTraits /
+ * profile.matchReady), which the agreed architecture forbids. It remains the
+ * production path until Evidence Layer persistence lands; the replacement is
+ * Reflect → Evidence → Candidate Theme → Current Understanding
+ * (src/services/understanding/currentUnderstanding.ts). Do not extend.
+ */
 export async function saveApprovedSummary(
   extraction: ConversationExtraction,
   uid?: string,
@@ -730,11 +818,17 @@ export async function saveApprovedSummary(
 
       console.log('[UserSummary] Attempting to write to Firestore path:', `users/${uid}/reflectInsights/${finalSessionId}`);
       console.log('[UserSummary] Insight payload:', cleanInsight);
+
+      const FIRESTORE_WRITE_MS = 12_000;
       
-      await setDoc(insightRef, {
-        ...cleanInsight,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+      await withTimeout(
+        setDoc(insightRef, {
+          ...cleanInsight,
+          updatedAt: serverTimestamp()
+        }, { merge: true }),
+        FIRESTORE_WRITE_MS,
+        'reflectInsights write',
+      );
       
       console.log('[UserSummary] Successfully wrote insight to reflectInsights subcollection.');
 
@@ -770,16 +864,20 @@ export async function saveApprovedSummary(
       );
 
       console.log('[UserSummary] Attempting to update user document with soulProfileUpdate:', soulProfileUpdate, 'matchReady:', matchReady);
-      await setDoc(
-        userRef,
-        {
-          soulProfile: soulProfileUpdate,
-          profile: {
-            matchReady,
-            updatedAt: serverTimestamp()
-          }
-        },
-        { merge: true }
+      await withTimeout(
+        setDoc(
+          userRef,
+          {
+            soulProfile: soulProfileUpdate,
+            profile: {
+              matchReady,
+              updatedAt: serverTimestamp()
+            }
+          },
+          { merge: true }
+        ),
+        FIRESTORE_WRITE_MS,
+        'user soulProfile write',
       );
       console.log('[UserSummary] Persisted to Firestore successfully with sessionId:', finalSessionId);
     } catch (error) {

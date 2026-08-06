@@ -9,6 +9,9 @@ import { Capacitor } from '@capacitor/core';
 import { Share } from '@capacitor/share';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { momentsClient } from '../../services/moments/momentsClient';
+import { auth } from '../../services/firebase';
+import { detachAllUserLocalStorage, purgeLegacyGlobalUserCaches, userScopedKey } from '../../services/userScopedStorage';
+import { clearReflectSession } from '../../services/reflectSessionStore';
 
 // Attach local Moments sketches to the export payload (user-facing view: no
 // internal signals — just the stored sketch text and completion dates).
@@ -63,42 +66,35 @@ function gatherExportData(seenUser: SeenUser | null) {
     }
   }
 
-  // Fallback/Legacy: Also check localStorage just in case
-  if (!data.contents.aiPreference) {
-    try {
-      const aiPref = localStorage.getItem('seen_ai_preference');
-      if (aiPref) data.contents.aiPreference = JSON.parse(aiPref);
-    } catch { /* ignore */ }
-  }
-
-  if (!data.contents.understandingAnswers) {
-    try {
-      const understanding = localStorage.getItem('seen_understanding_answers');
-      if (understanding) data.contents.understandingAnswers = JSON.parse(understanding);
-    } catch { /* ignore */ }
-  }
-
-  if (!data.contents.profile) {
-    try {
-      const profile = localStorage.getItem('seen_profile');
-      if (profile) data.contents.profile = JSON.parse(profile);
-    } catch { /* ignore */ }
-  }
-
-  if (!data.contents.meQuestions) {
-    try {
-      const questions = localStorage.getItem('seen_me_questions');
-      if (questions) data.contents.meQuestions = JSON.parse(questions);
-    } catch { /* ignore */ }
-  }
-
-  // Onboarding data (still mostly local)
-  try {
-    const onboarding = localStorage.getItem('seen_onboarding');
-    if (onboarding) {
-      data.contents.onboarding = JSON.parse(onboarding);
+  // Uid-scoped offline mirrors only (legacy globals are purged, never read).
+  purgeLegacyGlobalUserCaches();
+  const uid = auth.currentUser?.uid ?? seenUser?.uid;
+  if (uid) {
+    const readScoped = (prefix: string) => {
+      try {
+        const raw = localStorage.getItem(userScopedKey(prefix, uid));
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    };
+    if (!data.contents.aiPreference) {
+      const aiPref = readScoped('seen_ai_preference_v2_');
+      if (aiPref) data.contents.aiPreference = aiPref;
     }
-  } catch { /* ignore */ }
+    if (!data.contents.understandingAnswers) {
+      const understanding = readScoped('seen_understanding_answers_v2_');
+      if (understanding) data.contents.understandingAnswers = understanding;
+    }
+    if (!data.contents.profile) {
+      const profile = readScoped('seen_profile_v2_');
+      if (profile) data.contents.profile = profile;
+    }
+    if (!data.contents.meQuestions) {
+      const questions = readScoped('seen_me_questions_v2_');
+      if (questions) data.contents.meQuestions = questions;
+    }
+  }
 
   return data;
 }
@@ -400,7 +396,8 @@ export default function PrivacyData() {
       ? '确定要清空所有表达历史吗？此操作无法撤销。' 
       : 'Are you sure you want to clear all history? This cannot be undone.')) {
       // Clear session data
-      localStorage.removeItem('seen_reflect_session');
+      clearReflectSession();
+      detachAllUserLocalStorage(auth.currentUser?.uid ?? null);
       setToast(language === 'zh' ? '已清空' : 'Cleared');
     }
   };

@@ -173,14 +173,19 @@ export class MomentsService {
     this.now = now;
   }
 
-  private key(): string {
-    return `${STORAGE_KEY_PREFIX}${this.getUid() ?? 'anonymous'}`;
+  /** Uid-scoped only — never a shared `anonymous` device bucket. */
+  private key(): string | null {
+    const uid = this.getUid();
+    if (!uid) return null;
+    return `${STORAGE_KEY_PREFIX}${uid}`;
   }
 
   /** Corrupt or missing storage degrades to a fresh empty state. */
   private async read(): Promise<MomentsUserData> {
+    const key = this.key();
+    if (!key) return emptyData();
     try {
-      const raw = await this.store.get(this.key());
+      const raw = await this.store.get(key);
       if (!raw) return emptyData();
       const parsed = JSON.parse(raw) as MomentsUserData;
       if (
@@ -198,7 +203,9 @@ export class MomentsService {
   }
 
   private async write(data: MomentsUserData): Promise<void> {
-    await this.store.set(this.key(), JSON.stringify(data));
+    const key = this.key();
+    if (!key) return;
+    await this.store.set(key, JSON.stringify(data));
   }
 
   /**
@@ -373,7 +380,9 @@ export class MomentsService {
 
   /** Remove all local Moments data for the current person. */
   async clearAll(): Promise<void> {
-    await this.store.remove(this.key());
+    const key = this.key();
+    if (!key) return;
+    await this.store.remove(key);
   }
 
   /** Full raw export (technical fields included; caller decides presentation). */

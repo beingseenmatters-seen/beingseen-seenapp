@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useLanguage } from '../i18n';
+import { auth } from '../services/firebase';
+import { purgeLegacyGlobalUserCaches, userScopedKey } from '../services/userScopedStorage';
 
 type CardType = 'hobby' | 'self_desc' | 'zodiac' | null;
 
@@ -241,13 +243,25 @@ function ZodiacCard({ onClose, onSave }: { onClose: () => void; onSave?: (data: 
   );
 }
 
-// Hook to manage optional cards display
+// Hook to manage optional cards display (uid-scoped; never device-global)
 export function useOptionalCards() {
   const [currentCard, setCurrentCard] = useState<CardType>(null);
-  const [shownCards, setShownCards] = useState<string[]>(() => {
-    const saved = localStorage.getItem('seen_shown_cards');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [shownCards, setShownCards] = useState<string[]>([]);
+
+  useEffect(() => {
+    purgeLegacyGlobalUserCaches();
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      setShownCards([]);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(userScopedKey('seen_shown_cards_v2_', uid));
+      setShownCards(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      setShownCards([]);
+    }
+  }, []);
 
   const showNextCard = () => {
     const cardOrder: CardType[] = ['hobby', 'self_desc', 'zodiac'];
@@ -261,7 +275,11 @@ export function useOptionalCards() {
     if (card) {
       const newShownCards = [...shownCards, card];
       setShownCards(newShownCards);
-      localStorage.setItem('seen_shown_cards', JSON.stringify(newShownCards));
+      const uid = auth.currentUser?.uid;
+      if (uid) {
+        purgeLegacyGlobalUserCaches();
+        localStorage.setItem(userScopedKey('seen_shown_cards_v2_', uid), JSON.stringify(newShownCards));
+      }
     }
     setCurrentCard(null);
   };

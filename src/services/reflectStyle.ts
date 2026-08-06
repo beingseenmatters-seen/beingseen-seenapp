@@ -5,6 +5,8 @@ import {
   tryNormalizeResponseMode,
   fromLegacySelectedMode,
 } from '../types/responseMode';
+import { auth } from './firebase';
+import { purgeLegacyGlobalUserCaches, userScopedKey } from './userScopedStorage';
 
 /** Onboarding Step 3 / profile `responseStyle` — map to legacy `role` / ResponseStyle. */
 export type OnboardingResponseStyleId = 'listener' | 'organizer' | 'challenger' | 'supporter';
@@ -18,10 +20,14 @@ export function isResponseStyleType(value: unknown): value is ResponseStyleType 
   );
 }
 
-/** Legacy localStorage only — use `getReflectDefaultStyle` for full priority (profile > LS). */
+/** Uid-scoped local preference — use `getReflectDefaultStyle` for full priority (profile > LS). */
 export function readMeDefaultStyle(): ResponseStyleType | undefined {
+  purgeLegacyGlobalUserCaches();
+  const uid = auth.currentUser?.uid;
+  if (!uid) return undefined;
   try {
-    const pref = JSON.parse(localStorage.getItem('seen_ai_preference') || '{}') as { role?: unknown };
+    const raw = localStorage.getItem(userScopedKey('seen_ai_preference_v2_', uid));
+    const pref = JSON.parse(raw || '{}') as { role?: unknown };
     if (isResponseStyleType(pref.role)) return pref.role;
     return undefined;
   } catch {

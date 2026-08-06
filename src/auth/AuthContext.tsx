@@ -16,7 +16,8 @@ import * as appleNative from './providers/appleNative';
 import * as firestoreOps from './firestore';
 import { registerDeepLinkListener } from './deepLink';
 import { isNative, isWeb } from './platform';
-import { detachKeptReflectionsOnLogout } from '../services/keptReflections';
+import { detachAllUserLocalStorage } from '../services/userScopedStorage';
+import { clearNativeAuthProviders } from './providers/nativeAuthSession';
 
 // ---------------------------------------------------------------------------
 // State
@@ -432,8 +433,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // 3. Clear local storage + detach kept-understandings mirror (account isolation)
       emailLink.clearStoredEmail();
       localStorage.removeItem('seen_user');
-      localStorage.removeItem('seen_reflect_session');
-      detachKeptReflectionsOnLogout(uid);
+      detachAllUserLocalStorage(uid);
+      await clearNativeAuthProviders();
       
       dispatch({ type: 'SET_USER', firebaseUser: null, seenUser: null });
       console.log('[auth] account deletion completed');
@@ -452,7 +453,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await firebaseSignOut(auth);
       emailLink.clearStoredEmail();
       localStorage.removeItem('seen_user');
-      detachKeptReflectionsOnLogout(uid);
+      detachAllUserLocalStorage(uid);
+      await clearNativeAuthProviders();
       dispatch({ type: 'SET_USER', firebaseUser: null, seenUser: null });
       console.log('[auth] user signed out');
     } catch (err) {

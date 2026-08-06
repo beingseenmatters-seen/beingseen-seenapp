@@ -1,5 +1,27 @@
+/**
+ * Short-term Reflect conversation retention (uid-scoped offline mirror).
+ *
+ * Founder Architecture Decision — FROZEN (2026-08-06):
+ * Reflect helps users arrive at understanding; it is not a messaging app.
+ *
+ *  - Unfinished conversations MAY retain full transcript (Continue Conversation).
+ *  - Once completed, generate one Understanding Update; user chooses
+ *    符合我，留下 / 不太符合，不保留.
+ *  - If kept: persist ONLY the approved Understanding Update (Me「我留下的理解」).
+ *    The original transcript must NOT become permanent user-facing history;
+ *    discard it when the short-term retention window ends.
+ *  - Long-term user-facing Reflect artifact = approved Understanding Updates only.
+ *  - Moments keep Sketches; Reflect keeps Understanding Updates; channels stay
+ *    independent. Current Understanding is derived later from evidence — never
+ *    equal to saved conversations.
+ *
+ * Future implementations must follow this principle.
+ */
+
 import type { RetentionOption } from '../types/insight';
 import { RETENTION_TTL_DAYS } from '../types/insight';
+import { auth } from './firebase';
+import { purgeLegacyGlobalUserCaches, userScopedKey } from './userScopedStorage';
 
 export interface ConversationMessage {
   role: 'user' | 'ai' | 'system';
@@ -53,11 +75,22 @@ export interface RetainedConversation {
   pendingExtraction?: Record<string, unknown> | null;
 }
 
-const STORAGE_KEY = 'seen_retained_conversations';
+export const RETAINED_CONVERSATIONS_KEY_PREFIX = 'seen_retained_conversations_v2_';
+
+export function retainedConversationsStorageKey(uid: string): string {
+  return userScopedKey(RETAINED_CONVERSATIONS_KEY_PREFIX, uid);
+}
+
+function currentUid(): string | null {
+  return auth.currentUser?.uid ?? null;
+}
 
 function readAll(): RetainedConversation[] {
+  purgeLegacyGlobalUserCaches();
+  const uid = currentUid();
+  if (!uid) return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(retainedConversationsStorageKey(uid));
     if (!raw) return [];
     return JSON.parse(raw) as RetainedConversation[];
   } catch {
@@ -66,7 +99,10 @@ function readAll(): RetainedConversation[] {
 }
 
 function writeAll(convos: RetainedConversation[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(convos));
+  purgeLegacyGlobalUserCaches();
+  const uid = currentUid();
+  if (!uid) return;
+  localStorage.setItem(retainedConversationsStorageKey(uid), JSON.stringify(convos));
 }
 
 function generateTitle(messages: ConversationMessage[], language: string): string {
@@ -107,6 +143,7 @@ function generateTitle(messages: ConversationMessage[], language: string): strin
   return first.slice(0, maxLen) + '…';
 }
 
+/** Visible short-term conversations for the signed-in uid only. */
 export function getVisibleConversations(): RetainedConversation[] {
   const now = Date.now();
   return readAll().filter(c => !c.deletedAt && c.expiresAt > now && c.retentionDays > 0);
@@ -127,6 +164,8 @@ export function saveConversation(
     pendingExtraction?: Record<string, unknown> | null;
   }
 ): RetainedConversation | null {
+  if (!currentUid()) return null;
+
   const days = RETENTION_TTL_DAYS[retention];
   if (!days || days <= 0) return null;
 
@@ -190,6 +229,7 @@ export function updateConversation(
     Pick<RetainedConversation, 'status' | 'decision' | 'pendingExtraction'>
   >
 ): RetainedConversation | null {
+  if (!currentUid()) return null;
   const all = readAll();
   const idx = all.findIndex(c => c.id === id);
   if (idx === -1) return null;
@@ -200,6 +240,7 @@ export function updateConversation(
 }
 
 export function deleteConversation(id: string): void {
+  if (!currentUid()) return;
   const all = readAll().map(c =>
     c.id === id ? { ...c, deletedAt: Date.now(), messages: [] } : c
   );
@@ -214,6 +255,7 @@ export function getConversationById(id: string): RetainedConversation | null {
 }
 
 export function purgeExpired(): number {
+  if (!currentUid()) return 0;
   const now = Date.now();
   const all = readAll();
   const kept = all.filter(c => c.expiresAt > now && !c.deletedAt);

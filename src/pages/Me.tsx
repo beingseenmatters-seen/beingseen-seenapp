@@ -66,6 +66,36 @@ export default function Me() {
 
         {/* ==================== B. Seen 眼中的你 ==================== */}
         <Section title={t('me.section_seen')}>
+          {/*
+            Permanent home for Current Understanding (architecture frozen).
+            Placeholder only — do NOT implement Current Understanding here.
+            When CU ships, replace this card in place; no layout change required.
+          */}
+          <div
+            className="p-5 bg-white rounded-2xl border border-stone-200/90 shadow-sm space-y-4"
+            data-testid="current-understanding-placeholder"
+          >
+            <div className="space-y-1.5">
+              <h3 className="text-base font-light text-primary leading-snug">
+                {t('me.current_understanding_title')}
+              </h3>
+              <p className="text-xs text-muted font-light leading-relaxed whitespace-pre-line">
+                {t('me.current_understanding_body')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                hasActive
+                  ? navigate(`/moments/session/${moments!.activeSession!.id}`)
+                  : handleStartMoments()
+              }
+              className="w-full py-3 rounded-xl border border-stone-200 text-primary text-sm font-medium hover:bg-stone-50 transition-colors"
+            >
+              {t('me.current_understanding_cta')}
+            </button>
+          </div>
+
           {/* Dynamic primary card: start a set, or continue the unfinished one */}
           <div className="p-5 bg-white rounded-2xl border border-stone-200/90 shadow-sm space-y-4">
             <div className="space-y-1">
@@ -113,7 +143,11 @@ export default function Me() {
             </>
           )}
 
-          {/* Reflect kept-understanding history (temporary surface; not Current Understanding) */}
+          {/*
+            Reflect long-term surface only: approved Understanding Updates.
+            Founder Architecture Decision — FROZEN (2026-08-06): not chat history;
+            not Current Understanding; Moments Sketches stay separate.
+          */}
           <MenuItem
             title={t('me.kept_understandings_title')}
             subtitle={

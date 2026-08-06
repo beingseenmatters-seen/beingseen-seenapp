@@ -17,6 +17,11 @@ import { useKeptReflections } from '../../hooks/useKeptReflections';
  * and must not automatically become Current Understanding (which is derived,
  * not equal to saved updates).
  *
+ * Founder Architecture Decision — FROZEN (2026-08-06):
+ * The only long-term user-facing artifact of Reflect is the approved
+ * Understanding Update shown here. Completed conversation transcripts are
+ * not permanent history; Moments/Reflect stay independent (Sketches vs Updates).
+ *
  * Reads only user-approved kept reflections (text + date).
  * Delete is not exposed here — remote delete is best-effort and can
  * reappear after hydrate if it fails (report separately).

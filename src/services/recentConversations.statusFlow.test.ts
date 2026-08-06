@@ -10,17 +10,32 @@
  *  - retention semantics (3-day / 7-day / no-save) remain unchanged
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+
+const authState: { currentUser: { uid: string } | null } = {
+  currentUser: { uid: 'test-user' },
+};
+
+vi.mock('./firebase', () => ({
+  auth: {
+    get currentUser() {
+      return authState.currentUser;
+    },
+  },
+  db: {},
+}));
+
 import {
   saveConversation,
   updateConversation,
   getConversationById,
   getVisibleConversations,
   deleteConversation,
+  retainedConversationsStorageKey,
   type RetainedConversation,
 } from './recentConversations';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const STORAGE_KEY = 'seen_retained_conversations';
+const STORAGE_KEY = retainedConversationsStorageKey('test-user');
 
 function createFakeLocalStorage() {
   const data = new Map<string, string>();
@@ -48,11 +63,44 @@ const EXTRACTION = {
 };
 
 beforeEach(() => {
+  authState.currentUser = { uid: 'test-user' };
   vi.stubGlobal('localStorage', createFakeLocalStorage());
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe('account isolation', () => {
+  it('returns empty history when signed out', () => {
+    saveConversation('c1', MESSAGES, '3days', 'zh');
+    authState.currentUser = null;
+    expect(getVisibleConversations()).toEqual([]);
+    expect(getConversationById('c1')).toBeNull();
+  });
+
+  it('never reads another uid mirror or the legacy global key', () => {
+    saveConversation('mine', MESSAGES, '3days', 'zh');
+    localStorage.setItem(
+      'seen_retained_conversations',
+      JSON.stringify([{ id: 'legacy-leak', messages: MESSAGES, expiresAt: Date.now() + DAY_MS, retentionDays: 3 }]),
+    );
+    localStorage.setItem(
+      retainedConversationsStorageKey('other-user'),
+      JSON.stringify([
+        {
+          id: 'other',
+          messages: MESSAGES,
+          retention: '3days',
+          retentionDays: 3,
+          createdAt: Date.now(),
+          expiresAt: Date.now() + DAY_MS,
+        },
+      ]),
+    );
+    expect(getVisibleConversations().map((c) => c.id)).toEqual(['mine']);
+    expect(localStorage.getItem('seen_retained_conversations')).toBeNull();
+  });
 });
 
 describe('backward compatibility with pre-Phase-2B records', () => {
