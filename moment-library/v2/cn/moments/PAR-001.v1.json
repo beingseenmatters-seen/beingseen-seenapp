@@ -1,0 +1,173 @@
+{
+  "id": "PAR-001",
+  "version": 1,
+  "status": "active",
+  "interactionType": "ranking",
+  "emoji": "🌱",
+  "title": {
+    "zh": "孩子成长中更在意什么",
+    "en": "What matters most as a child grows"
+  },
+  "audience": "universal",
+  "maxRank": 6,
+  "hint": {
+    "zh": "请按真实在意的程度，从「最重要」到「相对可以慢慢培养」排序。",
+    "en": "Rank from “most important to you” to “something that can develop more gradually.”"
+  },
+  "scenario": {
+    "zh": "在孩子的成长过程中，下面这些方面都很重要。\n请按你真实在意的程度，\n从“最重要”到“相对可以慢慢培养”排序。",
+    "en": "All of these can matter as a child grows up.\nRank them from:\n“Most important to you”\n↓\n“Something that can develop more gradually.”"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "懂规则，也愿意听取父母和老师的建议",
+        "en": "Understands rules and is willing to listen to guidance"
+      },
+      "interpretation": {
+        "zh": "你可能更在意孩子先能站在可信任的规则与指引里。",
+        "en": "You may care that a child can stand inside trusted rules and guidance first."
+      },
+      "immediate": "用户重视规则感与接受引导。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-04",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-04",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "有自己的想法，敢于表达不同意见",
+        "en": "Has their own ideas and is comfortable expressing a different view"
+      },
+      "interpretation": {
+        "zh": "你可能更希望孩子带着自己的声音长大，而不是只会附和。",
+        "en": "You may want a child to grow with their own voice — not only agreement."
+      },
+      "immediate": "用户重视自主表达与独立判断。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-09",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EXP-01",
+          "delta": 0.35,
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "学习成绩好，掌握扎实的知识",
+        "en": "Does well academically and builds strong knowledge"
+      },
+      "interpretation": {
+        "zh": "你可能把扎实的学习，看作孩子站稳未来的一块底板。",
+        "en": "You may see solid learning as a floor that helps a child stand in the future."
+      },
+      "immediate": "用户重视学业努力与知识积累。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-10",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-12",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "在学校里能与同学相处融洽",
+        "en": "Gets along well with other children at school"
+      },
+      "interpretation": {
+        "zh": "你可能更在意孩子能不能在同龄人里安稳地相处。",
+        "en": "You may care that a child can settle among peers without constant friction."
+      },
+      "immediate": "用户重视同龄关系中的融入与和睦。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "REL-07",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-01",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "text": {
+        "zh": "有良好的生活习惯，能够照顾好自己",
+        "en": "Develops good daily habits and can take care of themselves"
+      },
+      "interpretation": {
+        "zh": "你可能更看重日常里能自己站稳的那部分能力。",
+        "en": "You may value the everyday competence that lets a child take care of themselves."
+      },
+      "immediate": "用户重视生活自理与务实习惯。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-03",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-08",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "F",
+      "text": {
+        "zh": "遇到失败或困难后，能够调整并重新尝试",
+        "en": "Can recover from setbacks and try again"
+      },
+      "interpretation": {
+        "zh": "你可能更在意孩子跌倒之后还能不能自己再站起来。",
+        "en": "You may care most that after a fall, a child can still get up and try again."
+      },
+      "immediate": "用户重视挫折消化与再行动。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EMW-02",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-02",
+          "delta": 0.35,
+          "confidence": "medium"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,229 @@
+{
+  "id": "M-P04",
+  "version": 1,
+  "status": "active",
+  "interactionType": "multiple_choice",
+  "emoji": "🎁",
+  "title": {
+    "zh": "中了500万",
+    "en": "The jackpot"
+  },
+  "audience": "universal",
+  "minSelection": 1,
+  "maxSelection": 3,
+  "scenario": {
+    "zh": "如果你突然中了500万，你最有可能会做哪些事情？",
+    "en": "Out of nowhere, you win a few million in the lottery. Which of these would you most likely do?"
+  },
+  "hint": {
+    "zh": "请选择最多 3 项。",
+    "en": "Choose up to 3."
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "把消息藏好，暂时谁也不说",
+        "en": "Keep it quiet — tell no one for now"
+      },
+      "interpretation": {
+        "zh": "你可能把安全感放在第一位，重要的事先守住再说。",
+        "en": "Security may come first for you: protect what matters before anything else."
+      },
+      "immediate": "用户似乎倾向于先守住重要信息，暂缓公开。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-06",
+          "delta": 0.55,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-08",
+          "delta": 0.4,
+          "confidence": "low"
+        },
+        {
+          "signal": "TRU-02",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "a": -6,
+        "h": -4
+      }
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "终于可以不用为了赚钱，去做自己不喜欢的事情",
+        "en": "Finally stop doing work I don’t like just to pay the bills"
+      },
+      "interpretation": {
+        "zh": "你似乎很清楚：钱最大的用处，是把选择权还给自己。",
+        "en": "You seem clear that money’s real use is buying back your own choices."
+      },
+      "immediate": "用户似乎倾向于把财富理解为摆脱经济约束、拿回选择权。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-09",
+          "delta": 0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-03",
+          "delta": 0.2,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "a": 12,
+        "c": 3
+      }
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "把钱存好，基本继续原来的生活",
+        "en": "Put it away and mostly keep living as before"
+      },
+      "interpretation": {
+        "zh": "你可能更珍惜已经运转良好的日常。",
+        "en": "You may treasure a daily life that already works."
+      },
+      "immediate": "用户似乎倾向于让财富进入储备，而不改变生活结构。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-08",
+          "delta": 0.55,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-07",
+          "delta": 0.4,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "a": -12
+      }
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "让家人的生活过得更好",
+        "en": "Make life better for my family"
+      },
+      "interpretation": {
+        "zh": "好日子在你这里，第一个念头是带上家人。",
+        "en": "When good things arrive, your first thought is to bring your family along."
+      },
+      "immediate": "用户似乎倾向于把好事第一时间导向家人的生活。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "REL-06",
+          "delta": 0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-01",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "n": 12
+      }
+    },
+    {
+      "id": "E",
+      "text": {
+        "zh": "好好享受生活，不给自己留下遗憾",
+        "en": "Enjoy life properly — no regrets"
+      },
+      "interpretation": {
+        "zh": "你可能相信，生活的意义要趁现在去感受——别给自己留遗憾。",
+        "en": "You may believe life is meant to be felt now — don’t leave regrets behind."
+      },
+      "immediate": "用户似乎倾向于把好运兑换成不留遗憾的体验本身。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-01",
+          "delta": 0.55,
+          "confidence": "medium"
+        }
+      ],
+      "sliders": {
+        "t": 8
+      }
+    },
+    {
+      "id": "F",
+      "text": {
+        "zh": "重新规划人生，做好投资，为未来做好长期准备",
+        "en": "Replan my life — invest well and set up for the long term"
+      },
+      "interpretation": {
+        "zh": "你似乎习惯把好运变成一张长期的路线图。",
+        "en": "You seem to turn good luck into a long-term roadmap."
+      },
+      "immediate": "用户似乎倾向于把突来的资源纳入长期的准备与规划。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-08",
+          "delta": 0.55,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-03",
+          "delta": 0.35,
+          "confidence": "low"
+        },
+        {
+          "signal": "MEA-08",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": 10,
+        "a": -4
+      }
+    },
+    {
+      "id": "G",
+      "text": {
+        "zh": "拿出一部分帮助真正有需要的人",
+        "en": "Give part of it to people who truly need it"
+      },
+      "interpretation": {
+        "zh": "你的幸福感，似乎和更大的世界连在一起。",
+        "en": "Your sense of happiness seems connected to a bigger world."
+      },
+      "immediate": "用户似乎倾向于把好运的一部分导向更大的共同体。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-02",
+          "delta": 0.55,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-01",
+          "delta": 0.4,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "n": 6,
+        "h": 6
+      }
+    }
+  ]
+}

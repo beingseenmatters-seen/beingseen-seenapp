@@ -1,0 +1,143 @@
+{
+  "id": "SOC-001",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "⏰",
+  "title": {
+    "zh": "快了快了",
+    "en": "Almost there"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "约好三点见面。\n三点二十，对方发来消息：\n“快了快了。”\n你这段时间最可能会——",
+    "en": "You agreed to meet at three.\nAt three twenty, they text:\n“Almost there!”\nWhat would you most likely be doing in the meantime?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "刷手机，人来了就来了",
+        "en": "Scroll my phone — they’ll get here when they get here"
+      },
+      "interpretation": {
+        "zh": "等待对你来说，好像不是什么需要消化的事。",
+        "en": "Waiting doesn’t seem like something you need to process."
+      },
+      "immediate": "用户对他人的延迟接纳度高，不投入额外情绪。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EMW-01",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EMW-04",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "回一句：“我先点了。”",
+        "en": "Text back: “I’m ordering without you.”"
+      },
+      "interpretation": {
+        "zh": "你可能不想让自己的节奏一直等着别人——先把自己的部分照顾好。",
+        "en": "You may not want your rhythm held hostage — you take care of your part first."
+      },
+      "immediate": "用户直接声明自己的安排，以自己的节奏为锚。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EXP-01",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-05",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "顺手处理点自己的事情",
+        "en": "Use the time to knock out a few of my own things"
+      },
+      "interpretation": {
+        "zh": "你可能习惯把空档变成自己的时间，不让它白白流走。",
+        "en": "You may be used to turning dead time into your own time."
+      },
+      "immediate": "用户把等待转化为可用时间，情绪成本控制得很低。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EMW-04",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-02",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "想好了等会要说 TA 两句",
+        "en": "Have a few words ready for when they arrive"
+      },
+      "interpretation": {
+        "zh": "迟到这件事，你可能觉得应该说清楚，而不是当作没发生。",
+        "en": "A broken agreement may feel like something to name, not to let slide."
+      },
+      "immediate": "用户对约定被打破敏感，倾向当面把摩擦讲开。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-04",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "REL-10",
+          "delta": -0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "text": {
+        "zh": "发个定位：“我在靠窗的位置。”",
+        "en": "Send my location: “I’m at the table by the window.”"
+      },
+      "interpretation": {
+        "zh": "你可能顺手就把对方接下来的路铺好了。",
+        "en": "You may just quietly smooth the road ahead for them."
+      },
+      "immediate": "用户以实际行动降低对方的成本，务实周到。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-03",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-08",
+          "delta": 0.2,
+          "confidence": "low"
+        }
+      ]
+    }
+  ]
+}

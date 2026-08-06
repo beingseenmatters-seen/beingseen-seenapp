@@ -1,0 +1,143 @@
+{
+  "id": "REL-002",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "🍽️",
+  "title": {
+    "zh": "上错的菜",
+    "en": "The wrong dish"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "和朋友（或伴侣）一起出去吃饭。\n服务员上错了一道菜。\n你最可能会——",
+    "en": "You’re out for dinner with a friend (or your partner).\nThe server brings a dish you didn’t order.\nWhat would you most likely do?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "看看是不是自己喜欢吃，如果喜欢就留下",
+        "en": "See if it’s something I’d like — if so, keep it"
+      },
+      "interpretation": {
+        "zh": "你可能觉得，意外送来的东西，先看看合不合自己的口味。",
+        "en": "What arrives unexpectedly may get judged by your own taste first."
+      },
+      "immediate": "用户以自身体验为先，对流程规则看得较轻。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-01",
+          "delta": 0.3,
+          "confidence": "low"
+        },
+        {
+          "signal": "TRU-04",
+          "delta": -0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "先问问朋友（伴侣）喜不喜欢，喜欢就留下",
+        "en": "Ask my friend (or partner) if they like it — if so, keep it"
+      },
+      "interpretation": {
+        "zh": "你可能第一反应不是这道菜，而是身边的人。",
+        "en": "Your first thought may be the person next to you, not the dish."
+      },
+      "immediate": "用户先照顾同伴的偏好，再处理事情本身。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-03",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-01",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "算了，服务员也不容易，就留下吧",
+        "en": "Let it go — the server’s having a long night, just keep it"
+      },
+      "interpretation": {
+        "zh": "你可能先想到了那个上错菜的人——不想让 TA 为难。",
+        "en": "You may think first of the person who made the mistake — and not want to make it hard for them."
+      },
+      "immediate": "用户以善意化解小差错，宁可自己让一步。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-01",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EMW-01",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "不是我们点的，请服务员换回去",
+        "en": "It’s not what we ordered — ask them to take it back"
+      },
+      "interpretation": {
+        "zh": "你可能觉得，点了什么就是什么——把事情放回它该在的位置。",
+        "en": "What was ordered is what was ordered — you may like putting things back where they belong."
+      },
+      "immediate": "用户按规则纠正差错，边界清楚，不含敌意。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-04",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "REL-04",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "text": {
+        "zh": "先提醒服务员上错桌了，再一起决定怎么办",
+        "en": "Point out it went to the wrong table first, then decide together"
+      },
+      "interpretation": {
+        "zh": "你可能会先把信息补齐，再和大家一起拿主意。",
+        "en": "You may fill in the missing information first, then decide with everyone."
+      },
+      "immediate": "用户先纠正流程再协商决定，兼顾规则与同伴。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-04",
+          "delta": 0.3,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-01",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    }
+  ]
+}

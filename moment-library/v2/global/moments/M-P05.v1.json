@@ -1,0 +1,146 @@
+{
+  "id": "M-P05",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "📰",
+  "title": {
+    "zh": "老同学",
+    "en": "The old classmate"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "一位老同学现在混得比你好很多。你更接近哪一种感觉？",
+    "en": "An old classmate is now doing far better in life than you. Which feels closest to your reaction?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "他确实努力，我挺佩服的",
+        "en": "They earned it — honestly, I admire that"
+      },
+      "interpretation": {
+        "zh": "别人的成功在你眼里首先是努力的回报——你大概也这样要求自己。",
+        "en": "Other people’s success reads to you as effort paying off — you probably hold yourself to the same bar."
+      },
+      "immediate": "用户似乎倾向于把他人的成功归因于努力，并带着欣赏。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-10",
+          "delta": 0.7,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-03",
+          "delta": 0.45,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": 10
+      }
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "他运气好，或者资源比我好",
+        "en": "Good luck, or a head start"
+      },
+      "interpretation": {
+        "zh": "你似乎很清楚起点和运气的分量，不把一切都归于个人。",
+        "en": "You seem clear-eyed about how much starting points and luck weigh — it’s never all personal merit."
+      },
+      "immediate": "用户似乎倾向于强调运气与资源对结果的影响。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-12",
+          "delta": 0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-11",
+          "delta": 0.35,
+          "confidence": "low"
+        },
+        {
+          "signal": "CHG-03",
+          "delta": -0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": -10
+      }
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "各有各的活法，没什么可比的",
+        "en": "We just live different lives — nothing to compare"
+      },
+      "interpretation": {
+        "zh": "你可能不太用别人的坐标，来丈量自己的人生。",
+        "en": "You may not measure your life with other people’s rulers."
+      },
+      "immediate": "用户似乎倾向于退出比较坐标系，用自己的标准生活。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-05",
+          "delta": 0.55,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-06",
+          "delta": -0.45,
+          "confidence": "low"
+        },
+        {
+          "signal": "EMW-01",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "a": -6
+      }
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "有点焦虑，我也得加把劲了",
+        "en": "A little anxious — I should push harder too"
+      },
+      "interpretation": {
+        "zh": "比较对你来说不是打击，更像一脚油门。",
+        "en": "Comparison isn’t a blow for you; it’s more like a gas pedal."
+      },
+      "immediate": "用户似乎倾向于把比较转化为自我驱动，伴随少量焦虑。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-06",
+          "delta": 0.5,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-02",
+          "delta": 0.3,
+          "confidence": "low"
+        },
+        {
+          "signal": "EMW-03",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": 8,
+        "t": 8
+      }
+    }
+  ]
+}

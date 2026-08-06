@@ -1,0 +1,130 @@
+{
+  "id": "M-P09",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "🧍",
+  "title": {
+    "zh": "有人插队",
+    "en": "Cutting in line"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "排队时，有人直接插到你前面。你通常会怎么做？",
+    "en": "You’re waiting in line and someone cuts right in front of you. What do you usually do?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "直接指出来，让他回到队伍后面",
+        "en": "Call it out and ask them to go to the back"
+      },
+      "interpretation": {
+        "zh": "你可能认为规则值得被守护，哪怕需要自己开口。",
+        "en": "You may believe rules are worth defending — even when it takes speaking up yourself."
+      },
+      "immediate": "用户似乎会当场登记并说出规则被打破这件事。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-04",
+          "delta": 0.6,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EXP-01",
+          "delta": 0.35,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": 8
+      }
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "心里不舒服，但还是算了",
+        "en": "It bothers me, but I let it go"
+      },
+      "interpretation": {
+        "zh": "你似乎更愿意用忍让保全场面的平和——不舒服自己消化。",
+        "en": "You seem willing to swallow small discomforts to keep the peace — and digest them on your own."
+      },
+      "immediate": "用户似乎感受到了不满，但选择绕开冲突、收住表达。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "REL-10",
+          "delta": 0.55,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EXP-02",
+          "delta": 0.4,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": -5
+      }
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "先看情况，影响比较大时才会说",
+        "en": "Depends — I’d only say something if it really mattered"
+      },
+      "interpretation": {
+        "zh": "你可能会先评估场合和分量，再决定要不要开口。",
+        "en": "You may size up the situation and the stakes before deciding to speak."
+      },
+      "immediate": "用户似乎会先校准情境，把表达留给真正要紧的时刻。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EXP-03",
+          "delta": 0.5,
+          "confidence": "medium"
+        },
+        {
+          "signal": "TRU-04",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "c": 4
+      }
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "可能人家真的有急事",
+        "en": "Maybe they’re genuinely in a hurry"
+      },
+      "interpretation": {
+        "zh": "你更倾向先替对方找一个善意的理由。",
+        "en": "You lean toward finding a kind reason for people first."
+      },
+      "immediate": "用户似乎倾向于先做善意解读，并保留对人的判断。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-01",
+          "delta": 0.55,
+          "confidence": "medium"
+        },
+        {
+          "signal": "TRU-05",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "h": 12
+      }
+    }
+  ]
+}
