@@ -36,15 +36,20 @@ describe('Moment Platform seed v1', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('matches compile-time active Moment ids and versions', () => {
+  it('seed v1 is a subset of compile-time library (authoring may be ahead)', () => {
     const fromSeed = activeMomentsFromPack(seed)
       .map((m) => `${m.id}@${m.version}`)
       .sort();
-    const fromTs = getActiveMoments(MOMENT_LIBRARY)
-      .map((m) => `${m.id}@${m.version}`)
-      .sort();
-    expect(fromSeed).toEqual(fromTs);
+    const fromTs = new Set(
+      getActiveMoments(MOMENT_LIBRARY).map((m) => `${m.id}@${m.version}`),
+    );
     expect(fromSeed).toHaveLength(21);
+    for (const key of fromSeed) {
+      expect(fromTs.has(key)).toBe(true);
+    }
+    // Frozen Set 003 lives in library.ts / remote v2; seed stays at 21 until a seed bump.
+    expect(fromTs.has('FRI-002@1')).toBe(true);
+    expect(fromTs.has('PAR-001@1')).toBe(true);
   });
 });
 
