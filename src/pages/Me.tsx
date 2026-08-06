@@ -5,7 +5,10 @@ import { useLanguage } from '../i18n';
 import { useAuth } from '../auth';
 import { usePlatform } from '../hooks/usePlatform';
 import { useKeptReflections } from '../hooks/useKeptReflections';
-import { momentsClient } from '../services/moments/momentsClient';
+import {
+  momentsClient,
+  refreshMomentLibraryFromRemote,
+} from '../services/moments/momentsClient';
 import type { MomentsOverview } from '../services/moments/momentsService';
 
 export default function Me() {
@@ -18,7 +21,19 @@ export default function Me() {
   const [moments, setMoments] = useState<MomentsOverview | null>(null);
 
   useEffect(() => {
-    momentsClient.getOverview().then(setMoments).catch(() => setMoments(null));
+    let cancelled = false;
+    (async () => {
+      await refreshMomentLibraryFromRemote();
+      if (cancelled) return;
+      try {
+        setMoments(await momentsClient.getOverview());
+      } catch {
+        setMoments(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const keptCount = reflections.length;
@@ -28,6 +43,7 @@ export default function Me() {
   };
 
   const handleStartMoments = async () => {
+    await refreshMomentLibraryFromRemote();
     const session = await momentsClient.createSession();
     navigate(`/moments/session/${session.id}`);
   };

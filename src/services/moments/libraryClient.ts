@@ -25,7 +25,7 @@ import {
 } from './libraryValidation';
 import type { MomentLibraryHost } from './libraryHosts';
 import { createHostForRegion } from './libraryHosts';
-import seedPackJson from '../../data/moments/seed/momentLibrary.v1.pack.json';
+import seedPackJson from '../../data/moments/seed/momentLibrary.v2.pack.json';
 
 export interface LibraryPointer {
   region: DataRegion;
@@ -64,14 +64,23 @@ export class MomentLibraryClient {
     if (cached) {
       const result = await validateLibraryPack(cached, { verifyHashes: true });
       if (result.ok) {
-        this.activePack = result.pack;
-        this.ready = true;
-        return result.pack;
+        // App updates may ship a newer seed while a phone still holds an older
+        // validated cache (common when remote sync is blocked on native/CN).
+        // Prefer the newer bundled seed so FRI-002 / PAR-001 are not trapped.
+        if (result.pack.libraryVersion >= this.seedPack.libraryVersion) {
+          this.activePack = result.pack;
+          this.ready = true;
+          return result.pack;
+        }
+        console.warn(
+          `[MomentLibrary] stale cache v${result.pack.libraryVersion} < seed v${this.seedPack.libraryVersion}; using seed`,
+        );
+      } else {
+        console.warn(
+          '[MomentLibrary] active cache failed validation; falling back to seed',
+          result.errors,
+        );
       }
-      console.warn(
-        '[MomentLibrary] active cache failed validation; falling back to seed',
-        result.errors,
-      );
     }
 
     const seedResult = await validateLibraryPack(this.seedPack, { verifyHashes: true });
@@ -82,6 +91,15 @@ export class MomentLibraryClient {
     }
     this.activePack = seedResult.pack;
     this.ready = true;
+    // Persist seed as active so subsequent launches and offline use stay on it.
+    await this.store.set(LIBRARY_CACHE_ACTIVE_KEY, JSON.stringify(seedResult.pack));
+    const pointer: LibraryPointer = {
+      region: seedResult.pack.region,
+      libraryVersion: seedResult.pack.libraryVersion,
+      packHash: seedResult.pack.packHash,
+      updatedAt: Date.now(),
+    };
+    await this.store.set(LIBRARY_CACHE_POINTER_KEY, JSON.stringify(pointer));
     return seedResult.pack;
   }
 

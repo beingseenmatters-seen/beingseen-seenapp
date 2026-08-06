@@ -9,7 +9,7 @@ const pack = JSON.parse(
   readFileSync(join(root, 'moment-library/v2/global/library.v2.pack.json'), 'utf8'),
 ) as MomentLibraryPack;
 const seed = JSON.parse(
-  readFileSync(join(root, 'src/data/moments/seed/momentLibrary.v1.pack.json'), 'utf8'),
+  readFileSync(join(root, 'src/data/moments/seed/momentLibrary.v2.pack.json'), 'utf8'),
 ) as MomentLibraryPack;
 
 const result = await validateLibraryPack(pack);
@@ -28,10 +28,11 @@ console.log(
       par001: active.some((m) => m.id === 'PAR-001'),
       seedLibraryVersion: seed.libraryVersion,
       seedCount: seed.moments.length,
-      seedUntouched:
-        seed.libraryVersion === 1 &&
-        seed.moments.length === 21 &&
-        !seed.moments.some((m) => m.id === 'FRI-002' || m.id === 'PAR-001'),
+      seedMatchesRemoteV2:
+        seed.libraryVersion === 2 &&
+        seed.moments.length === 23 &&
+        seed.moments.some((m) => m.id === 'FRI-002') &&
+        seed.moments.some((m) => m.id === 'PAR-001'),
       packHash: pack.packHash,
     },
     null,

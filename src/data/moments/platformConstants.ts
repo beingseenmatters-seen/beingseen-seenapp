@@ -17,7 +17,7 @@ export const SUPPORTED_INTERACTION_TYPES: MomentInteractionType[] = [
 ];
 
 /** Immutable seed libraryVersion shipped with the app. */
-export const SEED_LIBRARY_VERSION = 1;
+export const SEED_LIBRARY_VERSION = 2;
 
 export const LIBRARY_CACHE_ACTIVE_KEY = 'seen_moment_library_active_v1';
 export const LIBRARY_CACHE_STAGING_KEY = 'seen_moment_library_staging_v1';

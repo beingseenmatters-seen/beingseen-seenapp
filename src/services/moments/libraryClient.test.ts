@@ -6,7 +6,8 @@ import { validateLibraryPack, activeMomentsFromPack } from './libraryValidation'
 import { hashLibraryPackBody, hashMomentDocument } from './libraryHash';
 import { MOMENT_LIBRARY } from '../../data/moments/library';
 import { getActiveMoments } from './config';
-import seedPack from '../../data/moments/seed/momentLibrary.v1.pack.json';
+import seedV1Pack from '../../data/moments/seed/momentLibrary.v1.pack.json';
+import seedV2Pack from '../../data/moments/seed/momentLibrary.v2.pack.json';
 import type { MomentDefinition } from '../../types/moments';
 import type { MomentLibraryPack } from '../../types/momentLibrary';
 import {
@@ -16,7 +17,8 @@ import {
 } from '../../data/moments/platformConstants';
 import { buildIndexEntry } from './libraryValidation';
 
-const seed = seedPack as MomentLibraryPack;
+const seedV1 = seedV1Pack as MomentLibraryPack;
+const seed = seedV2Pack as MomentLibraryPack;
 
 async function clonePack(base: MomentLibraryPack, mut: (p: MomentLibraryPack) => void): Promise<MomentLibraryPack> {
   const pack = structuredClone(base);
@@ -30,38 +32,59 @@ async function clonePack(base: MomentLibraryPack, mut: (p: MomentLibraryPack) =>
   return pack;
 }
 
-describe('Moment Platform seed v1', () => {
+describe('Moment Platform seed v2', () => {
   it('validates atomically', async () => {
     const result = await validateLibraryPack(seed);
     expect(result.ok).toBe(true);
   });
 
-  it('seed v1 is a subset of compile-time library (authoring may be ahead)', () => {
+  it('matches compile-time active Moment ids and includes Frozen Set 003', () => {
     const fromSeed = activeMomentsFromPack(seed)
       .map((m) => `${m.id}@${m.version}`)
       .sort();
-    const fromTs = new Set(
-      getActiveMoments(MOMENT_LIBRARY).map((m) => `${m.id}@${m.version}`),
-    );
-    expect(fromSeed).toHaveLength(21);
-    for (const key of fromSeed) {
-      expect(fromTs.has(key)).toBe(true);
-    }
-    // Frozen Set 003 lives in library.ts / remote v2; seed stays at 21 until a seed bump.
-    expect(fromTs.has('FRI-002@1')).toBe(true);
-    expect(fromTs.has('PAR-001@1')).toBe(true);
+    const fromTs = getActiveMoments(MOMENT_LIBRARY)
+      .map((m) => `${m.id}@${m.version}`)
+      .sort();
+    expect(fromSeed).toEqual(fromTs);
+    expect(fromSeed).toHaveLength(23);
+    expect(fromSeed).toContain('FRI-002@1');
+    expect(fromSeed).toContain('PAR-001@1');
   });
 });
 
 describe('MomentLibraryClient', () => {
-  it('offline first launch uses seed', async () => {
+  it('offline first launch uses seed v2', async () => {
     const client = new MomentLibraryClient(new InMemoryStore(), () => 'GLOBAL', {
       seedPack: seed,
       hostFactory: () => null,
     });
     const pack = await client.ensureReady();
-    expect(pack.libraryVersion).toBe(1);
-    expect(client.getActiveMoments()).toHaveLength(21);
+    expect(pack.libraryVersion).toBe(2);
+    expect(client.getActiveMoments()).toHaveLength(23);
+    expect(client.getActiveMoments().some((m) => m.id === 'FRI-002')).toBe(true);
+  });
+
+  it('replaces stale v1 cache with newer bundled seed v2', async () => {
+    const store = new InMemoryStore();
+    await store.set('seen_moment_library_active_v1', JSON.stringify(seedV1));
+    await store.set(
+      'seen_moment_library_pointer_v1',
+      JSON.stringify({
+        region: 'GLOBAL',
+        libraryVersion: 1,
+        packHash: seedV1.packHash,
+        updatedAt: 1,
+      }),
+    );
+
+    const client = new MomentLibraryClient(store, () => 'GLOBAL', {
+      seedPack: seed,
+      hostFactory: () => null,
+    });
+    const pack = await client.ensureReady();
+    expect(pack.libraryVersion).toBe(2);
+    expect(pack.packHash).toBe(seed.packHash);
+    expect(client.getActiveMoments().some((m) => m.id === 'PAR-001')).toBe(true);
   });
 
   it('offline later launch uses last validated active cache', async () => {
@@ -72,7 +95,6 @@ describe('MomentLibraryClient', () => {
       hostFactory: () => host,
     });
     await first.ensureReady();
-    // Manually cache a promoted pointer by syncing same v1
     await first.syncRemote();
 
     const second = new MomentLibraryClient(store, () => 'GLOBAL', {
@@ -80,14 +102,14 @@ describe('MomentLibraryClient', () => {
       hostFactory: () => null,
     });
     const pack = await second.ensureReady();
-    expect(pack.libraryVersion).toBe(1);
+    expect(pack.libraryVersion).toBe(2);
     expect(pack.packHash).toBe(seed.packHash);
   });
 
-  it('rejects incompatible v2 without changing active pack or sessions', async () => {
+  it('rejects incompatible newer pack without changing active pack or sessions', async () => {
     const store = new InMemoryStore();
     const client = new MomentLibraryClient(store, () => 'GLOBAL', {
-      seedPack: seed,
+      seedPack: seedV1,
       hostFactory: () => null,
     });
     await client.ensureReady();
@@ -104,7 +126,7 @@ describe('MomentLibraryClient', () => {
     expect(session.snapshots[0]?.libraryVersion).toBe(1);
     expect(session.snapshots[0]?.signalCatalogVersion).toBe(SIGNAL_CATALOG_VERSION);
 
-    const bad = await clonePack(seed, (p) => {
+    const bad = await clonePack(seedV1, (p) => {
       p.libraryVersion = 2;
       p.moments[0]!.options[0]!.signals = [
         { signal: 'NOT_A_REAL_SIGNAL', delta: 1, confidence: 'high' },
@@ -123,7 +145,7 @@ describe('MomentLibraryClient', () => {
   it('promotes valid library v2 with a net-new Moment', async () => {
     const store = new InMemoryStore();
     const client = new MomentLibraryClient(store, () => 'GLOBAL', {
-      seedPack: seed,
+      seedPack: seedV1,
       hostFactory: () => null,
     });
     await client.ensureReady();
@@ -154,25 +176,23 @@ describe('MomentLibraryClient', () => {
       ],
     };
 
-    const v2 = await clonePack(seed, (p) => {
+    const v2 = await clonePack(seedV1, (p) => {
       p.libraryVersion = 2;
       p.publishedAt = '2026-08-06T12:00:00.000Z';
       p.moments.push(newMoment);
     });
 
-    const host = new MemoryMomentLibraryHost('GLOBAL', [seed, v2]);
+    const host = new MemoryMomentLibraryHost('GLOBAL', [seedV1, v2]);
     const syncing = new MomentLibraryClient(store, () => 'GLOBAL', {
-      seedPack: seed,
+      seedPack: seedV1,
       hostFactory: () => host,
     });
     await syncing.ensureReady();
-    // Remote sync must refuse TEST-* even if a host serves them.
     const remoteRejected = await syncing.syncRemote();
     expect(remoteRejected.promoted).toBe(false);
     expect(remoteRejected.errors?.some((e) => e.includes('TEST-PLAT-001'))).toBe(true);
     expect(syncing.getActivePack().libraryVersion).toBe(1);
 
-    // Explicit test-only promote path may accept TEST-* for acceptance harnesses.
     const allowed = await syncing.tryPromotePack(v2, { allowTestMomentIds: true });
     expect(allowed.promoted).toBe(true);
     expect(syncing.getActivePack().libraryVersion).toBe(2);
@@ -181,7 +201,6 @@ describe('MomentLibraryClient', () => {
 
   it('refuses Firebase-looking CN host', async () => {
     const prev = import.meta.env.VITE_MOMENT_LIBRARY_CN_BASE;
-    // Dynamic check via createHostForRegion is covered in libraryHosts; assert pack region wiring here.
     expect(seed.region).toBe('GLOBAL');
     expect(seed.minAppCapability.interactionTypes).toEqual([...SUPPORTED_INTERACTION_TYPES]);
     expect(seed.schemaVersion).toBe(MOMENT_LIBRARY_SCHEMA_VERSION);

@@ -82,7 +82,10 @@ async function main() {
   const cnPack = await buildPack('CN');
 
   // Immutable seed (bundled). GLOBAL seed is the default offline bootstrap.
-  const seedPath = join(root, 'src/data/moments/seed/momentLibrary.v1.pack.json');
+  const seedPath = join(
+    root,
+    `src/data/moments/seed/momentLibrary.v${SEED_LIBRARY_VERSION}.pack.json`,
+  );
   writeJson(seedPath, globalPack);
 
   // Remote fixture tree (not production publish) — content-equivalent to seed.
