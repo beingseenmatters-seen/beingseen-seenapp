@@ -23,13 +23,26 @@ function makeService(opts: {
   );
 }
 
-/** Answer every Moment in a session with the approved sample-A choices (or first option). */
+function defaultChoiceForSnapshot(snap: MomentSnapshot, momentId: string): string[] {
+  const fromProfile = SAMPLE_PROFILE_A[momentId];
+  if (fromProfile) return fromProfile;
+  if (snap.interactionType === 'ranking') {
+    const n = snap.maxRank ?? snap.options.length;
+    return snap.options.slice(0, n).map((o) => o.id);
+  }
+  return [snap.options[0].id];
+}
+
+/** Answer every Moment in a session with the approved sample-A choices (or valid defaults). */
 async function answerAll(service: MomentsService, sessionId: string) {
   let session = (await service.loadActiveSession())!;
   for (const momentId of session.momentIds) {
     const snap = session.snapshots.find((s) => s.momentId === momentId)!;
-    const choice = SAMPLE_PROFILE_A[momentId] ?? [snap.options[0].id];
-    session = await service.saveAnswer(sessionId, momentId, choice);
+    session = await service.saveAnswer(
+      sessionId,
+      momentId,
+      defaultChoiceForSnapshot(snap, momentId),
+    );
   }
   return session;
 }
@@ -109,7 +122,11 @@ describe('answers, resume and validation', () => {
 
     const firstId = session.momentIds[0];
     const firstSnap = session.snapshots.find((s) => s.momentId === firstId)!;
-    await service.saveAnswer(session.id, firstId, SAMPLE_PROFILE_A[firstId] ?? [firstSnap.options[0].id]);
+    await service.saveAnswer(
+      session.id,
+      firstId,
+      defaultChoiceForSnapshot(firstSnap, firstId),
+    );
 
     const resumed = (await makeService({ store }).loadActiveSession())!;
     expect(nextQuestionIndex(resumed)).toBe(1);

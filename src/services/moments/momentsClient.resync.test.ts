@@ -27,6 +27,14 @@ vi.mock('../firebase', () => ({
   auth: { currentUser: null },
 }));
 
+vi.mock('@capacitor/core', () => ({
+  Capacitor: { isNativePlatform: () => false },
+}));
+
+vi.mock('@capacitor/app', () => ({
+  App: { addListener: async () => ({ remove: async () => undefined }) },
+}));
+
 describe('momentsClient auth-region resync', () => {
   beforeEach(() => {
     syncRemote.mockClear();
