@@ -1,0 +1,143 @@
+{
+  "id": "REL-003",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "🛍️",
+  "title": {
+    "zh": "超出预算",
+    "en": "Beyond budget"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "刚开始交往不久。\n有一次逛街时，对方看到一件很喜欢的东西，但价格超出了你目前的预算。\n你更可能会——",
+    "en": "You have only been dating for a short time.\nWhile shopping together, your partner notices something they really like, but it is well beyond your current budget.\nWhat would you most likely think?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "我们可能不太合适，我希望找一个物质要求没那么高的人。",
+        "en": "We may not be a good match. I'd rather be with someone who has simpler material expectations."
+      },
+      "interpretation": {
+        "zh": "物质期待的落差，对你来说可能是关系是否匹配的信号。",
+        "en": "A gap in material expectations may read to you as a signal about whether you match."
+      },
+      "immediate": "用户以物质期待的落差作为关系筛选条件。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-08",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "REL-05",
+          "delta": 0.35,
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "喜欢好一点的生活很正常，只要不是盲目攀比，我可以理解。",
+        "en": "Wanting a better lifestyle is perfectly normal, as long as it isn't about showing off."
+      },
+      "interpretation": {
+        "zh": "你可能把「想要更好」和「攀比」分开看——前者可以理解。",
+        "en": "You may separate wanting something better from showing off — and accept the first."
+      },
+      "immediate": "用户对伴侣的物质向往持接纳态度，同时警惕攀比。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "TRU-01",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EMW-01",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "有多大能力，就过什么样的生活。能力范围内，我愿意尽量满足她（他）。",
+        "en": "We should live within our means. If I can afford it, I'd be happy to make them happy."
+      },
+      "interpretation": {
+        "zh": "你可能把给予放在能力边界之内——稳，也愿意。",
+        "en": "You may keep giving inside what you can afford — steady, and still willing."
+      },
+      "immediate": "用户以能力边界约束给予，同时愿意在边界内满足对方。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "MEA-08",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-03",
+          "delta": 0.35,
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "我会记住她（他）喜欢的东西，等以后条件允许了，再送给她（他）。",
+        "en": "I'll remember it and buy it for them one day when the time is right."
+      },
+      "interpretation": {
+        "zh": "你可能不急着现在兑现——把心意留到以后能给的时候。",
+        "en": "You may not need to give it now — you hold the wish until you can."
+      },
+      "immediate": "用户以延迟兑现的方式表达长期关照。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-03",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-02",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "text": {
+        "zh": "这会让我更有动力，希望以后能给她（他）更好的生活。",
+        "en": "It would motivate me to work harder so I can give us a better future."
+      },
+      "interpretation": {
+        "zh": "对方的愿望，对你来说可能更像一脚油门，而不是压力本身。",
+        "en": "Their wish may feel more like fuel than pressure — something that pushes you forward."
+      },
+      "immediate": "用户把伴侣的物质愿望转化为自我驱动与未来投入。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-03",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-10",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    }
+  ]
+}

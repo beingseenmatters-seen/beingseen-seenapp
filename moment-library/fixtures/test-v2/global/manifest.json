@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "libraryVersion": 2,
+  "region": "GLOBAL",
+  "signalCatalogVersion": 1,
+  "publishedAt": "2026-08-06T12:00:00.000Z",
+  "minAppCapability": {
+    "interactionTypes": [
+      "single_choice",
+      "multiple_choice",
+      "ranking"
+    ],
+    "signalCatalogVersion": 1
+  },
+  "moments": [
+    {
+      "id": "M-P01",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P01.v1.json",
+      "contentHash": "c8725952cc8f813e33355ed411af117df5d63b3bf4322e2881812aac4f8d51c6"
+    },
+    {
+      "id": "M-P02",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P02.v1.json",
+      "contentHash": "5ec274f3ab4b19f9592700e1443c19a4a7983ebf95f83609f70589e27a54fe3d"
+    },
+    {
+      "id": "M-P03",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P03.v1.json",
+      "contentHash": "c770f4cd69b230ee8e280291466055653fe1645ac05a8637cea40a68475c6e48"
+    },
+    {
+      "id": "M-P04",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P04.v1.json",
+      "contentHash": "9a857239608b7148ac93af92d120ab48d68d20889f47c3e32610ab57963f8cac"
+    },
+    {
+      "id": "M-P05",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P05.v1.json",
+      "contentHash": "d427c3a71074ddaa3ff7138f376634993b4d6faef548f6d89fb8276fb4eabfb2"
+    },
+    {
+      "id": "M-P06",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P06.v1.json",
+      "contentHash": "3fd2eeb6af80689e60725e986c7f10865cd1d35e3740d344488f911e05acf771"
+    },
+    {
+      "id": "M-P07",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P07.v1.json",
+      "contentHash": "a432573a2e30c8afcfc180d9b12b35e29e67258993315933df3b7dba36c4e6e4"
+    },
+    {
+      "id": "M-P08",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P08.v1.json",
+      "contentHash": "b09041b396309a6e6cdd446e666452fd793e27939b2f88832087c806e95deeb2"
+    },
+    {
+      "id": "M-P09",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P09.v1.json",
+      "contentHash": "bc77e01d9eb1b26e10e93b667e4f47985b680a6c1b08bf7ed010e4cf4a03bb89"
+    },
+    {
+      "id": "M-P10",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P10.v1.json",
+      "contentHash": "dc976d14b6af30f4939ef5a5fa9a2af0b23f565861d67d225f30600916cbaaaf"
+    },
+    {
+      "id": "M-P11",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P11.v1.json",
+      "contentHash": "bd39cf72b9b876c73d8513b4b289290078bed6bd3cd726aef9e701080231939a"
+    },
+    {
+      "id": "M-P12",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P12.v1.json",
+      "contentHash": "0952f04ef092a653cb52e2d70a31fcbd3f10149558a56559c6f6da736691e177"
+    },
+    {
+      "id": "REL-001",
+      "version": 1,
+      "status": "active",
+      "path": "moments/REL-001.v1.json",
+      "contentHash": "a392e32eb8b74c7ea5e99bb0fa82443af64caddf18f6641476bb748460a7f379"
+    },
+    {
+      "id": "SOC-001",
+      "version": 1,
+      "status": "active",
+      "path": "moments/SOC-001.v1.json",
+      "contentHash": "89415260c8412e478ab44e6f27f16178fd61503a60ce4fd9297308ef6a7ab09c"
+    },
+    {
+      "id": "FRI-001",
+      "version": 1,
+      "status": "active",
+      "path": "moments/FRI-001.v1.json",
+      "contentHash": "e794529df1d4cbc04e04c982615049a69f84159032e5f216d3b38c9aa8195658"
+    },
+    {
+      "id": "REL-002",
+      "version": 1,
+      "status": "active",
+      "path": "moments/REL-002.v1.json",
+      "contentHash": "092aaf48c18f16e7779546d9bb20b17c360141d3401663788e686ece2a204d2c"
+    },
+    {
+      "id": "TRV-001",
+      "version": 1,
+      "status": "active",
+      "path": "moments/TRV-001.v1.json",
+      "contentHash": "95a1e6e074e6219de0a80bc68703ed05daf8a8c8cd5d1ebd3ab1cae94cf9fcc9"
+    },
+    {
+      "id": "COM-001",
+      "version": 1,
+      "status": "active",
+      "path": "moments/COM-001.v1.json",
+      "contentHash": "d30721895f45f4fec8b9b5d20bc37b85deffff04c3c22c270bbc024cfc52f5ba"
+    },
+    {
+      "id": "REL-003",
+      "version": 1,
+      "status": "active",
+      "path": "moments/REL-003.v1.json",
+      "contentHash": "df1dad685f43ab27362624a05510badef0c1567ab5b10334838c2d9d9751109a"
+    },
+    {
+      "id": "REL-004",
+      "version": 1,
+      "status": "active",
+      "path": "moments/REL-004.v1.json",
+      "contentHash": "785a368e8583868c11caaee2a1d35f0935058caecf88c3d0662937edd1595118"
+    },
+    {
+      "id": "BUS-002",
+      "version": 1,
+      "status": "active",
+      "path": "moments/BUS-002.v1.json",
+      "contentHash": "b7fa19a7e4f29addb3eee0f62b575b7573210b96a5bf25d935bfd563a191f00e"
+    },
+    {
+      "id": "TEST-PLAT-001",
+      "version": 1,
+      "status": "active",
+      "path": "moments/TEST-PLAT-001.v1.json",
+      "contentHash": "d1a1511541f7a202fe54337040ff100aafab82322993aff990c878c5d0e5a1dd"
+    }
+  ],
+  "packPath": "library.v2.pack.json",
+  "packHash": "9abb3ec01ce3f2210778ae953f4bfbacf31a6c34001d344f6e88305503e6edaf",
+  "ab": null
+}

@@ -1,0 +1,143 @@
+{
+  "id": "FRI-001",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "🌙",
+  "title": {
+    "zh": "在吗",
+    "en": "You up?"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "晚上十一点半。\n你准备睡了。\n一个朋友发来：\n“在吗？”\n你会——",
+    "en": "It’s eleven thirty at night.\nYou’re about to go to sleep.\nA friend texts:\n“You up?”\nYou would —"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "回：“在，怎么了？”",
+        "en": "Reply: “Yeah — what’s up?”"
+      },
+      "interpretation": {
+        "zh": "你可能愿意在自己的时间里，给朋友留一扇开着的门。",
+        "en": "You may keep a door open for friends, even on your own time."
+      },
+      "immediate": "用户对朋友保持即时可及，善意先行。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-01",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "TRU-07",
+          "delta": 0.2,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "回：“要睡了，急事打电话。”",
+        "en": "Reply: “About to sleep — call me if it’s urgent.”"
+      },
+      "interpretation": {
+        "zh": "你可能把界线画得很清楚，同时把真正要紧的路留了出来。",
+        "en": "You may draw the line clearly while leaving a path open for what truly matters."
+      },
+      "immediate": "用户守住休息边界，但为紧急情况留出通道。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "REL-04",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-03",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "明天再回",
+        "en": "Reply tomorrow"
+      },
+      "interpretation": {
+        "zh": "你可能觉得，深夜的消息可以留给白天的自己。",
+        "en": "Late-night messages may be something you leave for your daytime self."
+      },
+      "immediate": "用户优先保护自己的休息，不为未知消息支付情绪。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EMW-04",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "REL-04",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "暂时不回，但心里会惦记",
+        "en": "Not reply yet — but it stays on my mind"
+      },
+      "interpretation": {
+        "zh": "你可能人已经躺下了，心还替朋友悬着一会儿。",
+        "en": "You may already be lying down while your mind stays up a little longer for your friend."
+      },
+      "immediate": "用户外在克制、内在挂念，情绪收在心里。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EXP-02",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EMW-03",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "text": {
+        "zh": "直接打电话过去",
+        "en": "Just call them right away"
+      },
+      "interpretation": {
+        "zh": "你可能不想隔着屏幕猜——有事就现在弄清楚。",
+        "en": "You may not want to guess through a screen — if something’s up, find out now."
+      },
+      "immediate": "用户跳过试探直接行动，把关心付诸即时联系。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-02",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-01",
+          "delta": 0.35,
+          "confidence": "medium"
+        }
+      ]
+    }
+  ]
+}

@@ -39,6 +39,12 @@ export interface SoulProfileAboutMe {
   updatedAt?: number;
 }
 
+/**
+ * Moment Library / data residency region.
+ * Signed-in source of truth for which Moment Library host to use.
+ */
+export type AccountDataRegion = 'CN' | 'GLOBAL';
+
 export interface SeenUser {
   uid: string;
   email: string;
@@ -51,6 +57,11 @@ export interface SeenUser {
   updatedAt?: unknown;
   loginMethod: LoginMethod;
   provider?: string;
+  /**
+   * Moment Platform region. Source of truth when signed in.
+   * Must not be overridden by device locale after login.
+   */
+  dataRegion?: AccountDataRegion;
   onboardingCompleted: boolean;
   onboardingStarted?: boolean;
   nickname?: string;

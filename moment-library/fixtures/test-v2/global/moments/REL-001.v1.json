@@ -1,0 +1,143 @@
+{
+  "id": "REL-001",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "🍜",
+  "title": {
+    "zh": "随便",
+    "en": "Whatever works"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "你问伴侣（或朋友）晚饭想吃什么，对方回答：\n“随便。”\n你接下来最可能会——",
+    "en": "You ask your partner (or a friend) what they want for dinner. They say:\n“Whatever, I don’t mind.”\nWhat would you most likely do next?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "直接定一家我想吃的",
+        "en": "Just pick the place I feel like"
+      },
+      "interpretation": {
+        "zh": "你可能觉得，既然对方说随便，那就痛快一点，先动起来。",
+        "en": "If they said whatever, you may figure someone should just get things moving."
+      },
+      "immediate": "用户在开放场景里倾向按自己的偏好快速决定。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-02",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "MEA-05",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "定一家对方平时爱吃的",
+        "en": "Pick a place they usually love"
+      },
+      "interpretation": {
+        "zh": "你可能把「随便」听成了一次照顾对方的机会。",
+        "en": "You may hear “whatever” as a small chance to take care of them."
+      },
+      "immediate": "用户以对方的偏好为默认选项，务实地表达关心。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CAR-03",
+          "delta": 0.45,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-01",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "给对方两个选择，让 TA 挑一个",
+        "en": "Give them two options and let them pick"
+      },
+      "interpretation": {
+        "zh": "你可能习惯把开放的问题收窄一点，让决定变得容易。",
+        "en": "You may be used to narrowing open questions so deciding gets easy."
+      },
+      "immediate": "用户用结构化的小选项推动共同决定。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-08",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CAR-01",
+          "delta": 0.25,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "今天必须你来决定",
+        "en": "Nope — today they have to decide"
+      },
+      "interpretation": {
+        "zh": "你可能不太愿意每次都接下这个「随便」，这次把球递了回去。",
+        "en": "You may not want to catch that “whatever” every single time — this one goes back to them."
+      },
+      "immediate": "用户直接把决定权推回给对方，守住自己的边界。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "REL-04",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "EXP-01",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "text": {
+        "zh": "那就先不定，谁饿了谁说",
+        "en": "Leave it — whoever gets hungry first speaks up"
+      },
+      "interpretation": {
+        "zh": "你可能不觉得这件事需要马上有答案——让它自己浮出来就好。",
+        "en": "You may not feel this needs an answer right now — it’ll surface on its own."
+      },
+      "immediate": "用户对悬而未决的小事很放松，不追求即时确定。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "EMW-01",
+          "delta": 0.35,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-09",
+          "delta": -0.25,
+          "confidence": "low"
+        }
+      ]
+    }
+  ]
+}

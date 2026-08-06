@@ -1,0 +1,3459 @@
+{
+  "schemaVersion": 1,
+  "libraryVersion": 2,
+  "region": "GLOBAL",
+  "signalCatalogVersion": 1,
+  "publishedAt": "2026-08-06T12:00:00.000Z",
+  "minAppCapability": {
+    "interactionTypes": [
+      "single_choice",
+      "multiple_choice",
+      "ranking"
+    ],
+    "signalCatalogVersion": 1
+  },
+  "moments": [
+    {
+      "id": "M-P01",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "🛗",
+      "title": {
+        "zh": "电梯坏了",
+        "en": "Broken elevator"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "电梯坏了，你要爬10楼。你的第一反应是？",
+        "en": "The elevator’s out and you have to climb ten floors. What’s your first reaction?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "正好当锻炼",
+            "en": "Free workout"
+          },
+          "interpretation": {
+            "zh": "你可能更倾向把小麻烦转成对自己有利的事。",
+            "en": "You may tend to turn small annoyances into something that works for you."
+          },
+          "immediate": "用户似乎倾向于把突发的不便重新解读为对自己有利的机会。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-01",
+              "delta": 0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-02",
+              "delta": 0.3,
+              "confidence": "low"
+            },
+            {
+              "signal": "CHG-03",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": 12,
+            "t": 6
+          }
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "这物业真不行",
+            "en": "This building is so badly run"
+          },
+          "interpretation": {
+            "zh": "你似乎对规则和责任比较敏感，出了问题，该有人负责。",
+            "en": "You seem tuned in to rules and responsibility — when something breaks, someone should answer for it."
+          },
+          "immediate": "用户似乎倾向于先定位责任方，把问题归入「有人失责」。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CAR-05",
+              "delta": 0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "TRU-04",
+              "delta": 0.4,
+              "confidence": "low"
+            },
+            {
+              "signal": "TRU-03",
+              "delta": -0.2,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "h": -8,
+            "c": 4
+          }
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "今天运气差",
+            "en": "Just my luck today"
+          },
+          "interpretation": {
+            "zh": "你可能倾向用运气解释外部事件。",
+            "en": "You may lean on luck to explain what the world throws at you."
+          },
+          "immediate": "用户似乎暂时倾向于用运气解释外部的不顺。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-11",
+              "delta": 0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "EMW-01",
+              "delta": 0.3,
+              "confidence": "low"
+            },
+            {
+              "signal": "CHG-03",
+              "delta": -0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": -12
+          }
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "无所谓，爬就是了",
+            "en": "Whatever — just take the stairs"
+          },
+          "interpretation": {
+            "zh": "你似乎更倾向接受现实，不在小事上消耗情绪。",
+            "en": "You seem to accept what’s in front of you without spending emotion on the small stuff."
+          },
+          "immediate": "用户似乎倾向于直接接受眼前情况，并继续行动。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "EMW-01",
+              "delta": 0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-02",
+              "delta": 0.35,
+              "confidence": "low"
+            },
+            {
+              "signal": "EMW-02",
+              "delta": 0.3,
+              "confidence": "low"
+            },
+            {
+              "signal": "CHG-03",
+              "delta": 0.1,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "a": -8,
+            "c": -3
+          }
+        }
+      ]
+    },
+    {
+      "id": "M-P02",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "👀",
+      "title": {
+        "zh": "没人扶",
+        "en": "Nobody helps"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "路边有人摔倒，周围没人扶。你觉得多数人不扶是因为？",
+        "en": "Someone slips and falls on the street, and nobody stops to help. Why do you think most people walk past?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "怕被讹",
+            "en": "They’re afraid of being blamed — or sued"
+          },
+          "interpretation": {
+            "zh": "你可能认为环境会影响善意的成本，对现实保持清醒。",
+            "en": "You may see how much a good deed can cost, and stay clear-eyed about it."
+          },
+          "immediate": "用户似乎倾向于用现实风险解释人们的克制。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "TRU-02",
+              "delta": 0.5,
+              "confidence": "medium"
+            },
+            {
+              "signal": "TRU-03",
+              "delta": -0.4,
+              "confidence": "low"
+            },
+            {
+              "signal": "TRU-01",
+              "delta": -0.25,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "h": -10
+          }
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "冷漠自私",
+            "en": "People just don’t care"
+          },
+          "interpretation": {
+            "zh": "你似乎对人性的期待偏谨慎，先设防，再靠近。",
+            "en": "Your expectations of people seem cautious — guard up first, warm up later."
+          },
+          "immediate": "用户似乎暂时倾向于用人性品质解释他人的不作为。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "TRU-01",
+              "delta": -0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "TRU-02",
+              "delta": 0.35,
+              "confidence": "low"
+            },
+            {
+              "signal": "TRU-05",
+              "delta": -0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "h": -12
+          }
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "没注意到",
+            "en": "They probably didn’t notice"
+          },
+          "interpretation": {
+            "zh": "你更倾向给出中性的解释，不轻易下判断。",
+            "en": "You lean toward neutral explanations and don’t rush to judge."
+          },
+          "immediate": "用户似乎倾向于先给出不涉动机的情境解释。",
+          "weight": "Very Light",
+          "signals": [
+            {
+              "signal": "TRU-05",
+              "delta": 0.5,
+              "confidence": "medium"
+            },
+            {
+              "signal": "TRU-01",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "h": 8
+          }
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "每个人都有自己的难处",
+            "en": "Everyone’s carrying something of their own"
+          },
+          "interpretation": {
+            "zh": "你似乎习惯站在别人的处境里理解行为。",
+            "en": "You seem used to understanding behavior from inside other people’s situations."
+          },
+          "immediate": "用户似乎倾向于站在他人的处境中理解行为。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "TRU-01",
+              "delta": 0.5,
+              "confidence": "medium"
+            },
+            {
+              "signal": "TRU-05",
+              "delta": 0.4,
+              "confidence": "low"
+            },
+            {
+              "signal": "MEA-12",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "h": 12
+          }
+        }
+      ]
+    },
+    {
+      "id": "M-P03",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "🐈",
+      "title": {
+        "zh": "流浪猫",
+        "en": "The stray cat"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "一只流浪猫总来你家门口，你会怎么做？",
+        "en": "A stray cat keeps showing up at your door. What would you do?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "偶尔喂它，但不收养",
+            "en": "Feed it sometimes, but not take it in"
+          },
+          "interpretation": {
+            "zh": "你可能温和而有边界：愿意付出，但保留空间。",
+            "en": "Warm but boundaried: willing to give, while keeping some space."
+          },
+          "immediate": "用户似乎倾向于付出善意的同时保留边界。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CAR-01",
+              "delta": 0.5,
+              "confidence": "medium"
+            },
+            {
+              "signal": "REL-04",
+              "delta": 0.4,
+              "confidence": "low"
+            },
+            {
+              "signal": "REL-05",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "n": 5,
+            "h": 3
+          }
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "把它带回家收养",
+            "en": "Take it home and adopt it"
+          },
+          "interpretation": {
+            "zh": "你似乎愿意为一段联结承担长期的责任。",
+            "en": "You seem willing to take on long-term responsibility for a bond."
+          },
+          "immediate": "用户似乎倾向于较快承接一段长期责任。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CAR-02",
+              "delta": 0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-04",
+              "delta": 0.45,
+              "confidence": "low"
+            },
+            {
+              "signal": "CHG-02",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "n": 12
+          }
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "不喂它，怕它以后形成依赖",
+            "en": "Not feed it — I don’t want it depending on me"
+          },
+          "interpretation": {
+            "zh": "你可能更看重界限，不想建立自己无法负责的期待。",
+            "en": "You may value boundaries — no expectations you can’t be responsible for."
+          },
+          "immediate": "用户似乎倾向于提前避免自己无法负责的期待。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "REL-04",
+              "delta": 0.55,
+              "confidence": "medium"
+            },
+            {
+              "signal": "REL-05",
+              "delta": 0.4,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "n": -12
+          }
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "联系动物救助机构，请他们处理",
+            "en": "Call an animal rescue to take care of it"
+          },
+          "interpretation": {
+            "zh": "你更倾向用可持续的方式解决问题，而不只是回应情绪。",
+            "en": "You lean toward sustainable fixes, not just responding to the feeling of the moment."
+          },
+          "immediate": "用户似乎倾向于引入系统资源来解决问题。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CAR-03",
+              "delta": 0.55,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-02",
+              "delta": 0.3,
+              "confidence": "low"
+            },
+            {
+              "signal": "CAR-01",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": 8,
+            "n": 3
+          }
+        }
+      ]
+    },
+    {
+      "id": "M-P04",
+      "version": 1,
+      "status": "active",
+      "interactionType": "multiple_choice",
+      "emoji": "🎁",
+      "title": {
+        "zh": "中了500万",
+        "en": "The jackpot"
+      },
+      "audience": "universal",
+      "minSelection": 1,
+      "maxSelection": 3,
+      "scenario": {
+        "zh": "如果你突然中了500万，你最有可能会做哪些事情？",
+        "en": "Out of nowhere, you win a few million in the lottery. Which of these would you most likely do?"
+      },
+      "hint": {
+        "zh": "请选择最多 3 项。",
+        "en": "Choose up to 3."
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "把消息藏好，暂时谁也不说",
+            "en": "Keep it quiet — tell no one for now"
+          },
+          "interpretation": {
+            "zh": "你可能把安全感放在第一位，重要的事先守住再说。",
+            "en": "Security may come first for you: protect what matters before anything else."
+          },
+          "immediate": "用户似乎倾向于先守住重要信息，暂缓公开。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "TRU-06",
+              "delta": 0.55,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-08",
+              "delta": 0.4,
+              "confidence": "low"
+            },
+            {
+              "signal": "TRU-02",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "a": -6,
+            "h": -4
+          }
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "终于可以不用为了赚钱，去做自己不喜欢的事情",
+            "en": "Finally stop doing work I don’t like just to pay the bills"
+          },
+          "interpretation": {
+            "zh": "你似乎很清楚：钱最大的用处，是把选择权还给自己。",
+            "en": "You seem clear that money’s real use is buying back your own choices."
+          },
+          "immediate": "用户似乎倾向于把财富理解为摆脱经济约束、拿回选择权。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-09",
+              "delta": 0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-03",
+              "delta": 0.2,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "a": 12,
+            "c": 3
+          }
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "把钱存好，基本继续原来的生活",
+            "en": "Put it away and mostly keep living as before"
+          },
+          "interpretation": {
+            "zh": "你可能更珍惜已经运转良好的日常。",
+            "en": "You may treasure a daily life that already works."
+          },
+          "immediate": "用户似乎倾向于让财富进入储备，而不改变生活结构。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-08",
+              "delta": 0.55,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-07",
+              "delta": 0.4,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "a": -12
+          }
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "让家人的生活过得更好",
+            "en": "Make life better for my family"
+          },
+          "interpretation": {
+            "zh": "好日子在你这里，第一个念头是带上家人。",
+            "en": "When good things arrive, your first thought is to bring your family along."
+          },
+          "immediate": "用户似乎倾向于把好事第一时间导向家人的生活。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "REL-06",
+              "delta": 0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-01",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "n": 12
+          }
+        },
+        {
+          "id": "E",
+          "text": {
+            "zh": "好好享受生活，不给自己留下遗憾",
+            "en": "Enjoy life properly — no regrets"
+          },
+          "interpretation": {
+            "zh": "你可能相信，生活的意义要趁现在去感受——别给自己留遗憾。",
+            "en": "You may believe life is meant to be felt now — don’t leave regrets behind."
+          },
+          "immediate": "用户似乎倾向于把好运兑换成不留遗憾的体验本身。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-01",
+              "delta": 0.55,
+              "confidence": "medium"
+            }
+          ],
+          "sliders": {
+            "t": 8
+          }
+        },
+        {
+          "id": "F",
+          "text": {
+            "zh": "重新规划人生，做好投资，为未来做好长期准备",
+            "en": "Replan my life — invest well and set up for the long term"
+          },
+          "interpretation": {
+            "zh": "你似乎习惯把好运变成一张长期的路线图。",
+            "en": "You seem to turn good luck into a long-term roadmap."
+          },
+          "immediate": "用户似乎倾向于把突来的资源纳入长期的准备与规划。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-08",
+              "delta": 0.55,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-03",
+              "delta": 0.35,
+              "confidence": "low"
+            },
+            {
+              "signal": "MEA-08",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": 10,
+            "a": -4
+          }
+        },
+        {
+          "id": "G",
+          "text": {
+            "zh": "拿出一部分帮助真正有需要的人",
+            "en": "Give part of it to people who truly need it"
+          },
+          "interpretation": {
+            "zh": "你的幸福感，似乎和更大的世界连在一起。",
+            "en": "Your sense of happiness seems connected to a bigger world."
+          },
+          "immediate": "用户似乎倾向于把好运的一部分导向更大的共同体。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-02",
+              "delta": 0.55,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-01",
+              "delta": 0.4,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "n": 6,
+            "h": 6
+          }
+        }
+      ]
+    },
+    {
+      "id": "M-P05",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "📰",
+      "title": {
+        "zh": "老同学",
+        "en": "The old classmate"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "一位老同学现在混得比你好很多。你更接近哪一种感觉？",
+        "en": "An old classmate is now doing far better in life than you. Which feels closest to your reaction?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "他确实努力，我挺佩服的",
+            "en": "They earned it — honestly, I admire that"
+          },
+          "interpretation": {
+            "zh": "别人的成功在你眼里首先是努力的回报——你大概也这样要求自己。",
+            "en": "Other people’s success reads to you as effort paying off — you probably hold yourself to the same bar."
+          },
+          "immediate": "用户似乎倾向于把他人的成功归因于努力，并带着欣赏。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-10",
+              "delta": 0.7,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-03",
+              "delta": 0.45,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": 10
+          }
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "他运气好，或者资源比我好",
+            "en": "Good luck, or a head start"
+          },
+          "interpretation": {
+            "zh": "你似乎很清楚起点和运气的分量，不把一切都归于个人。",
+            "en": "You seem clear-eyed about how much starting points and luck weigh — it’s never all personal merit."
+          },
+          "immediate": "用户似乎倾向于强调运气与资源对结果的影响。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-12",
+              "delta": 0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-11",
+              "delta": 0.35,
+              "confidence": "low"
+            },
+            {
+              "signal": "CHG-03",
+              "delta": -0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": -10
+          }
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "各有各的活法，没什么可比的",
+            "en": "We just live different lives — nothing to compare"
+          },
+          "interpretation": {
+            "zh": "你可能不太用别人的坐标，来丈量自己的人生。",
+            "en": "You may not measure your life with other people’s rulers."
+          },
+          "immediate": "用户似乎倾向于退出比较坐标系，用自己的标准生活。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-05",
+              "delta": 0.55,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-06",
+              "delta": -0.45,
+              "confidence": "low"
+            },
+            {
+              "signal": "EMW-01",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "a": -6
+          }
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "有点焦虑，我也得加把劲了",
+            "en": "A little anxious — I should push harder too"
+          },
+          "interpretation": {
+            "zh": "比较对你来说不是打击，更像一脚油门。",
+            "en": "Comparison isn’t a blow for you; it’s more like a gas pedal."
+          },
+          "immediate": "用户似乎倾向于把比较转化为自我驱动，伴随少量焦虑。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-06",
+              "delta": 0.5,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-02",
+              "delta": 0.3,
+              "confidence": "low"
+            },
+            {
+              "signal": "EMW-03",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": 8,
+            "t": 8
+          }
+        }
+      ]
+    },
+    {
+      "id": "M-P06",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "🏡",
+      "title": {
+        "zh": "住在哪",
+        "en": "Where to live"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "你更愿意住在哪里？",
+        "en": "Where would you rather live?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "认识所有邻居的小镇",
+            "en": "A small town where you know every neighbor"
+          },
+          "interpretation": {
+            "zh": "你可能喜欢被熟悉的人围绕的日子——生活有人情的回声。",
+            "en": "You may like days surrounded by familiar faces — a life with human echoes in it."
+          },
+          "immediate": "用户似乎倾向于选择熟人密度高的生活环境。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "REL-07",
+              "delta": 0.55,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-08",
+              "delta": 0.35,
+              "confidence": "low"
+            },
+            {
+              "signal": "CHG-07",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "n": 10,
+            "a": -6
+          }
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "谁也不认识谁的大城市",
+            "en": "A big city where nobody knows anybody"
+          },
+          "interpretation": {
+            "zh": "你似乎珍惜匿名带来的自由和不被打扰。",
+            "en": "You seem to treasure the freedom — and the peace — of being anonymous."
+          },
+          "immediate": "用户似乎倾向于选择不被注视的生活环境。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "REL-08",
+              "delta": 0.55,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-09",
+              "delta": 0.4,
+              "confidence": "low"
+            },
+            {
+              "signal": "TRU-06",
+              "delta": 0.35,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "n": -12
+          }
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "有几个熟人的城郊",
+            "en": "The outskirts, with a few people you know"
+          },
+          "interpretation": {
+            "zh": "你更倾向少而真的联结——朋友不用多，要真的。",
+            "en": "You lean toward fewer, realer connections — friends don’t need to be many, they need to be real."
+          },
+          "immediate": "用户似乎倾向于保持少量而真实的联结。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "REL-09",
+              "delta": 0.5,
+              "confidence": "medium"
+            },
+            {
+              "signal": "REL-04",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "n": 2
+          }
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "经常搬，住在哪里都可以",
+            "en": "Moving often — anywhere works"
+          },
+          "interpretation": {
+            "zh": "你可能不把归属感绑在某个地方，而是带在身上。",
+            "en": "You may carry your sense of belonging with you, instead of tying it to a place."
+          },
+          "immediate": "用户似乎倾向于不被地点绑定，对居所保持流动。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-09",
+              "delta": 0.55,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-05",
+              "delta": 0.35,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "a": 12
+          }
+        }
+      ]
+    },
+    {
+      "id": "M-P07",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "📷",
+      "title": {
+        "zh": "旧照片",
+        "en": "Old photos"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "手机里存着十年前的旧照片，你通常会怎么处理？",
+        "en": "Your phone still holds photos from ten years ago. What do you usually do with them?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "经常翻出来看看",
+            "en": "Look through them often"
+          },
+          "interpretation": {
+            "zh": "过去在你这里是活的，你会时不时回去坐一坐。",
+            "en": "The past is alive for you — you go back and sit with it now and then."
+          },
+          "immediate": "用户似乎与自己的过去保持着主动的联结。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-06",
+              "delta": 0.55,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-05",
+              "delta": -0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "t": -12
+          }
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "一直存着，但几乎不会再看",
+            "en": "Keep them all, but almost never look"
+          },
+          "interpretation": {
+            "zh": "你可能需要知道过去还在，但不必常常打开。",
+            "en": "You may need to know the past is still there — without opening it often."
+          },
+          "immediate": "用户似乎倾向于保留过去，但不常访问。",
+          "weight": "Very Light",
+          "signals": [
+            {
+              "signal": "CHG-07",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-06",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "t": -5
+          }
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "定期整理，删掉一部分",
+            "en": "Tidy them up now and then, delete some"
+          },
+          "interpretation": {
+            "zh": "你习惯给生活减重——过去的翻篇，向前走才轻。",
+            "en": "You’re used to keeping life light — closed chapters stay closed, so moving forward feels easier."
+          },
+          "immediate": "用户似乎倾向于主动为过去减重、定期释放。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-05",
+              "delta": 0.5,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-08",
+              "delta": 0.3,
+              "confidence": "low"
+            },
+            {
+              "signal": "CHG-06",
+              "delta": -0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "t": 10
+          }
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "早就不知道放在哪里了",
+            "en": "Honestly, no idea where they are anymore"
+          },
+          "interpretation": {
+            "zh": "你似乎活在当下，过去的自然会过去。",
+            "en": "You seem to live in the present — the past takes care of itself."
+          },
+          "immediate": "用户似乎较少回访过去，注意力更多在当下。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-06",
+              "delta": -0.5,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-05",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "t": 8,
+            "a": 4
+          }
+        }
+      ]
+    },
+    {
+      "id": "M-P08",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "🌙",
+      "title": {
+        "zh": "为什么活着",
+        "en": "Why we live"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "孩子，或者一个比你小很多的人问你：「人为什么要活着？」你更倾向于怎么回答？",
+        "en": "A child — or someone much younger — asks you: “Why do people live?” How would you tend to answer?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "为了体验和感受这个世界",
+            "en": "To experience and feel this world"
+          },
+          "interpretation": {
+            "zh": "你可能相信，活着的意义就藏在经历本身里。",
+            "en": "You may believe the meaning of living is hidden inside experience itself."
+          },
+          "immediate": "用户似乎倾向于把生命的意义定位于体验本身。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-01",
+              "delta": 0.6,
+              "confidence": "medium"
+            }
+          ],
+          "sliders": {
+            "t": 8
+          }
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "为了对别人有用，也让世界变得更好一点",
+            "en": "To be useful to others, and leave the world a little better"
+          },
+          "interpretation": {
+            "zh": "你的意义感似乎和他人、和更大的世界紧紧相连。",
+            "en": "Your sense of meaning seems tightly woven into other people and a bigger world."
+          },
+          "immediate": "用户似乎倾向于在贡献与有用中定位意义。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-02",
+              "delta": 0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-04",
+              "delta": 0.4,
+              "confidence": "low"
+            },
+            {
+              "signal": "CAR-01",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "n": 10
+          }
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "没有特别的原因，活着本身就是意义",
+            "en": "No special reason — being alive is the meaning"
+          },
+          "interpretation": {
+            "zh": "你更倾向接纳存在本身——不必再向外找理由。",
+            "en": "You lean toward accepting existence as it is — no outside reason required."
+          },
+          "immediate": "用户似乎倾向于放下「为什么」，让存在自足。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-03",
+              "delta": 0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "EMW-01",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": -8
+          }
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "每个人都需要自己寻找答案",
+            "en": "Everyone has to find their own answer"
+          },
+          "interpretation": {
+            "zh": "你似乎尊重每个人构建自己答案的权利——包括提问的那个孩子。",
+            "en": "You seem to respect each person’s right to build their own answer — including the child who asked."
+          },
+          "immediate": "用户似乎倾向于把意义的主权交还给提问者本人。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-04",
+              "delta": 0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "TRU-05",
+              "delta": 0.35,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": 6,
+            "a": 4
+          }
+        }
+      ]
+    },
+    {
+      "id": "M-P09",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "🧍",
+      "title": {
+        "zh": "有人插队",
+        "en": "Cutting in line"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "排队时，有人直接插到你前面。你通常会怎么做？",
+        "en": "You’re waiting in line and someone cuts right in front of you. What do you usually do?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "直接指出来，让他回到队伍后面",
+            "en": "Call it out and ask them to go to the back"
+          },
+          "interpretation": {
+            "zh": "你可能认为规则值得被守护，哪怕需要自己开口。",
+            "en": "You may believe rules are worth defending — even when it takes speaking up yourself."
+          },
+          "immediate": "用户似乎会当场登记并说出规则被打破这件事。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "TRU-04",
+              "delta": 0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "EXP-01",
+              "delta": 0.35,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": 8
+          }
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "心里不舒服，但还是算了",
+            "en": "It bothers me, but I let it go"
+          },
+          "interpretation": {
+            "zh": "你似乎更愿意用忍让保全场面的平和——不舒服自己消化。",
+            "en": "You seem willing to swallow small discomforts to keep the peace — and digest them on your own."
+          },
+          "immediate": "用户似乎感受到了不满，但选择绕开冲突、收住表达。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "REL-10",
+              "delta": 0.55,
+              "confidence": "medium"
+            },
+            {
+              "signal": "EXP-02",
+              "delta": 0.4,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": -5
+          }
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "先看情况，影响比较大时才会说",
+            "en": "Depends — I’d only say something if it really mattered"
+          },
+          "interpretation": {
+            "zh": "你可能会先评估场合和分量，再决定要不要开口。",
+            "en": "You may size up the situation and the stakes before deciding to speak."
+          },
+          "immediate": "用户似乎会先校准情境，把表达留给真正要紧的时刻。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "EXP-03",
+              "delta": 0.5,
+              "confidence": "medium"
+            },
+            {
+              "signal": "TRU-04",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": 4
+          }
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "可能人家真的有急事",
+            "en": "Maybe they’re genuinely in a hurry"
+          },
+          "interpretation": {
+            "zh": "你更倾向先替对方找一个善意的理由。",
+            "en": "You lean toward finding a kind reason for people first."
+          },
+          "immediate": "用户似乎倾向于先做善意解读，并保留对人的判断。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "TRU-01",
+              "delta": 0.55,
+              "confidence": "medium"
+            },
+            {
+              "signal": "TRU-05",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "h": 12
+          }
+        }
+      ]
+    },
+    {
+      "id": "M-P10",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "⏳",
+      "title": {
+        "zh": "那个日期",
+        "en": "The date"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "如果可以知道自己去世的准确日期，你想知道吗？",
+        "en": "If you could know the exact date of your own death, would you want to?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "想知道，这样可以提前安排好人生",
+            "en": "Yes — then I could plan my life around it"
+          },
+          "interpretation": {
+            "zh": "你可能更愿意直面确定性，把它变成规划。",
+            "en": "You may prefer facing certainty head-on and turning it into a plan."
+          },
+          "immediate": "用户似乎倾向于把未知拉向已知，并用规划接住它。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-09",
+              "delta": 0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-08",
+              "delta": 0.45,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": 12
+          }
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "绝对不想知道",
+            "en": "Absolutely not"
+          },
+          "interpretation": {
+            "zh": "你似乎想护住当下的心境，不让终点提前入场。",
+            "en": "You seem to protect how today feels — the ending doesn’t get to arrive early."
+          },
+          "immediate": "用户似乎倾向于有意不看某些沉重的答案，以保护现在的生活。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "EMW-05",
+              "delta": 0.55,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-09",
+              "delta": -0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": -8
+          }
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "会犹豫，但最后还是会看",
+            "en": "I’d hesitate — but I’d look in the end"
+          },
+          "interpretation": {
+            "zh": "你可能会在不安和想知道之间拉扯——最后还是想知道。",
+            "en": "You might be torn between dread and curiosity — and wanting to know wins."
+          },
+          "immediate": "用户似乎在犹豫之后，仍会让「想看」赢。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-10",
+              "delta": 0.45,
+              "confidence": "medium"
+            },
+            {
+              "signal": "EMW-03",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": 4
+          }
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "无所谓，反正知道了也改变不了",
+            "en": "Doesn’t matter — knowing wouldn’t change anything"
+          },
+          "interpretation": {
+            "zh": "你似乎对不可控的事有一种平静的账：不给它情绪预算。",
+            "en": "You seem to keep a calm ledger for what can’t be controlled: no emotional budget for it."
+          },
+          "immediate": "用户似乎倾向于不在不可控的事情上投入情绪。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "EMW-04",
+              "delta": 0.6,
+              "confidence": "medium"
+            },
+            {
+              "signal": "EMW-01",
+              "delta": 0.35,
+              "confidence": "low"
+            },
+            {
+              "signal": "CHG-03",
+              "delta": -0.3,
+              "confidence": "low"
+            }
+          ],
+          "sliders": {
+            "c": -10
+          }
+        }
+      ]
+    },
+    {
+      "id": "M-P11",
+      "version": 1,
+      "status": "active",
+      "interactionType": "ranking",
+      "emoji": "💍",
+      "title": {
+        "zh": "重选伴侣",
+        "en": "Choosing a partner"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "如果重新选择一位长期人生伴侣，下面哪些条件对你来说更重要？",
+        "en": "If you were choosing a long-term life partner all over again, which of these would matter most to you?"
+      },
+      "hint": {
+        "zh": "请按重要程度排序。按顺序点选最重要的 3 项。",
+        "en": "Rank by importance — tap your top 3, in order."
+      },
+      "maxRank": 3,
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "身材长相",
+            "en": "Looks and physical attraction"
+          },
+          "interpretation": {
+            "zh": "你可能更看重相处里最直接的感受与吸引力。",
+            "en": "You may put weight on the most immediate feelings of being together — attraction included."
+          },
+          "immediate": "用户在伴侣选择中把外在吸引力放在前列。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-01",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-06",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "年龄相仿",
+            "en": "Similar age"
+          },
+          "interpretation": {
+            "zh": "你可能更在意两个人处在相近的人生节奏里。",
+            "en": "You may care about being in the same season of life together."
+          },
+          "immediate": "用户似乎看重人生阶段的同步带来的安稳。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-08",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-07",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "经济能力",
+            "en": "Financial stability"
+          },
+          "interpretation": {
+            "zh": "你可能希望共同生活先有一个稳当的底。",
+            "en": "You may want the life you build together to start on solid ground."
+          },
+          "immediate": "用户在亲密关系里优先考虑物质安全垫。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-08",
+              "delta": 0.5,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-12",
+              "delta": 0.3,
+              "confidence": "low"
+            },
+            {
+              "signal": "CHG-09",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "教育程度",
+            "en": "Education"
+          },
+          "interpretation": {
+            "zh": "你可能相信教育背景会影响两个人的沟通与路径。",
+            "en": "You may believe education shapes how two people talk — and where they’re headed."
+          },
+          "immediate": "用户倾向于用结构性条件预判长期匹配。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-12",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-10",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "E",
+          "text": {
+            "zh": "有上进心",
+            "en": "Drive and ambition"
+          },
+          "interpretation": {
+            "zh": "你可能更看重一个人往前走的劲头，而不是现在的位置。",
+            "en": "You may care more about the push in someone than where they currently stand."
+          },
+          "immediate": "用户重视成长性与主动性胜过存量条件。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-03",
+              "delta": 0.45,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-02",
+              "delta": 0.3,
+              "confidence": "low"
+            },
+            {
+              "signal": "MEA-10",
+              "delta": 0.3,
+              "confidence": "medium"
+            }
+          ]
+        },
+        {
+          "id": "F",
+          "text": {
+            "zh": "家庭背景",
+            "en": "Family background"
+          },
+          "interpretation": {
+            "zh": "你可能觉得一个人从哪里来，会影响你们往哪里去。",
+            "en": "You may feel where someone comes from shapes where the two of you would go."
+          },
+          "immediate": "用户倾向于把原生结构纳入长期关系判断。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-12",
+              "delta": 0.45,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-08",
+              "delta": 0.3,
+              "confidence": "low"
+            },
+            {
+              "signal": "REL-07",
+              "delta": 0.2,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "G",
+          "text": {
+            "zh": "共同兴趣爱好",
+            "en": "Shared interests"
+          },
+          "interpretation": {
+            "zh": "你可能希望日常里有可以一起投入的事。",
+            "en": "You may want everyday things the two of you can throw yourselves into together."
+          },
+          "immediate": "用户看重共享体验作为关系的养分。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-01",
+              "delta": 0.45,
+              "confidence": "medium"
+            },
+            {
+              "signal": "REL-09",
+              "delta": 0.3,
+              "confidence": "low"
+            },
+            {
+              "signal": "CHG-10",
+              "delta": 0.2,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "H",
+          "text": {
+            "zh": "责任感",
+            "en": "Sense of responsibility"
+          },
+          "interpretation": {
+            "zh": "你可能最在意关键时刻对方接不接得住。",
+            "en": "You may care most about whether they can catch things when it counts."
+          },
+          "immediate": "用户把可靠与担当放在伴侣特质的核心。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CAR-04",
+              "delta": 0.5,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-02",
+              "delta": 0.35,
+              "confidence": "medium"
+            }
+          ]
+        },
+        {
+          "id": "I",
+          "text": {
+            "zh": "价值观接近",
+            "en": "Similar values"
+          },
+          "interpretation": {
+            "zh": "你可能相信长久走下去，靠的是底层的一致。",
+            "en": "You may believe the long road depends on being aligned underneath."
+          },
+          "immediate": "用户以内在一致性作为长期关系的锚点。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-05",
+              "delta": 0.45,
+              "confidence": "medium"
+            },
+            {
+              "signal": "REL-09",
+              "delta": 0.3,
+              "confidence": "low"
+            },
+            {
+              "signal": "CHG-07",
+              "delta": 0.2,
+              "confidence": "low"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M-P12",
+      "version": 1,
+      "status": "active",
+      "interactionType": "ranking",
+      "emoji": "🚀",
+      "title": {
+        "zh": "创业伙伴",
+        "en": "A business partner"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "你发现了一个很有潜力的创业机会，准备寻找一位长期合作伙伴。\n下面哪些条件对你来说更重要？",
+        "en": "You’ve found a promising business opportunity and you’re looking for a long-term partner.\nWhich of these matter most to you?"
+      },
+      "hint": {
+        "zh": "请按重要程度排序。按顺序点选最重要的 3 项。",
+        "en": "Rank by importance — tap your top 3, in order."
+      },
+      "maxRank": 3,
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "有经济实力",
+            "en": "Financial backing"
+          },
+          "interpretation": {
+            "zh": "你可能希望这件事从一开始就有足够的托底。",
+            "en": "You may want this venture cushioned from day one."
+          },
+          "immediate": "用户在合作里优先考虑资源安全垫。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-08",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-12",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-09",
+              "delta": 0.2,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "头脑灵活，思路开阔",
+            "en": "Sharp, open-minded thinking"
+          },
+          "interpretation": {
+            "zh": "你可能更看重一起把问题想开、想活的能力。",
+            "en": "You may value the ability to think problems open — together."
+          },
+          "immediate": "用户重视认知灵活性与换角度的能力。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-01",
+              "delta": 0.45,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-10",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "做事靠谱，值得信任",
+            "en": "Reliable and trustworthy"
+          },
+          "interpretation": {
+            "zh": "你可能觉得再好的机会，也要先能把事放心交出去。",
+            "en": "Even the best opportunity needs someone you can hand things to without worrying."
+          },
+          "immediate": "用户把可托付性作为合作的第一道筛选。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CAR-04",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-05",
+              "delta": 0.25,
+              "confidence": "low"
+            },
+            {
+              "signal": "TRU-02",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "有人脉资源",
+            "en": "Connections and networks"
+          },
+          "interpretation": {
+            "zh": "你可能相信关系网络能把路走宽。",
+            "en": "You may believe a strong network widens the road."
+          },
+          "immediate": "用户倾向于借助外部网络与结构性资源。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "REL-07",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-12",
+              "delta": 0.35,
+              "confidence": "medium"
+            }
+          ]
+        },
+        {
+          "id": "E",
+          "text": {
+            "zh": "执行力强",
+            "en": "Strong execution"
+          },
+          "interpretation": {
+            "zh": "你可能更相信做出来的，而不是说出来的。",
+            "en": "You may trust what gets done more than what gets said."
+          },
+          "immediate": "用户重视行动落地胜过设想。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-02",
+              "delta": 0.5,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-10",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "F",
+          "text": {
+            "zh": "价值观一致",
+            "en": "Aligned values"
+          },
+          "interpretation": {
+            "zh": "你可能希望走远路的人，方向感是一致的。",
+            "en": "You may want anyone walking the long road with you pointed the same way."
+          },
+          "immediate": "用户以价值一致性作为长期合作前提。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-05",
+              "delta": 0.45,
+              "confidence": "medium"
+            },
+            {
+              "signal": "REL-09",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "G",
+          "text": {
+            "zh": "愿意长期投入",
+            "en": "Committed for the long haul"
+          },
+          "interpretation": {
+            "zh": "你可能在找愿意一起熬过慢阶段的人。",
+            "en": "You may be looking for someone willing to sit through the slow parts with you."
+          },
+          "immediate": "用户看重长期承诺与持续投入。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-07",
+              "delta": 0.45,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-02",
+              "delta": 0.35,
+              "confidence": "medium"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REL-001",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "🍜",
+      "title": {
+        "zh": "随便",
+        "en": "Whatever works"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "你问伴侣（或朋友）晚饭想吃什么，对方回答：\n“随便。”\n你接下来最可能会——",
+        "en": "You ask your partner (or a friend) what they want for dinner. They say:\n“Whatever, I don’t mind.”\nWhat would you most likely do next?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "直接定一家我想吃的",
+            "en": "Just pick the place I feel like"
+          },
+          "interpretation": {
+            "zh": "你可能觉得，既然对方说随便，那就痛快一点，先动起来。",
+            "en": "If they said whatever, you may figure someone should just get things moving."
+          },
+          "immediate": "用户在开放场景里倾向按自己的偏好快速决定。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-02",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-05",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "定一家对方平时爱吃的",
+            "en": "Pick a place they usually love"
+          },
+          "interpretation": {
+            "zh": "你可能把「随便」听成了一次照顾对方的机会。",
+            "en": "You may hear “whatever” as a small chance to take care of them."
+          },
+          "immediate": "用户以对方的偏好为默认选项，务实地表达关心。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CAR-03",
+              "delta": 0.45,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-01",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "给对方两个选择，让 TA 挑一个",
+            "en": "Give them two options and let them pick"
+          },
+          "interpretation": {
+            "zh": "你可能习惯把开放的问题收窄一点，让决定变得容易。",
+            "en": "You may be used to narrowing open questions so deciding gets easy."
+          },
+          "immediate": "用户用结构化的小选项推动共同决定。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-08",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-01",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "今天必须你来决定",
+            "en": "Nope — today they have to decide"
+          },
+          "interpretation": {
+            "zh": "你可能不太愿意每次都接下这个「随便」，这次把球递了回去。",
+            "en": "You may not want to catch that “whatever” every single time — this one goes back to them."
+          },
+          "immediate": "用户直接把决定权推回给对方，守住自己的边界。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "REL-04",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "EXP-01",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "E",
+          "text": {
+            "zh": "那就先不定，谁饿了谁说",
+            "en": "Leave it — whoever gets hungry first speaks up"
+          },
+          "interpretation": {
+            "zh": "你可能不觉得这件事需要马上有答案——让它自己浮出来就好。",
+            "en": "You may not feel this needs an answer right now — it’ll surface on its own."
+          },
+          "immediate": "用户对悬而未决的小事很放松，不追求即时确定。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "EMW-01",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-09",
+              "delta": -0.25,
+              "confidence": "low"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SOC-001",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "⏰",
+      "title": {
+        "zh": "快了快了",
+        "en": "Almost there"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "约好三点见面。\n三点二十，对方发来消息：\n“快了快了。”\n你这段时间最可能会——",
+        "en": "You agreed to meet at three.\nAt three twenty, they text:\n“Almost there!”\nWhat would you most likely be doing in the meantime?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "刷手机，人来了就来了",
+            "en": "Scroll my phone — they’ll get here when they get here"
+          },
+          "interpretation": {
+            "zh": "等待对你来说，好像不是什么需要消化的事。",
+            "en": "Waiting doesn’t seem like something you need to process."
+          },
+          "immediate": "用户对他人的延迟接纳度高，不投入额外情绪。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "EMW-01",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "EMW-04",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "回一句：“我先点了。”",
+            "en": "Text back: “I’m ordering without you.”"
+          },
+          "interpretation": {
+            "zh": "你可能不想让自己的节奏一直等着别人——先把自己的部分照顾好。",
+            "en": "You may not want your rhythm held hostage — you take care of your part first."
+          },
+          "immediate": "用户直接声明自己的安排，以自己的节奏为锚。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "EXP-01",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-05",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "顺手处理点自己的事情",
+            "en": "Use the time to knock out a few of my own things"
+          },
+          "interpretation": {
+            "zh": "你可能习惯把空档变成自己的时间，不让它白白流走。",
+            "en": "You may be used to turning dead time into your own time."
+          },
+          "immediate": "用户把等待转化为可用时间，情绪成本控制得很低。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "EMW-04",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-02",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "想好了等会要说 TA 两句",
+            "en": "Have a few words ready for when they arrive"
+          },
+          "interpretation": {
+            "zh": "迟到这件事，你可能觉得应该说清楚，而不是当作没发生。",
+            "en": "A broken agreement may feel like something to name, not to let slide."
+          },
+          "immediate": "用户对约定被打破敏感，倾向当面把摩擦讲开。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "TRU-04",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "REL-10",
+              "delta": -0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "E",
+          "text": {
+            "zh": "发个定位：“我在靠窗的位置。”",
+            "en": "Send my location: “I’m at the table by the window.”"
+          },
+          "interpretation": {
+            "zh": "你可能顺手就把对方接下来的路铺好了。",
+            "en": "You may just quietly smooth the road ahead for them."
+          },
+          "immediate": "用户以实际行动降低对方的成本，务实周到。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CAR-03",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-08",
+              "delta": 0.2,
+              "confidence": "low"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "FRI-001",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "🌙",
+      "title": {
+        "zh": "在吗",
+        "en": "You up?"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "晚上十一点半。\n你准备睡了。\n一个朋友发来：\n“在吗？”\n你会——",
+        "en": "It’s eleven thirty at night.\nYou’re about to go to sleep.\nA friend texts:\n“You up?”\nYou would —"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "回：“在，怎么了？”",
+            "en": "Reply: “Yeah — what’s up?”"
+          },
+          "interpretation": {
+            "zh": "你可能愿意在自己的时间里，给朋友留一扇开着的门。",
+            "en": "You may keep a door open for friends, even on your own time."
+          },
+          "immediate": "用户对朋友保持即时可及，善意先行。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CAR-01",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "TRU-07",
+              "delta": 0.2,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "回：“要睡了，急事打电话。”",
+            "en": "Reply: “About to sleep — call me if it’s urgent.”"
+          },
+          "interpretation": {
+            "zh": "你可能把界线画得很清楚，同时把真正要紧的路留了出来。",
+            "en": "You may draw the line clearly while leaving a path open for what truly matters."
+          },
+          "immediate": "用户守住休息边界，但为紧急情况留出通道。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "REL-04",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-03",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "明天再回",
+            "en": "Reply tomorrow"
+          },
+          "interpretation": {
+            "zh": "你可能觉得，深夜的消息可以留给白天的自己。",
+            "en": "Late-night messages may be something you leave for your daytime self."
+          },
+          "immediate": "用户优先保护自己的休息，不为未知消息支付情绪。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "EMW-04",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "REL-04",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "暂时不回，但心里会惦记",
+            "en": "Not reply yet — but it stays on my mind"
+          },
+          "interpretation": {
+            "zh": "你可能人已经躺下了，心还替朋友悬着一会儿。",
+            "en": "You may already be lying down while your mind stays up a little longer for your friend."
+          },
+          "immediate": "用户外在克制、内在挂念，情绪收在心里。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "EXP-02",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "EMW-03",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "E",
+          "text": {
+            "zh": "直接打电话过去",
+            "en": "Just call them right away"
+          },
+          "interpretation": {
+            "zh": "你可能不想隔着屏幕猜——有事就现在弄清楚。",
+            "en": "You may not want to guess through a screen — if something’s up, find out now."
+          },
+          "immediate": "用户跳过试探直接行动，把关心付诸即时联系。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-02",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-01",
+              "delta": 0.35,
+              "confidence": "medium"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REL-002",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "🍽️",
+      "title": {
+        "zh": "上错的菜",
+        "en": "The wrong dish"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "和朋友（或伴侣）一起出去吃饭。\n服务员上错了一道菜。\n你最可能会——",
+        "en": "You’re out for dinner with a friend (or your partner).\nThe server brings a dish you didn’t order.\nWhat would you most likely do?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "看看是不是自己喜欢吃，如果喜欢就留下",
+            "en": "See if it’s something I’d like — if so, keep it"
+          },
+          "interpretation": {
+            "zh": "你可能觉得，意外送来的东西，先看看合不合自己的口味。",
+            "en": "What arrives unexpectedly may get judged by your own taste first."
+          },
+          "immediate": "用户以自身体验为先，对流程规则看得较轻。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-01",
+              "delta": 0.3,
+              "confidence": "low"
+            },
+            {
+              "signal": "TRU-04",
+              "delta": -0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "先问问朋友（伴侣）喜不喜欢，喜欢就留下",
+            "en": "Ask my friend (or partner) if they like it — if so, keep it"
+          },
+          "interpretation": {
+            "zh": "你可能第一反应不是这道菜，而是身边的人。",
+            "en": "Your first thought may be the person next to you, not the dish."
+          },
+          "immediate": "用户先照顾同伴的偏好，再处理事情本身。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CAR-03",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-01",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "算了，服务员也不容易，就留下吧",
+            "en": "Let it go — the server’s having a long night, just keep it"
+          },
+          "interpretation": {
+            "zh": "你可能先想到了那个上错菜的人——不想让 TA 为难。",
+            "en": "You may think first of the person who made the mistake — and not want to make it hard for them."
+          },
+          "immediate": "用户以善意化解小差错，宁可自己让一步。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "TRU-01",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "EMW-01",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "不是我们点的，请服务员换回去",
+            "en": "It’s not what we ordered — ask them to take it back"
+          },
+          "interpretation": {
+            "zh": "你可能觉得，点了什么就是什么——把事情放回它该在的位置。",
+            "en": "What was ordered is what was ordered — you may like putting things back where they belong."
+          },
+          "immediate": "用户按规则纠正差错，边界清楚，不含敌意。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "TRU-04",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "REL-04",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "E",
+          "text": {
+            "zh": "先提醒服务员上错桌了，再一起决定怎么办",
+            "en": "Point out it went to the wrong table first, then decide together"
+          },
+          "interpretation": {
+            "zh": "你可能会先把信息补齐，再和大家一起拿主意。",
+            "en": "You may fill in the missing information first, then decide with everyone."
+          },
+          "immediate": "用户先纠正流程再协商决定，兼顾规则与同伴。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "TRU-04",
+              "delta": 0.3,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-01",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TRV-001",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "🧳",
+      "title": {
+        "zh": "收拾行李",
+        "en": "Packing"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "准备和朋友（或伴侣）一起出远门旅行。\n你收拾行李时，更接近哪一种？",
+        "en": "You’re heading off on a long trip with a friend (or your partner).\nWhen you pack, which is closest to you?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "能准备的尽量准备齐",
+            "en": "Pack everything I possibly can"
+          },
+          "interpretation": {
+            "zh": "你可能更安心于「都带上了」——路上少一点意外，多一点从容。",
+            "en": "“It’s all in the bag” may be what settles you — fewer surprises, more ease."
+          },
+          "immediate": "用户倾向以充分准备换取确定感。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-08",
+              "delta": 0.45,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-09",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "能轻装就轻装，缺什么到当地再买",
+            "en": "Pack light — buy whatever’s missing when we get there"
+          },
+          "interpretation": {
+            "zh": "你可能更喜欢把路留给路上——缺了什么，就当是旅行的一部分。",
+            "en": "You may like leaving the road to the road — whatever’s missing becomes part of the trip."
+          },
+          "immediate": "用户对不确定放松，把灵活看得比周全重。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-09",
+              "delta": -0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-09",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "特别重视应急用品（常备药、创可贴等）",
+            "en": "Prioritize the emergency kit (meds, band-aids…)"
+          },
+          "interpretation": {
+            "zh": "你可能习惯先把最坏的情况垫好底，再放心出发。",
+            "en": "You may like cushioning the worst case first, then setting off with a clear head."
+          },
+          "immediate": "用户优先覆盖风险，以安全垫换安心。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-08",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-03",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "会准备不少吃的，以防路上需要",
+            "en": "Bring plenty of snacks, just in case"
+          },
+          "interpretation": {
+            "zh": "你可能用最实在的方式照顾同行的人——饿不着，就稳了一半。",
+            "en": "You may take care of your travel companions in the most concrete way — nobody hungry, half the battle won."
+          },
+          "immediate": "用户以食物这类具体供给照顾自己和同伴。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CAR-03",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-08",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "COM-001",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "📄",
+      "title": {
+        "zh": "明天要交",
+        "en": "Due tomorrow"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "你答应帮朋友完成一件事。\n明天就要交。\n今晚发现只完成了一半。\n你最可能会——",
+        "en": "You promised to help a friend finish something.\nIt’s due tomorrow.\nTonight you realize you’re only halfway done.\nWhat would you most likely do?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "熬夜完成，按时交",
+            "en": "Pull an all-nighter and deliver on time"
+          },
+          "interpretation": {
+            "zh": "答应了的事，你可能宁可自己扛一晚，也不想让它落空。",
+            "en": "Once you’ve said yes, you may rather carry a rough night than let it fall through."
+          },
+          "immediate": "用户把承诺兑现放在自己的成本之前。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CAR-04",
+              "delta": 0.5,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-02",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "现在就告诉对方可能要晚一点",
+            "en": "Tell them right now it might be late"
+          },
+          "interpretation": {
+            "zh": "你可能觉得，坏消息越早说，越是对对方负责。",
+            "en": "Bad news early may feel to you like the responsible version of bad news."
+          },
+          "immediate": "用户及时同步风险，直面而不拖延。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "EXP-01",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-05",
+              "delta": 0.35,
+              "confidence": "medium"
+            }
+          ]
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "先把完成的一部分发过去",
+            "en": "Send over the finished half first"
+          },
+          "interpretation": {
+            "zh": "你可能习惯先交出手里有的——让事情先走起来。",
+            "en": "You may like handing over what you have — keep things moving first."
+          },
+          "immediate": "用户用可交付的部分先推进，务实止损。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-02",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-03",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "明天交的时候再解释",
+            "en": "Explain tomorrow when I hand it in"
+          },
+          "interpretation": {
+            "zh": "你可能更愿意先把今晚过完，把解释留给明天的自己。",
+            "en": "You may prefer to finish tonight in peace and leave the explaining to tomorrow’s you."
+          },
+          "immediate": "用户暂缓摩擦性沟通，先维持表面的平稳。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "REL-10",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "EXP-02",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REL-003",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "🛍️",
+      "title": {
+        "zh": "超出预算",
+        "en": "Beyond budget"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "刚开始交往不久。\n有一次逛街时，对方看到一件很喜欢的东西，但价格超出了你目前的预算。\n你更可能会——",
+        "en": "You have only been dating for a short time.\nWhile shopping together, your partner notices something they really like, but it is well beyond your current budget.\nWhat would you most likely think?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "我们可能不太合适，我希望找一个物质要求没那么高的人。",
+            "en": "We may not be a good match. I'd rather be with someone who has simpler material expectations."
+          },
+          "interpretation": {
+            "zh": "物质期待的落差，对你来说可能是关系是否匹配的信号。",
+            "en": "A gap in material expectations may read to you as a signal about whether you match."
+          },
+          "immediate": "用户以物质期待的落差作为关系筛选条件。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-08",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "REL-05",
+              "delta": 0.35,
+              "confidence": "medium"
+            }
+          ]
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "喜欢好一点的生活很正常，只要不是盲目攀比，我可以理解。",
+            "en": "Wanting a better lifestyle is perfectly normal, as long as it isn't about showing off."
+          },
+          "interpretation": {
+            "zh": "你可能把「想要更好」和「攀比」分开看——前者可以理解。",
+            "en": "You may separate wanting something better from showing off — and accept the first."
+          },
+          "immediate": "用户对伴侣的物质向往持接纳态度，同时警惕攀比。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "TRU-01",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "EMW-01",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "有多大能力，就过什么样的生活。能力范围内，我愿意尽量满足她（他）。",
+            "en": "We should live within our means. If I can afford it, I'd be happy to make them happy."
+          },
+          "interpretation": {
+            "zh": "你可能把给予放在能力边界之内——稳，也愿意。",
+            "en": "You may keep giving inside what you can afford — steady, and still willing."
+          },
+          "immediate": "用户以能力边界约束给予，同时愿意在边界内满足对方。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-08",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-03",
+              "delta": 0.35,
+              "confidence": "medium"
+            }
+          ]
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "我会记住她（他）喜欢的东西，等以后条件允许了，再送给她（他）。",
+            "en": "I'll remember it and buy it for them one day when the time is right."
+          },
+          "interpretation": {
+            "zh": "你可能不急着现在兑现——把心意留到以后能给的时候。",
+            "en": "You may not need to give it now — you hold the wish until you can."
+          },
+          "immediate": "用户以延迟兑现的方式表达长期关照。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CAR-03",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-02",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "E",
+          "text": {
+            "zh": "这会让我更有动力，希望以后能给她（他）更好的生活。",
+            "en": "It would motivate me to work harder so I can give us a better future."
+          },
+          "interpretation": {
+            "zh": "对方的愿望，对你来说可能更像一脚油门，而不是压力本身。",
+            "en": "Their wish may feel more like fuel than pressure — something that pushes you forward."
+          },
+          "immediate": "用户把伴侣的物质愿望转化为自我驱动与未来投入。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-03",
+              "delta": 0.45,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-10",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REL-004",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "🏡",
+      "title": {
+        "zh": "普通的家",
+        "en": "A modest family"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "刚开始交往。\n后来你发现，对方家庭经济条件比较普通。\n你最可能会怎么想？",
+        "en": "You've recently started dating someone.\nLater you learn that their family has fairly modest financial circumstances.\nWhat would you most likely think?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "我们可能不太适合，我会重新考虑这段关系。",
+            "en": "I may rethink whether we're the right match."
+          },
+          "interpretation": {
+            "zh": "家庭条件对你来说，可能进入了是否继续的判断里。",
+            "en": "Family circumstances may enter your decision about whether to continue."
+          },
+          "immediate": "用户把家庭经济背景纳入关系匹配的筛选。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-12",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "REL-05",
+              "delta": 0.35,
+              "confidence": "medium"
+            }
+          ]
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "我更看重的是这个人，家庭条件不是决定因素。",
+            "en": "I care more about the person than their family background."
+          },
+          "interpretation": {
+            "zh": "你可能把人本身放在结构条件前面。",
+            "en": "You may put the person ahead of the structural conditions around them."
+          },
+          "immediate": "用户以内在的人本身为锚，淡化家庭结构条件。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-05",
+              "delta": 0.45,
+              "confidence": "medium"
+            },
+            {
+              "signal": "TRU-05",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "顺其自然吧，走到哪一步再看。",
+            "en": "I'll just let the relationship develop naturally and see where it goes."
+          },
+          "interpretation": {
+            "zh": "你可能不急着把这一点变成结论——先让关系自己走。",
+            "en": "You may not rush this into a conclusion — let the relationship move first."
+          },
+          "immediate": "用户对未定事项放松，暂不做基于背景的判断。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "EMW-01",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-09",
+              "delta": -0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "我相信未来可以一起努力，把生活过好。",
+            "en": "I believe we can build a good future together through our own efforts."
+          },
+          "interpretation": {
+            "zh": "起点对你来说可能不决定终点——努力还能改写。",
+            "en": "The starting point may not decide the ending for you — effort can still rewrite it."
+          },
+          "immediate": "用户以共同努力归因未来，淡化起点结构。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "MEA-10",
+              "delta": 0.45,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CHG-03",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "E",
+          "text": {
+            "zh": "我会先继续了解，不急着因为这一点做决定。",
+            "en": "I'd keep getting to know them before making any judgement."
+          },
+          "interpretation": {
+            "zh": "你可能把判断留到了解更多之后——这一点还不够下定论。",
+            "en": "You may hold judgment until you know more — this alone is not enough to decide."
+          },
+          "immediate": "用户克制过早判断，继续加深了解。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "TRU-05",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "REL-05",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BUS-002",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "emoji": "🧭",
+      "title": {
+        "zh": "方向分歧",
+        "en": "A fork in direction"
+      },
+      "audience": "universal",
+      "scenario": {
+        "zh": "你和合作伙伴正在讨论公司的下一步发展方向。\n大家意见不同。\n你最可能会——",
+        "en": "You and your business partner disagree about the company's next major direction.\nWhat would you most likely do?"
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "谁承担的责任和风险更大，就尊重谁最后的决定。",
+            "en": "The person carrying the greater responsibility and risk should make the final decision."
+          },
+          "interpretation": {
+            "zh": "你可能觉得，拍板权应该跟着担子走。",
+            "en": "You may feel the final say should travel with whoever carries the load."
+          },
+          "immediate": "用户以责任与风险的分量分配最终决定权。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CAR-04",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "CAR-05",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "我会坚持自己的判断，努力说服大家。",
+            "en": "I'd stand by my view and try my best to convince everyone."
+          },
+          "interpretation": {
+            "zh": "你可能更愿意把自己的判断推到台面上，而不是先让步。",
+            "en": "You may prefer to put your judgment on the table rather than yield first."
+          },
+          "immediate": "用户坚持己见并主动说服，直接表达立场。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "EXP-01",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-05",
+              "delta": 0.35,
+              "confidence": "medium"
+            }
+          ]
+        },
+        {
+          "id": "C",
+          "text": {
+            "zh": "如果最终还是决定不了，我会接受负责人拍板。",
+            "en": "If we still can't agree, I'd accept the final decision from whoever is leading."
+          },
+          "interpretation": {
+            "zh": "谈不拢时，你可能选择把场面先收住——接受有人拍板。",
+            "en": "When talk stalls, you may choose to close the loop — accept that someone leads."
+          },
+          "immediate": "用户在僵局中接受权威拍板，优先推进而非僵持。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "EMW-01",
+              "delta": 0.35,
+              "confidence": "medium"
+            },
+            {
+              "signal": "REL-10",
+              "delta": 0.25,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "D",
+          "text": {
+            "zh": "大家把依据摆出来，一起分析，谁更有道理就听谁的。",
+            "en": "I'd rather put all the evidence on the table and follow the strongest reasoning."
+          },
+          "interpretation": {
+            "zh": "你可能更信过程——依据摆清楚，道理自己会说话。",
+            "en": "You may trust the process — put the evidence out, and let the stronger case lead."
+          },
+          "immediate": "用户以证据与推理作为分歧解决的优先路径。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "CHG-08",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "TRU-04",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        },
+        {
+          "id": "E",
+          "text": {
+            "zh": "如果始终无法达成共识，我会考虑退出合作。",
+            "en": "If we could never reach alignment, I'd consider leaving the partnership."
+          },
+          "interpretation": {
+            "zh": "方向合不拢时，你可能宁可守住自己的边界，也不硬绑在一起。",
+            "en": "When direction never aligns, you may rather keep your boundary than stay forced together."
+          },
+          "immediate": "用户在长期无法对齐时选择退出，守住合作边界。",
+          "weight": "Light",
+          "signals": [
+            {
+              "signal": "REL-04",
+              "delta": 0.4,
+              "confidence": "medium"
+            },
+            {
+              "signal": "MEA-05",
+              "delta": 0.3,
+              "confidence": "low"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TEST-PLAT-001",
+      "version": 1,
+      "status": "active",
+      "interactionType": "single_choice",
+      "title": {
+        "zh": "平台测试瞬间",
+        "en": "Platform test moment"
+      },
+      "scenario": {
+        "zh": "这是一个仅用于 Moment Platform 验收的测试瞬间。",
+        "en": "A test moment used only for Moment Platform acceptance."
+      },
+      "options": [
+        {
+          "id": "A",
+          "text": {
+            "zh": "选项 A",
+            "en": "Option A"
+          },
+          "signals": [
+            {
+              "signal": "EMW-01",
+              "delta": 1,
+              "confidence": "medium"
+            }
+          ]
+        },
+        {
+          "id": "B",
+          "text": {
+            "zh": "选项 B",
+            "en": "Option B"
+          },
+          "signals": []
+        }
+      ]
+    }
+  ],
+  "momentIndex": [
+    {
+      "id": "M-P01",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P01.v1.json",
+      "contentHash": "c8725952cc8f813e33355ed411af117df5d63b3bf4322e2881812aac4f8d51c6"
+    },
+    {
+      "id": "M-P02",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P02.v1.json",
+      "contentHash": "5ec274f3ab4b19f9592700e1443c19a4a7983ebf95f83609f70589e27a54fe3d"
+    },
+    {
+      "id": "M-P03",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P03.v1.json",
+      "contentHash": "c770f4cd69b230ee8e280291466055653fe1645ac05a8637cea40a68475c6e48"
+    },
+    {
+      "id": "M-P04",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P04.v1.json",
+      "contentHash": "9a857239608b7148ac93af92d120ab48d68d20889f47c3e32610ab57963f8cac"
+    },
+    {
+      "id": "M-P05",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P05.v1.json",
+      "contentHash": "d427c3a71074ddaa3ff7138f376634993b4d6faef548f6d89fb8276fb4eabfb2"
+    },
+    {
+      "id": "M-P06",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P06.v1.json",
+      "contentHash": "3fd2eeb6af80689e60725e986c7f10865cd1d35e3740d344488f911e05acf771"
+    },
+    {
+      "id": "M-P07",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P07.v1.json",
+      "contentHash": "a432573a2e30c8afcfc180d9b12b35e29e67258993315933df3b7dba36c4e6e4"
+    },
+    {
+      "id": "M-P08",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P08.v1.json",
+      "contentHash": "b09041b396309a6e6cdd446e666452fd793e27939b2f88832087c806e95deeb2"
+    },
+    {
+      "id": "M-P09",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P09.v1.json",
+      "contentHash": "bc77e01d9eb1b26e10e93b667e4f47985b680a6c1b08bf7ed010e4cf4a03bb89"
+    },
+    {
+      "id": "M-P10",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P10.v1.json",
+      "contentHash": "dc976d14b6af30f4939ef5a5fa9a2af0b23f565861d67d225f30600916cbaaaf"
+    },
+    {
+      "id": "M-P11",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P11.v1.json",
+      "contentHash": "bd39cf72b9b876c73d8513b4b289290078bed6bd3cd726aef9e701080231939a"
+    },
+    {
+      "id": "M-P12",
+      "version": 1,
+      "status": "active",
+      "path": "moments/M-P12.v1.json",
+      "contentHash": "0952f04ef092a653cb52e2d70a31fcbd3f10149558a56559c6f6da736691e177"
+    },
+    {
+      "id": "REL-001",
+      "version": 1,
+      "status": "active",
+      "path": "moments/REL-001.v1.json",
+      "contentHash": "a392e32eb8b74c7ea5e99bb0fa82443af64caddf18f6641476bb748460a7f379"
+    },
+    {
+      "id": "SOC-001",
+      "version": 1,
+      "status": "active",
+      "path": "moments/SOC-001.v1.json",
+      "contentHash": "89415260c8412e478ab44e6f27f16178fd61503a60ce4fd9297308ef6a7ab09c"
+    },
+    {
+      "id": "FRI-001",
+      "version": 1,
+      "status": "active",
+      "path": "moments/FRI-001.v1.json",
+      "contentHash": "e794529df1d4cbc04e04c982615049a69f84159032e5f216d3b38c9aa8195658"
+    },
+    {
+      "id": "REL-002",
+      "version": 1,
+      "status": "active",
+      "path": "moments/REL-002.v1.json",
+      "contentHash": "092aaf48c18f16e7779546d9bb20b17c360141d3401663788e686ece2a204d2c"
+    },
+    {
+      "id": "TRV-001",
+      "version": 1,
+      "status": "active",
+      "path": "moments/TRV-001.v1.json",
+      "contentHash": "95a1e6e074e6219de0a80bc68703ed05daf8a8c8cd5d1ebd3ab1cae94cf9fcc9"
+    },
+    {
+      "id": "COM-001",
+      "version": 1,
+      "status": "active",
+      "path": "moments/COM-001.v1.json",
+      "contentHash": "d30721895f45f4fec8b9b5d20bc37b85deffff04c3c22c270bbc024cfc52f5ba"
+    },
+    {
+      "id": "REL-003",
+      "version": 1,
+      "status": "active",
+      "path": "moments/REL-003.v1.json",
+      "contentHash": "df1dad685f43ab27362624a05510badef0c1567ab5b10334838c2d9d9751109a"
+    },
+    {
+      "id": "REL-004",
+      "version": 1,
+      "status": "active",
+      "path": "moments/REL-004.v1.json",
+      "contentHash": "785a368e8583868c11caaee2a1d35f0935058caecf88c3d0662937edd1595118"
+    },
+    {
+      "id": "BUS-002",
+      "version": 1,
+      "status": "active",
+      "path": "moments/BUS-002.v1.json",
+      "contentHash": "b7fa19a7e4f29addb3eee0f62b575b7573210b96a5bf25d935bfd563a191f00e"
+    },
+    {
+      "id": "TEST-PLAT-001",
+      "version": 1,
+      "status": "active",
+      "path": "moments/TEST-PLAT-001.v1.json",
+      "contentHash": "d1a1511541f7a202fe54337040ff100aafab82322993aff990c878c5d0e5a1dd"
+    }
+  ],
+  "ab": null,
+  "meta": {
+    "brand": "SEEN",
+    "title": {
+      "zh": "Seen 眼中的你",
+      "en": "How Seen Sees You"
+    },
+    "version": "Previewer 1.0 · sync 2026-07-05",
+    "intro": {
+      "sloganTemplate": {
+        "zh": "{n} 个生活瞬间，\n勾勒 Seen 对你的第一印象。",
+        "en": "{n} small moments of everyday life,\nsketching Seen’s first impression of you."
+      },
+      "sub": {
+        "zh": "不用分析，没有标准答案。\n跟着第一感觉选就好。",
+        "en": "No analysis, no right answers.\nJust go with your first instinct."
+      },
+      "start": {
+        "zh": "开 始",
+        "en": "Begin"
+      }
+    },
+    "resultSub": {
+      "zh": "这不是定义，\n只是 Seen 此刻对你的第一幅速写。",
+      "en": "This isn’t a definition —\njust Seen’s first sketch of you, right now."
+    },
+    "footerTemplate": {
+      "zh": "这只是 {n} 个瞬间里的第一幅速写。\n同一个人在不同日子里，也可能选出不同答案。\nSeen 会随着新的聊天和新的生活瞬间，\n继续更新对你的理解。",
+      "en": "This is only a first sketch from {n} moments.\nThe same person might choose differently on a different day.\nSeen will keep updating its understanding of you\nthrough new conversations and new moments of life."
+    }
+  },
+  "packHash": "9abb3ec01ce3f2210778ae953f4bfbacf31a6c34001d344f6e88305503e6edaf"
+}

@@ -1,0 +1,136 @@
+{
+  "id": "M-P07",
+  "version": 1,
+  "status": "active",
+  "interactionType": "single_choice",
+  "emoji": "📷",
+  "title": {
+    "zh": "旧照片",
+    "en": "Old photos"
+  },
+  "audience": "universal",
+  "scenario": {
+    "zh": "手机里存着十年前的旧照片，你通常会怎么处理？",
+    "en": "Your phone still holds photos from ten years ago. What do you usually do with them?"
+  },
+  "options": [
+    {
+      "id": "A",
+      "text": {
+        "zh": "经常翻出来看看",
+        "en": "Look through them often"
+      },
+      "interpretation": {
+        "zh": "过去在你这里是活的，你会时不时回去坐一坐。",
+        "en": "The past is alive for you — you go back and sit with it now and then."
+      },
+      "immediate": "用户似乎与自己的过去保持着主动的联结。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-06",
+          "delta": 0.55,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-05",
+          "delta": -0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "t": -12
+      }
+    },
+    {
+      "id": "B",
+      "text": {
+        "zh": "一直存着，但几乎不会再看",
+        "en": "Keep them all, but almost never look"
+      },
+      "interpretation": {
+        "zh": "你可能需要知道过去还在，但不必常常打开。",
+        "en": "You may need to know the past is still there — without opening it often."
+      },
+      "immediate": "用户似乎倾向于保留过去，但不常访问。",
+      "weight": "Very Light",
+      "signals": [
+        {
+          "signal": "CHG-07",
+          "delta": 0.4,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-06",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "t": -5
+      }
+    },
+    {
+      "id": "C",
+      "text": {
+        "zh": "定期整理，删掉一部分",
+        "en": "Tidy them up now and then, delete some"
+      },
+      "interpretation": {
+        "zh": "你习惯给生活减重——过去的翻篇，向前走才轻。",
+        "en": "You’re used to keeping life light — closed chapters stay closed, so moving forward feels easier."
+      },
+      "immediate": "用户似乎倾向于主动为过去减重、定期释放。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-05",
+          "delta": 0.5,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-08",
+          "delta": 0.3,
+          "confidence": "low"
+        },
+        {
+          "signal": "CHG-06",
+          "delta": -0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "t": 10
+      }
+    },
+    {
+      "id": "D",
+      "text": {
+        "zh": "早就不知道放在哪里了",
+        "en": "Honestly, no idea where they are anymore"
+      },
+      "interpretation": {
+        "zh": "你似乎活在当下，过去的自然会过去。",
+        "en": "You seem to live in the present — the past takes care of itself."
+      },
+      "immediate": "用户似乎较少回访过去，注意力更多在当下。",
+      "weight": "Light",
+      "signals": [
+        {
+          "signal": "CHG-06",
+          "delta": -0.5,
+          "confidence": "medium"
+        },
+        {
+          "signal": "CHG-05",
+          "delta": 0.3,
+          "confidence": "low"
+        }
+      ],
+      "sliders": {
+        "t": 8,
+        "a": 4
+      }
+    }
+  ]
+}
