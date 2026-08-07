@@ -26,6 +26,9 @@ import MomentsResultPage from './pages/moments/MomentsResultPage';
 import MySketches from './pages/me/MySketches';
 import SketchDetail from './pages/me/SketchDetail';
 import ReflectionHistory from './pages/settings/ReflectionHistory';
+import ExpressGift from './pages/connect/ExpressGift';
+import GiftReveal from './pages/gift/GiftReveal';
+import { useGiftDeepLink } from './services/gift/giftDeepLink';
 
 function SplashScreen() {
   return (
@@ -95,6 +98,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 function AppRoutes() {
   const { firebaseUser, seenUser, initialized, isLoading } = useAuth();
   usePushNotifications();
+  useGiftDeepLink();
 
   if (!initialized) return <SplashScreen />;
 
@@ -112,6 +116,7 @@ function AppRoutes() {
         <Route path="/auth" element={<AuthOptionsScreen />} />
         <Route path="/auth/email" element={<EmailInputScreen />} />
         <Route path="/auth/verify" element={<EmailLinkWaitingScreen />} />
+        <Route path="/s/:token" element={<GiftReveal />} />
         <Route path="*" element={<Navigate to="/welcome" replace />} />
       </Routes>
     );
@@ -128,6 +133,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/delete-account" element={<DeleteAccount />} />
         <Route path="/onboarding" element={<Onboarding />} />
+        <Route path="/s/:token" element={<GiftReveal />} />
         <Route path="*" element={<Navigate to="/onboarding" replace />} />
       </Routes>
     );
@@ -157,6 +163,8 @@ function AppRoutes() {
       <Route path="/me/sketches" element={<MySketches />} />
       <Route path="/me/sketches/:sessionId" element={<SketchDetail />} />
       <Route path="/me/reflect-understandings" element={<ReflectionHistory />} />
+      <Route path="/connect/express" element={<ExpressGift />} />
+      <Route path="/s/:token" element={<GiftReveal />} />
       <Route path="/delete-account" element={<DeleteAccount />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
