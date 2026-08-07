@@ -5,6 +5,7 @@ import {
   sha256Hex,
   generateToken,
   generateRetrievalKey,
+  isWeakKey,
   createGift,
   retrieveGift,
   revokeGift,
@@ -62,9 +63,52 @@ test("scrypt key hash verifies correct key and rejects wrong key", () => {
   assert.notEqual(hash, "482731"); // key never stored raw
 });
 
-test("generateRetrievalKey is six numeric digits", () => {
-  for (let i = 0; i < 50; i++) {
-    assert.match(generateRetrievalKey(), /^\d{6}$/);
+test("generateRetrievalKey is six numeric digits and never weak", () => {
+  for (let i = 0; i < 200; i++) {
+    const k = generateRetrievalKey();
+    assert.match(k, /^\d{6}$/);
+    assert.equal(isWeakKey(k), false);
+  }
+});
+
+test("isWeakKey rejects obvious values, accepts normal ones", () => {
+  for (const w of ["000000", "111111", "222222", "999999", "123456", "654321", "012345", "987654", "12345", "abcdef"]) {
+    assert.equal(isWeakKey(w), true, `expected weak: ${w}`);
+  }
+  for (const ok of ["432540", "080026", "230415", "314159"]) {
+    assert.equal(isWeakKey(ok), false, `expected ok: ${ok}`);
+  }
+});
+
+test("createGift accepts a valid custom Heart Key, stored/hashed identically", async () => {
+  const db = makeFakeDb();
+  const res = await createGift({
+    db,
+    decoded: AUTHOR,
+    body: { message: "生日快乐", retrievalKey: "080216" },
+    now: 1000,
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.retrievalKey, "080216"); // echoes the chosen key
+  // Stored the same way: keyHash present, raw key absent, retrievable with it.
+  const rec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(res.body.token)}`);
+  assert.ok(rec.keyHash && rec.keySalt);
+  assert.equal(rec.retrievalKey, undefined);
+  const r = await retrieveGift({ db, body: { token: res.body.token, key: "080216" }, now: 2000 });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.message, "生日快乐");
+});
+
+test("createGift accepts a spaced custom key and refuses weak custom keys", async () => {
+  const db = makeFakeDb();
+  const spaced = await createGift({ db, decoded: AUTHOR, body: { message: "hi", retrievalKey: "314 159" }, now: 1000 });
+  assert.equal(spaced.status, 200);
+  assert.equal(spaced.body.retrievalKey, "314159");
+
+  for (const weak of ["000000", "123456", "654321", "12345"]) {
+    const bad = await createGift({ db, decoded: AUTHOR, body: { message: "hi", retrievalKey: weak }, now: 1000 });
+    assert.equal(bad.status, 400, `expected 400 for ${weak}`);
+    assert.equal(bad.body.error, "weak_key");
   }
 });
 

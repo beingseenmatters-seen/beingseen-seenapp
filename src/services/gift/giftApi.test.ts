@@ -42,12 +42,24 @@ describe('createGift', () => {
     expect((init as any).headers['X-Seen-App-Key']).toBe('test-key');
   });
 
-  it('throws GiftError with code on failure', async () => {
+  it('forwards a custom retrievalKey in the request body', async () => {
+    const fetchFn = mockFetch(200, { token: 'abc', url: 'https://x/s/abc', retrievalKey: '080216' });
+    await createGift({ message: 'hi', retrievalKey: '080216' });
+    const body = JSON.parse((fetchFn.mock.calls[0][1] as any).body);
+    expect(body.retrievalKey).toBe('080216');
+  });
+
+  it('throws GiftError with code on failure (incl. weak_key)', async () => {
     mockFetch(429, { error: 'rate_limited' });
     await expect(createGift({ message: 'hi' })).rejects.toMatchObject({
       name: 'GiftError',
       code: 'rate_limited',
       status: 429,
+    });
+    mockFetch(400, { error: 'weak_key' });
+    await expect(createGift({ message: 'hi', retrievalKey: '111111' })).rejects.toMatchObject({
+      code: 'weak_key',
+      status: 400,
     });
   });
 });
