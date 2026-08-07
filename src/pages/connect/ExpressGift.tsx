@@ -286,46 +286,53 @@ export default function ExpressGift() {
             </div>
           )}
 
-          {/* STEP: key — choose the Heart Key (default / 换一个 / 自定义), mutable */}
+          {/* STEP: key — choose the Heart Key, mutable. Three-tier hierarchy:
+              换一个 (tertiary text link) < 使用自己的数字 (secondary) < 锁上心意 (primary). */}
           {step === 'key' && (
-            <div className="space-y-8 pt-4">
+            <div className="space-y-6 pt-4">
               <div className="space-y-2">
                 <h2 className="text-xl font-light text-primary">{t('express.key_title')}</h2>
                 <p className="text-sm text-secondary font-light leading-relaxed">{t('express.key_choose_hint')}</p>
               </div>
 
-              <div className="py-6 flex flex-col items-center gap-6">
+              <div className="py-4 flex flex-col items-center gap-3">
                 <p className="text-[2.75rem] leading-none font-light tracking-[0.25em] text-primary tabular-nums">
                   {formatHeartKey(heartKey)}
                 </p>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setHeartKey(generateHeartKey())}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-gray-200 text-sm font-light text-secondary hover:border-gray-300 transition-colors"
-                  >
-                    <RefreshCw size={14} /> {t('express.key_regenerate')}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setCustomInput('');
-                      setCustomError(null);
-                      setCustomOpen(true);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-gray-200 text-sm font-light text-secondary hover:border-gray-300 transition-colors"
-                  >
-                    <Pencil size={14} /> {t('express.key_custom')}
-                  </button>
-                </div>
+                {/* Tertiary: quick reroll */}
+                <button
+                  onClick={() => setHeartKey(generateHeartKey())}
+                  className="inline-flex items-center gap-1.5 text-sm font-light text-secondary hover:text-primary transition-colors"
+                >
+                  <RefreshCw size={13} /> {t('express.key_regenerate')}
+                </button>
               </div>
 
+              <p className="text-center text-sm text-muted font-light">{t('express.key_surprise_hint')}</p>
+
               {error && <p className="text-sm text-red-500 font-light text-center">{error}</p>}
-              <button
-                onClick={handleSeal}
-                disabled={sealing}
-                className="w-full py-4 rounded-2xl bg-primary text-white text-base font-medium hover:bg-black disabled:bg-gray-200 disabled:text-gray-400 transition-colors flex items-center justify-center"
-              >
-                {sealing ? <Loader2 className="animate-spin" size={18} /> : t('express.seal')}
-              </button>
+
+              <div className="space-y-3 pt-1">
+                {/* Secondary: the intentional, meaningful choice */}
+                <button
+                  onClick={() => {
+                    setCustomInput('');
+                    setCustomError(null);
+                    setCustomOpen(true);
+                  }}
+                  className="w-full py-3.5 rounded-2xl border border-gray-200 text-primary text-sm font-light hover:border-gray-300 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Pencil size={15} /> {t('express.key_custom')}
+                </button>
+                {/* Primary: commit */}
+                <button
+                  onClick={handleSeal}
+                  disabled={sealing}
+                  className="w-full py-4 rounded-2xl bg-primary text-white text-base font-medium hover:bg-black disabled:bg-gray-200 disabled:text-gray-400 transition-colors flex items-center justify-center"
+                >
+                  {sealing ? <Loader2 className="animate-spin" size={18} /> : t('express.seal')}
+                </button>
+              </div>
               <p className="text-center text-[11px] text-muted font-light">{t('express.seal_hint')}</p>
             </div>
           )}
