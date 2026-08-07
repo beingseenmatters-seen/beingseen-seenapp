@@ -244,16 +244,28 @@ export async function extractSummaryFromBackend(
     language
   });
 
+  // Repair the Reflect → emergent-trait producer/consumer contract: the backend
+  // LLM returns prose "layers" but NOT the categorical slug arrays that emergent
+  // trait inference consumes (thinkingStyle/coreQuestions/worldview/…). Derive
+  // them here with the SAME deterministic controlled-vocabulary inferers the
+  // fallback path uses below, over the SAME conversation input. No new inference
+  // logic; the backend prose fields are preserved exactly.
+  const userMessages = messages.filter(message => message.role === 'user' && message.text.trim());
+  const allMessages = messages.filter(message => message.role !== 'system' && message.text.trim());
+  const userTextLower = userMessages.map(message => message.text).join('\n').toLowerCase();
+  const allTextLower = allMessages.map(message => message.text).join('\n').toLowerCase();
+  const thinkingPath = extractThinkingPath(userMessages);
+
   const extraction: ConversationExtraction = {
     // Surface the Understanding Update. `summary` (10-layer synthesis)
     // stays internal and is only a fallback for older Lambda deployments.
     summaryText: response.reflection || response.summary || '',
-    thinkingStyle: [],
-    coreQuestions: [],
-    worldview: [],
-    relationshipPhilosophy: [],
-    conversationStyle: [],
-    thinkingPath: [],
+    thinkingStyle: inferThinkingStyle(userTextLower, thinkingPath).slice(0, 4),
+    coreQuestions: inferCoreQuestions(userMessages, userTextLower, language).slice(0, 4),
+    worldview: inferWorldview(userTextLower, allTextLower).slice(0, 4),
+    relationshipPhilosophy: inferRelationshipPhilosophy(userTextLower).slice(0, 4),
+    conversationStyle: inferConversationStyle(userMessages, userTextLower, thinkingPath).slice(0, 4),
+    thinkingPath: thinkingPath.slice(0, 6),
     preferredResponseStyle: options.preferredResponseStyle,
     contentSummary: response.layers?.contentSummary,
     emotion: response.layers?.emotion,
