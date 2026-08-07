@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, Loader2, Copy, Check, Share2, RefreshCw } from 'lucide-react';
+import { ChevronLeft, Loader2, Copy, Check, RefreshCw, Pencil, QrCode } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import QRCode from 'qrcode';
-import { Capacitor } from '@capacitor/core';
-import { Share } from '@capacitor/share';
 import { useLanguage } from '../../i18n';
 import {
   createGift,
@@ -12,8 +10,10 @@ import {
   GiftError,
   type CreateGiftResult,
 } from '../../services/gift/giftApi';
+import { generateHeartKey, isWeakHeartKey, formatHeartKey } from '../../services/gift/heartKey';
+import { shareQrImage } from '../../services/gift/qrShare';
 
-type Step = 'compose' | 'drafts' | 'review' | 'created';
+type Step = 'compose' | 'drafts' | 'review' | 'key' | 'shared';
 
 const TONES = [
   { value: '真诚', key: 'sincere' },
@@ -35,11 +35,17 @@ export default function ExpressGift() {
   const [drafts, setDrafts] = useState<string[]>([]);
   const [drafting, setDrafting] = useState(false);
   const [message, setMessage] = useState('');
-  const [creating, setCreating] = useState(false);
+  const [sealing, setSealing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CreateGiftResult | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copied, setCopied] = useState<'link' | 'key' | null>(null);
+
+  // Heart Key — chosen client-side (default / 换一个 / 自定义) BEFORE sealing.
+  const [heartKey, setHeartKey] = useState<string>('');
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customInput, setCustomInput] = useState('');
+  const [customError, setCustomError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!result) return;
@@ -58,23 +64,47 @@ export default function ExpressGift() {
     setDrafting(false);
   };
 
-  const handleCreate = async () => {
-    if (!message.trim() || creating) return;
-    setCreating(true);
+  // Move from message review to the Heart Key step, seeding a default key.
+  const goToKeyStep = () => {
+    if (!message.trim()) return;
+    setError(null);
+    setHeartKey(generateHeartKey());
+    setStep('key');
+  };
+
+  const confirmCustomKey = () => {
+    const digits = customInput.replace(/\D/g, '');
+    if (isWeakHeartKey(digits)) {
+      setCustomError(
+        digits.length === 6 ? t('express.custom_weak') : t('express.custom_invalid'),
+      );
+      return;
+    }
+    setHeartKey(digits);
+    setCustomOpen(false);
+    setCustomError(null);
+  };
+
+  // Seal the Gift: the single /gift/create call. After this the key is immutable.
+  const handleSeal = async () => {
+    if (!message.trim() || sealing) return;
+    setSealing(true);
     setError(null);
     try {
       const res = await createGift({
         message: message.trim(),
         senderName: senderName.trim() || null,
         tone,
+        retrievalKey: heartKey,
       });
       setResult(res);
-      setStep('created');
+      setStep('shared');
     } catch (err) {
       const code = err instanceof GiftError ? err.code : 'create_failed';
-      setError(t(`express.error_${code}`) !== `express.error_${code}` ? t(`express.error_${code}`) : t('express.error_generic'));
+      const key = `express.error_${code}`;
+      setError(t(key) !== key ? t(key) : t('express.error_generic'));
     } finally {
-      setCreating(false);
+      setSealing(false);
     }
   };
 
@@ -88,30 +118,16 @@ export default function ExpressGift() {
     }
   };
 
-  const shareLink = async () => {
-    if (!result) return;
-    // Share ONLY the link — never the 心意钥匙 (that goes out-of-band).
-    const text = `${t('express.share_text')}\n${result.url}`;
-    if (Capacitor.isNativePlatform()) {
-      try {
-        await Share.share({ title: t('express.title'), text, url: result.url });
-      } catch {
-        /* cancelled */
-      }
-    } else if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-      try {
-        await navigator.share({ text, url: result.url });
-      } catch {
-        /* cancelled */
-      }
-    } else {
-      copy(result.url, 'link');
-    }
+  // Share the QR itself (the primary sharing object) — never the key.
+  const shareQr = async () => {
+    if (!result || !qrDataUrl) return;
+    await shareQrImage(qrDataUrl, `${t('express.share_text')}\n${result.url}`);
   };
 
   const back = () => {
     if (step === 'drafts') setStep('compose');
     else if (step === 'review') setStep(drafts.length ? 'drafts' : 'compose');
+    else if (step === 'key') setStep('review');
     else navigate('/inbox');
   };
 
@@ -261,74 +277,169 @@ export default function ExpressGift() {
               />
               {error && <p className="text-sm text-red-500 font-light">{error}</p>}
               <button
-                onClick={handleCreate}
-                disabled={!message.trim() || creating}
+                onClick={goToKeyStep}
+                disabled={!message.trim()}
                 className="w-full py-3.5 rounded-2xl bg-primary text-white text-sm font-medium hover:bg-black disabled:bg-gray-200 disabled:text-gray-400 transition-colors flex items-center justify-center"
               >
-                {creating ? <Loader2 className="animate-spin" size={18} /> : t('express.create')}
+                {t('express.next')}
               </button>
             </div>
           )}
 
-          {/* STEP: created */}
-          {step === 'created' && result && (
-            <div className="space-y-8 pt-4 text-center">
+          {/* STEP: key — choose the Heart Key, mutable. Three-tier hierarchy:
+              换一个 (tertiary text link) < 使用自己的数字 (secondary) < 锁上心意 (primary). */}
+          {step === 'key' && (
+            <div className="space-y-6 pt-4">
               <div className="space-y-2">
-                <h2 className="text-xl font-light text-primary">{t('express.created_title')}</h2>
-                <p className="text-sm text-secondary font-light leading-relaxed">{t('express.created_subtitle')}</p>
+                <h2 className="text-xl font-light text-primary">{t('express.key_title')}</h2>
+                <p className="text-sm text-secondary font-light leading-relaxed">{t('express.key_choose_hint')}</p>
               </div>
 
-              {qrDataUrl && (
-                <div className="flex justify-center">
+              <div className="py-4 flex flex-col items-center gap-3">
+                <p className="text-[2.75rem] leading-none font-light tracking-[0.25em] text-primary tabular-nums">
+                  {formatHeartKey(heartKey)}
+                </p>
+                {/* Tertiary: quick reroll */}
+                <button
+                  onClick={() => setHeartKey(generateHeartKey())}
+                  className="inline-flex items-center gap-1.5 text-sm font-light text-secondary hover:text-primary transition-colors"
+                >
+                  <RefreshCw size={13} /> {t('express.key_regenerate')}
+                </button>
+              </div>
+
+              <p className="text-center text-sm text-muted font-light">{t('express.key_surprise_hint')}</p>
+
+              {error && <p className="text-sm text-red-500 font-light text-center">{error}</p>}
+
+              <div className="space-y-3 pt-1">
+                {/* Secondary: the intentional, meaningful choice */}
+                <button
+                  onClick={() => {
+                    setCustomInput('');
+                    setCustomError(null);
+                    setCustomOpen(true);
+                  }}
+                  className="w-full py-3.5 rounded-2xl border border-gray-200 text-primary text-sm font-light hover:border-gray-300 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Pencil size={15} /> {t('express.key_custom')}
+                </button>
+                {/* Primary: commit */}
+                <button
+                  onClick={handleSeal}
+                  disabled={sealing}
+                  className="w-full py-4 rounded-2xl bg-primary text-white text-base font-medium hover:bg-black disabled:bg-gray-200 disabled:text-gray-400 transition-colors flex items-center justify-center"
+                >
+                  {sealing ? <Loader2 className="animate-spin" size={18} /> : t('express.seal')}
+                </button>
+              </div>
+              <p className="text-center text-[11px] text-muted font-light">{t('express.seal_hint')}</p>
+            </div>
+          )}
+
+          {/* STEP: shared — QR is the primary object; key is now immutable */}
+          {step === 'shared' && result && (
+            <div className="space-y-8 pt-4 text-center">
+              <div className="space-y-1.5">
+                <h2 className="text-xl font-light text-primary">{t('express.created_title')}</h2>
+                <p className="text-sm text-secondary font-light leading-relaxed">
+                  {t('express.share_lead_1')}
+                  <br />
+                  {t('express.share_lead_2')}
+                </p>
+              </div>
+
+              {/* QR hero — the sharing object */}
+              <div className="flex flex-col items-center gap-4">
+                {qrDataUrl && (
                   <img
                     src={qrDataUrl}
                     alt="QR"
-                    className="w-52 h-52 rounded-2xl border border-gray-100 p-3 bg-white"
+                    className="w-64 h-64 rounded-3xl border border-gray-100 p-4 bg-white shadow-sm"
                   />
-                </div>
-              )}
+                )}
+                <button
+                  onClick={shareQr}
+                  className="w-full py-4 rounded-2xl bg-primary text-white text-base font-medium hover:bg-black transition-colors flex items-center justify-center gap-2"
+                >
+                  <QrCode size={18} /> {t('express.share_qr')}
+                </button>
+                <button
+                  onClick={() => copy(result.url, 'link')}
+                  className="inline-flex items-center gap-1.5 text-sm text-secondary hover:text-primary transition-colors"
+                >
+                  {copied === 'link' ? <Check size={15} /> : <Copy size={15} />}
+                  {copied === 'link' ? t('express.copied') : t('express.copy_link')}
+                </button>
+              </div>
 
-              {/* 心意钥匙 */}
-              <div className="space-y-3 p-5 rounded-2xl bg-gray-50 border border-gray-100">
+              {/* 心意钥匙 reminder — for TA only */}
+              <div className="space-y-2 p-5 rounded-2xl bg-gray-50 border border-gray-100">
                 <p className="text-xs text-muted font-medium uppercase tracking-wider">{t('express.key_label')}</p>
-                <p className="text-3xl font-light tracking-[0.3em] text-primary">
-                  {result.retrievalKey.slice(0, 3)} {result.retrievalKey.slice(3)}
+                <p className="text-2xl font-light tracking-[0.3em] text-primary tabular-nums">
+                  {formatHeartKey(result.retrievalKey)}
                 </p>
-                <p className="text-xs text-secondary font-light leading-relaxed">{t('express.key_guidance')}</p>
+                <p className="text-xs text-secondary font-light">{t('express.key_only_ta')}</p>
                 <button
                   onClick={() => copy(result.retrievalKey, 'key')}
-                  className="inline-flex items-center gap-1.5 text-sm text-primary"
+                  className="inline-flex items-center gap-1.5 text-sm text-primary pt-1"
                 >
                   {copied === 'key' ? <Check size={14} /> : <Copy size={14} />}
                   {copied === 'key' ? t('express.copied') : t('express.copy_key')}
                 </button>
               </div>
 
-              <div className="space-y-3">
-                <button
-                  onClick={shareLink}
-                  className="w-full py-3.5 rounded-2xl bg-primary text-white text-sm font-medium hover:bg-black transition-colors flex items-center justify-center gap-2"
-                >
-                  <Share2 size={16} /> {t('express.share_link')}
-                </button>
-                <button
-                  onClick={() => copy(result.url, 'link')}
-                  className="w-full py-3.5 rounded-2xl border border-gray-200 text-secondary text-sm font-light hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-                >
-                  {copied === 'link' ? <Check size={16} /> : <Copy size={16} />}
-                  {copied === 'link' ? t('express.copied') : t('express.copy_link')}
-                </button>
-                <button
-                  onClick={() => navigate('/inbox')}
-                  className="w-full py-3 text-sm text-muted font-light hover:text-primary transition-colors"
-                >
-                  {t('express.done')}
-                </button>
-              </div>
+              {/* Deliberate completion */}
+              <button
+                onClick={() => navigate('/inbox')}
+                className="w-full py-4 rounded-2xl border-2 border-primary text-primary text-base font-medium hover:bg-primary hover:text-white transition-colors flex items-center justify-center gap-2"
+              >
+                <Check size={18} /> {t('express.done')}
+              </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* 自定义 Heart Key dialog */}
+      {customOpen && (
+        <div className="absolute inset-0 z-30 flex items-end sm:items-center justify-center bg-black/30 px-4 pb-8 sm:pb-0">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 space-y-5 shadow-xl">
+            <h3 className="text-lg font-light text-primary">{t('express.custom_title')}</h3>
+            <input
+              value={customInput}
+              onChange={(e) => {
+                setCustomInput(e.target.value.replace(/\D/g, '').slice(0, 6));
+                setCustomError(null);
+              }}
+              onKeyDown={(e) => e.key === 'Enter' && confirmCustomKey()}
+              inputMode="numeric"
+              autoFocus
+              placeholder="· · ·   · · ·"
+              className="w-full bg-gray-50 rounded-2xl py-4 text-center text-2xl tracking-[0.4em] text-primary placeholder:text-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200 tabular-nums"
+            />
+            {customError && <p className="text-sm text-red-500 font-light">{customError}</p>}
+            <div className="text-xs text-muted font-light leading-relaxed whitespace-pre-line">
+              {t('express.custom_hint')}
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setCustomOpen(false)}
+                className="flex-1 py-3 rounded-2xl border border-gray-200 text-secondary text-sm font-light hover:bg-gray-50 transition-colors"
+              >
+                {t('express.custom_cancel')}
+              </button>
+              <button
+                onClick={confirmCustomKey}
+                disabled={customInput.length !== 6}
+                className="flex-1 py-3 rounded-2xl bg-primary text-white text-sm font-medium hover:bg-black disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+              >
+                {t('express.custom_confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

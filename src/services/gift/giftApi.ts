@@ -46,6 +46,8 @@ export interface CreateGiftInput {
   message: string;
   senderName?: string | null;
   tone?: string | null;
+  /** Optional sender-chosen Heart Key; omit to have the server generate one. */
+  retrievalKey?: string | null;
 }
 
 export interface CreateGiftResult {

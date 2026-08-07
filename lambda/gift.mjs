@@ -54,9 +54,26 @@ export function generateToken() {
   return crypto.randomBytes(16).toString("base64url");
 }
 
-/** Six-digit numeric 心意钥匙 (second secret). */
+/**
+ * Reject obvious/weak six-digit keys: non-6-digit, all-same-digit, or a
+ * straight ascending/descending run (covers 000000, 111111, 999999, 123456,
+ * 654321, 012345, 987654, …). Applies to both generated and custom keys.
+ */
+export function isWeakKey(key) {
+  if (!/^\d{6}$/.test(key)) return true;
+  if (/^(\d)\1{5}$/.test(key)) return true;
+  if ("0123456789".includes(key)) return true;
+  if ("9876543210".includes(key)) return true;
+  return false;
+}
+
+/** Six-digit numeric 心意钥匙 (second secret); never a weak value. */
 export function generateRetrievalKey() {
-  return String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
+  let key;
+  do {
+    key = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
+  } while (isWeakKey(key));
+  return key;
 }
 
 function normalizeKey(key) {
@@ -129,9 +146,20 @@ export async function createGift({ db, decoded, body, now = Date.now() }) {
     return { status: 429, body: { error: "rate_limited" } };
   }
 
+  // Heart Key: use a sender-chosen custom key when provided, else generate one.
+  // A custom key is stored/hashed EXACTLY like a generated key (no difference);
+  // weak values are refused server-side regardless of client validation.
+  const provided = normalizeKey(body?.retrievalKey);
+  let retrievalKey;
+  if (provided) {
+    if (isWeakKey(provided)) return { status: 400, body: { error: "weak_key" } };
+    retrievalKey = provided;
+  } else {
+    retrievalKey = generateRetrievalKey();
+  }
+
   const token = generateToken();
   const tokenHash = sha256Hex(token);
-  const retrievalKey = generateRetrievalKey();
   const { salt: keySalt, hash: keyHash } = giftCrypto.hashKey(retrievalKey);
 
   const senderName =
