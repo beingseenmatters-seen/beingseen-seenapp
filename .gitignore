@@ -18,6 +18,9 @@ ios/App/Pods
 android/app/build
 android/.gradle
 
+# Lambda deployment packages (built by lambda/deploy.sh; upload manually)
+lambda/*.zip
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
