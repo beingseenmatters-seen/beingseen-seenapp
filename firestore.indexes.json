@@ -7,6 +7,14 @@
         { "fieldPath": "profile.matchReady", "order": "ASCENDING" },
         { "fieldPath": "profile.updatedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "giftMessages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "senderUid", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, MoreHorizontal, Send, Check, X, Loader2 } from 'lucide-react';
+import { ChevronLeft, MoreHorizontal, Send, Check, X, Loader2, Heart, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 import { useLanguage } from '../i18n';
 import { useAuth } from '../auth/AuthContext';
@@ -17,6 +18,7 @@ import type { ConnectionRequest, Connection, ChatMessage } from '../services/con
 export default function Inbox() {
   const { t, effectiveLanguage } = useLanguage();
   const { firebaseUser } = useAuth();
+  const navigate = useNavigate();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState("");
@@ -123,6 +125,23 @@ export default function Inbox() {
             <div className="space-y-1 mb-6">
               <p className="text-secondary font-light text-sm">{t('inbox.subtitle')}</p>
             </div>
+
+            {/* 有句话，想送给 TA — Relationship Expression / QR Gift entry */}
+            <button
+              onClick={() => navigate('/connect/express')}
+              className="w-full flex items-center justify-between p-5 mb-6 rounded-2xl bg-gray-50 border border-gray-100 hover:border-gray-300 transition-colors text-left group"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="shrink-0 w-10 h-10 rounded-full bg-white border border-gray-100 flex items-center justify-center text-primary">
+                  <Heart size={18} strokeWidth={1.5} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-base font-medium text-primary truncate">{t('express.title')}</p>
+                  <p className="text-xs text-muted font-light truncate">{t('express.entry_sub')}</p>
+                </div>
+              </div>
+              <ChevronRight size={18} className="shrink-0 ml-3 text-gray-400 group-hover:text-primary transition-colors" />
+            </button>
 
             {isLoading ? (
               <div className="flex justify-center py-8">

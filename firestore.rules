@@ -108,6 +108,18 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
+    // ---------------------------------------------------------------------
+    // giftMessages/{tokenHash} — QR Gift store (feat/expression-gift-v1).
+    // Admin-SDK-only: ALL access (create by author, retrieve by recipient,
+    // revoke by sender) goes through the Lambda. Clients never read or write
+    // directly — the retrieval key is verified server-side and a recipient may
+    // have no Seen account. Doc id is SHA-256(token); the raw token is never
+    // stored. Closed to every client path.
+    // ---------------------------------------------------------------------
+    match /giftMessages/{tokenHash} {
+      allow read, write: if false;
+    }
+
     // Anything not matched above is denied by default.
   }
 }

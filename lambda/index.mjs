@@ -37,6 +37,7 @@ import {
   parseExtractionContent,
   toExtractResponsePayload,
 } from "./reflectModes.mjs";
+import { createGift, retrieveGift, revokeGift } from "./gift.mjs";
 
 // ========================
 // Version & Constants
@@ -130,6 +131,98 @@ function httpResponse(statusCode, body) {
     },
     body: JSON.stringify(body),
   };
+}
+
+// ========================
+// Relationship Expression — draft assistance (feat/expression-gift-v1)
+// ========================
+
+const EXPRESSION_TONES = ["真诚", "浪漫", "轻松幽默", "克制含蓄", "简单直接"];
+
+function buildExpressDraftPrompt({ situation, tone, language }) {
+  const isZh = language !== "en";
+  const safeTone = EXPRESSION_TONES.includes(tone) ? tone : (isZh ? "真诚" : "sincere");
+  if (isZh) {
+    return [
+      "你在帮一个人，把一句想对某个具体的人说的话，写得更好。",
+      `语气：${safeTone}。`,
+      "要求：以第一人称、直接写给对方（称呼可用「你」），不要写成书信格式，不要署名，不要加引号。",
+      "每条 1–3 句，真诚、克制、不浮夸，贴近真实口吻。",
+      "严格只输出一个 JSON 数组，包含 3 条候选文字，例如 [\"…\",\"…\",\"…\"]，不要输出其它任何内容。",
+      "对方与情境：",
+      situation,
+    ].join("\n");
+  }
+  return [
+    "You help someone say one thing to a specific person, more beautifully.",
+    `Tone: ${safeTone}.`,
+    "Write in the first person, addressed directly to the person ('you'). No letter format, no signature, no quotation marks.",
+    "Each option is 1–3 sentences, sincere and restrained, close to a real voice.",
+    'Output ONLY a JSON array of exactly 3 candidate strings, e.g. ["…","…","…"]. Nothing else.',
+    "Situation:",
+    situation,
+  ].join("\n");
+}
+
+function parseDrafts(content) {
+  const text = String(content || "").trim();
+  // Prefer a strict JSON array.
+  const start = text.indexOf("[");
+  const end = text.lastIndexOf("]");
+  if (start !== -1 && end > start) {
+    try {
+      const arr = JSON.parse(text.slice(start, end + 1));
+      if (Array.isArray(arr)) {
+        return arr.map((s) => String(s).trim()).filter(Boolean).slice(0, 3);
+      }
+    } catch {
+      /* fall through to line parsing */
+    }
+  }
+  // Fallback: split lines, strip numbering/bullets.
+  return text
+    .split(/\n+/)
+    .map((l) => l.replace(/^\s*(?:\d+[.)、]|[-*•])\s*/, "").trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+async function handleExpressDraft(body) {
+  const situation = typeof body?.situation === "string" ? body.situation.trim() : "";
+  const tone = typeof body?.tone === "string" ? body.tone.trim() : "";
+  const language = body?.language === "en" ? "en" : "zh";
+  if (!situation) return httpResponse(400, { error: "missing_situation" });
+
+  let apiKey;
+  try {
+    apiKey = await getOpenAIKey();
+  } catch (e) {
+    console.error("[Express] key error", e);
+    return httpResponse(500, { error: "openai_key_error" });
+  }
+
+  try {
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [{ role: "system", content: buildExpressDraftPrompt({ situation, tone, language }) }],
+        temperature: 0.8,
+        max_tokens: 600,
+      }),
+    });
+    if (!r.ok) {
+      console.error("[Express] OpenAI error", await r.text());
+      return httpResponse(502, { error: "draft_failed" });
+    }
+    const data = await r.json();
+    const drafts = parseDrafts(data.choices?.[0]?.message?.content || "");
+    return httpResponse(200, { drafts });
+  } catch (e) {
+    console.error("[Express] draft error", e);
+    return httpResponse(502, { error: "draft_failed" });
+  }
 }
 
 // ========================
@@ -783,6 +876,28 @@ export const handler = async (event) => {
   } catch {}
 
   const path = event.requestContext?.http?.path || event.rawPath || event.path;
+
+  // ---- Relationship Expression / QR Gift (feat/expression-gift-v1) --------
+  // Firestore via Admin SDK; GLOBAL-only V1. create/revoke require a verified
+  // Firebase ID token; retrieve is app-key-only so an account-less recipient
+  // can open a Gift by scanning the QR and entering the six-digit 心意钥匙.
+  if (path === "/gift/create") {
+    const decoded = await verifyAuthToken(event);
+    const result = await createGift({ db: admin.firestore(), decoded, body });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/gift/retrieve") {
+    const result = await retrieveGift({ db: admin.firestore(), body });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/gift/revoke") {
+    const decoded = await verifyAuthToken(event);
+    const result = await revokeGift({ db: admin.firestore(), decoded, body });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/express/draft") {
+    return await handleExpressDraft(body);
+  }
 
   // Route: /test/push
   if (path === "/test/push") {
