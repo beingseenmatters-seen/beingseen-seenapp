@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronDown } from 'lucide-react';
+import { ChevronLeft, ChevronDown, Share2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { useLanguage } from '../../i18n';
@@ -7,6 +7,7 @@ import { momentsClient } from '../../services/moments/momentsClient';
 import type { MomentsSession } from '../../types/moments';
 import { localizedText } from '../../services/moments/config';
 import { displaySketchText } from '../../services/moments/sketchEngineV2';
+import { shareSketch, isShareAvailable } from '../../services/share/shareSketch';
 
 function formatDate(ts: number, language: 'zh' | 'en'): string {
   return new Date(ts).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', {
@@ -27,6 +28,22 @@ export default function SketchDetail() {
   const [session, setSession] = useState<MomentsSession | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [showChoices, setShowChoices] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const canShare = isShareAvailable();
+
+  const handleShare = async () => {
+    const sketch = session?.sketch;
+    if (!sketch) return;
+    const title = t('moments.sketch_title').replace('{{n}}', String(sketch.number).padStart(2, '0'));
+    const outcome = await shareSketch(sketch, effectiveLanguage, {
+      title,
+      attribution: t('moments.share_attribution'),
+    });
+    if (outcome === 'copied') {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -66,8 +83,24 @@ export default function SketchDetail() {
           <span className="text-sm font-medium tracking-widest text-muted uppercase">
             {t('moments.header')}
           </span>
-          <div className="w-8" />
+          {canShare ? (
+            <button
+              onClick={handleShare}
+              className="p-2 -mr-2 text-secondary hover:text-primary transition-colors"
+              aria-label={t('moments.share')}
+            >
+              <Share2 size={20} strokeWidth={1.5} />
+            </button>
+          ) : (
+            <div className="w-8" />
+          )}
         </div>
+
+        {copied && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-full bg-primary text-white text-xs font-light shadow-lg">
+            {t('moments.share_copied')}
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto no-scrollbar px-6 pb-12 space-y-8">
           <div className="pt-4 space-y-2">
