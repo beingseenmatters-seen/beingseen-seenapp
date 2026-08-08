@@ -33,7 +33,7 @@ import type {
   UserUnderstandingModel,
 } from '../types/userSummary';
 
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
 import { extractReflectSummary } from './seenApi';
 import { auth, db } from './firebase';
 import { buildSessionPatterns } from './sessionPattern';
@@ -650,6 +650,72 @@ export function clearSessionInsights(): void {
   console.log('[UserSummary] Session insights cleared');
 }
 
+/**
+ * Reflect Durability — hydrate the local Session Insight cache from Firestore.
+ *
+ * `users/{uid}/reflectInsights` is the durable source of truth for retained
+ * Reflect evidence; localStorage is only an offline cache. On login (and on app
+ * cold-start with a persisted session) we rebuild the cache from Firestore so
+ * future trait inference runs over ALL historical evidence — not only sessions
+ * created on this device. Mirrors `hydrateKeptReflections()`.
+ *
+ * Reconciliation is a union by insight id (Firestore authoritative on collision),
+ * so a not-yet-synced local-only insight is never dropped and repeated hydration
+ * is idempotent. Empty (signal-less) legacy insights are filtered by
+ * `normalizeInsight` and simply contribute nothing — they never dilute inference.
+ */
+export async function hydrateSessionInsights(): Promise<SessionInsight[]> {
+  const uid = currentUid();
+  if (!uid) return [];
+  try {
+    const snapshot = await getDocs(collection(db, 'users', uid, 'reflectInsights'));
+    const remote: SessionInsight[] = [];
+    for (const docSnap of snapshot.docs) {
+      const data = (docSnap.data() ?? {}) as Record<string, unknown>;
+      const normalized = normalizeInsight({
+        ...data,
+        // The durable record id is the insight id; fall back to the doc id.
+        id: typeof data.id === 'string' ? data.id : docSnap.id,
+      });
+      if (normalized) remote.push(normalized);
+    }
+
+    // Union by id — Firestore (SSOT) wins on collision, local-only rows are kept.
+    const byId = new Map<string, SessionInsight>();
+    for (const local of readSessionInsights()) byId.set(local.id, local);
+    for (const r of remote) byId.set(r.id, r);
+    const merged = Array.from(byId.values()).sort((a, b) => a.approvedAt - b.approvedAt);
+
+    saveSessionInsights(merged);
+    rebuildLocalDerivedCaches(merged);
+    console.log('[UserSummary] Hydrated session insights from Firestore:', merged.length);
+    return merged;
+  } catch (error) {
+    console.warn(
+      '[UserSummary] reflectInsights hydrate failed (keeping local cache if any):',
+      error,
+    );
+    return readSessionInsights();
+  }
+}
+
+/**
+ * Rebuild the local derived caches (understanding model + emergent traits) from a
+ * full insight set, so matchReady / traits reflect the hydrated history right away.
+ * The next approved Keep recomputes these authoritatively; this only keeps the
+ * read-side consistent in the meantime. Local-cache only — never writes Firestore.
+ */
+function rebuildLocalDerivedCaches(insights: SessionInsight[]): void {
+  if (insights.length >= MIN_INSIGHTS_FOR_MODEL) {
+    saveUserUnderstandingModel(buildUserUnderstandingModel(insights));
+  } else {
+    clearUserUnderstandingModel();
+  }
+  const patterns = buildSessionPatterns(insights);
+  const { traits, meta } = inferEmergentTraits(patterns);
+  saveEmergentTraits(traits, meta);
+}
+
 // Aggregated model storage (uid-scoped; never reads legacy global)
 
 export function readUserUnderstandingModel(): UserUnderstandingModel | null {
@@ -793,7 +859,7 @@ export async function saveApprovedSummary(
   extraction: ConversationExtraction,
   uid?: string,
   sessionId?: string,
-  options: { aboutMeSignals?: AboutMeSignals } = {},
+  options: { aboutMeSignals?: AboutMeSignals; recordId?: string } = {},
 ): Promise<{
   insight: SessionInsight;
   model: UserUnderstandingModel | null;
@@ -801,107 +867,110 @@ export async function saveApprovedSummary(
   traitInferenceMeta: TraitInferenceMeta | null;
   insightCount: number;
 }> {
-  const insight = createSessionInsight(extraction);
-  const insights = [...readSessionInsights(), insight];
-  saveSessionInsights(insights);
+  // The durable record id is stable across retries of the same approval (Reflect
+  // supplies it) so a retry never accumulates duplicates — locally or in Firestore.
+  const insight = createSessionInsight(extraction, options.recordId);
 
-  localStorage.removeItem(LEGACY_SUMMARY_STORAGE_KEY);
+  // Compute everything in memory first; commit to the local cache only AFTER the
+  // durable Firestore write succeeds. Upsert-by-id keeps retries idempotent.
+  const priorInsights = readSessionInsights().filter(existing => existing.id !== insight.id);
+  const insights = [...priorInsights, insight];
 
   let model: UserUnderstandingModel | null = null;
   if (insights.length >= MIN_INSIGHTS_FOR_MODEL) {
     model = buildUserUnderstandingModel(insights);
-    saveUserUnderstandingModel(model);
   }
 
   const patterns = buildSessionPatterns(insights, options.aboutMeSignals);
   const { traits: emergentTraits, meta: traitInferenceMeta } = inferEmergentTraits(patterns);
-  saveEmergentTraits(emergentTraits, traitInferenceMeta);
 
-  // Persist to Firestore if authenticated
-  console.log('[UserSummary] saveApprovedSummary called with uid:', uid, 'sessionId:', sessionId);
+  // ---- Durable persistence is AUTHORITATIVE (Reflect Durability Sprint) ----
+  // Firestore is the source of truth for retained Reflect evidence. Write it FIRST
+  // and let failures THROW so the caller (Reflect) keeps the transcript and shows
+  // its retry state — we must never silently report Keep success when the durable
+  // write failed. localStorage is only a cache and is committed afterwards.
+  console.log(
+    '[UserSummary] saveApprovedSummary called with uid:',
+    uid,
+    'sessionId:',
+    sessionId,
+    'recordId:',
+    insight.id,
+  );
   if (uid) {
-    try {
-      // Use the provided sessionId, or generate a new one if it's missing
-      const finalSessionId = sessionId || crypto.randomUUID();
-      const insightRef = doc(db, 'users', uid, 'reflectInsights', finalSessionId);
-      
-      const cleanInsight = removeUndefined(insight);
-      const cleanModel = model ? removeUndefined(model) : null;
+    const cleanInsight = removeUndefined(insight);
+    const cleanModel = model ? removeUndefined(model) : null;
 
-      console.log('[UserSummary] Attempting to write to Firestore path:', `users/${uid}/reflectInsights/${finalSessionId}`);
-      console.log('[UserSummary] Insight payload:', cleanInsight);
+    const FIRESTORE_WRITE_MS = 12_000;
 
-      const FIRESTORE_WRITE_MS = 12_000;
-      
-      await withTimeout(
-        setDoc(insightRef, {
-          ...cleanInsight,
-          updatedAt: serverTimestamp()
-        }, { merge: true }),
-        FIRESTORE_WRITE_MS,
-        'reflectInsights write',
-      );
-      
-      console.log('[UserSummary] Successfully wrote insight to reflectInsights subcollection.');
+    // One approved Reflect = one durable record, keyed by the stable insight id
+    // (NOT sessionId, which may be absent / 'unknown' and can repeat across
+    // approvals, overwriting or colliding distinct records). merge keeps a retry
+    // of the same record idempotent.
+    const insightRef = doc(db, 'users', uid, 'reflectInsights', insight.id);
+    await withTimeout(
+      setDoc(insightRef, { ...cleanInsight, updatedAt: serverTimestamp() }, { merge: true }),
+      FIRESTORE_WRITE_MS,
+      'reflectInsights write',
+    );
 
-      // Always save the latest insight to soulProfile as the current snapshot
-      // even if we don't have enough insights for a full aggregated model yet
-      const userRef = doc(db, 'users', uid);
-      const soulProfileUpdate: Record<string, unknown> = {
-        reflectModel: {
-          latestInsight: {
-            ...cleanInsight,
-            updatedAt: serverTimestamp()
-          }
-        },
-        emergentTraits,
-        traitInferenceMeta,
+    // Always save the latest insight to soulProfile as the current snapshot even
+    // if we don't have enough insights for a full aggregated model yet.
+    const userRef = doc(db, 'users', uid);
+    const soulProfileUpdate: Record<string, unknown> = {
+      reflectModel: {
+        latestInsight: { ...cleanInsight, updatedAt: serverTimestamp() },
+      },
+      emergentTraits,
+      traitInferenceMeta,
+    };
+
+    if (cleanModel) {
+      soulProfileUpdate.reflectModel = {
+        ...cleanModel,
+        updatedAt: serverTimestamp(),
+        latestInsight: (soulProfileUpdate.reflectModel as { latestInsight: unknown }).latestInsight,
       };
-
-      if (cleanModel) {
-        soulProfileUpdate.reflectModel = {
-          ...cleanModel,
-          updatedAt: serverTimestamp(),
-          latestInsight: (soulProfileUpdate.reflectModel as { latestInsight: unknown }).latestInsight
-        };
-      }
-
-      // T-301.1 — denormalized readiness pre-filter for the candidate pool.
-      // Derived from the same gate the server applies; flag is a hint, the server
-      // re-validates eligibility for every candidate it returns.
-      const readinessRI = assembleRIProfile(emergentTraits);
-      const matchReady = isEligibleToMatch(
-        readinessRI,
-        traitInferenceMeta?.insightCount ?? insights.length
-      );
-
-      console.log('[UserSummary] Attempting to update user document with soulProfileUpdate:', soulProfileUpdate, 'matchReady:', matchReady);
-      await withTimeout(
-        setDoc(
-          userRef,
-          {
-            soulProfile: soulProfileUpdate,
-            profile: {
-              matchReady,
-              updatedAt: serverTimestamp()
-            }
-          },
-          { merge: true }
-        ),
-        FIRESTORE_WRITE_MS,
-        'user soulProfile write',
-      );
-      console.log('[UserSummary] Persisted to Firestore successfully with sessionId:', finalSessionId);
-    } catch (error) {
-      console.error('[UserSummary] Failed to persist to Firestore. Full error:', error);
     }
+
+    // T-301.1 — denormalized readiness pre-filter for the candidate pool.
+    // Derived from the same gate the server applies; flag is a hint, the server
+    // re-validates eligibility for every candidate it returns.
+    const readinessRI = assembleRIProfile(emergentTraits);
+    const matchReady = isEligibleToMatch(
+      readinessRI,
+      traitInferenceMeta?.insightCount ?? insights.length,
+    );
+
+    await withTimeout(
+      setDoc(
+        userRef,
+        {
+          soulProfile: soulProfileUpdate,
+          profile: { matchReady, updatedAt: serverTimestamp() },
+        },
+        { merge: true },
+      ),
+      FIRESTORE_WRITE_MS,
+      'user soulProfile write',
+    );
+    console.log('[UserSummary] Durable persistence confirmed for record:', insight.id);
   } else {
-    console.warn('[UserSummary] No uid provided, skipping Firestore persistence.');
+    // Anonymous (no uid): no durable store exists — local-only Keep, as before.
+    console.warn('[UserSummary] No uid — local-only Keep (anonymous), no durable persistence.');
   }
 
+  // Commit the local cache only AFTER durable persistence has succeeded (or when
+  // there is no uid to persist to). If the awaited writes above threw, we never
+  // reach here and the local cache stays unchanged.
+  saveSessionInsights(insights);
+  localStorage.removeItem(LEGACY_SUMMARY_STORAGE_KEY);
+  if (model) {
+    saveUserUnderstandingModel(model);
+  }
+  saveEmergentTraits(emergentTraits, traitInferenceMeta);
+
   console.log('[UserSummary] Approved summary saved:', {
-    approvedExtraction: extraction,
-    insight,
     insightCount: insights.length,
     modelUpdated: Boolean(model),
     emergentTraitCount: emergentTraits.length,
@@ -950,11 +1019,14 @@ export function readBestAvailableMatchingProfile(): {
   return { source: 'none', profile: null, insightCount: 0 };
 }
 
-function createSessionInsight(extraction: ConversationExtraction): SessionInsight {
+function createSessionInsight(extraction: ConversationExtraction, id?: string): SessionInsight {
   const timestamp = Date.now();
 
   return {
-    id: crypto.randomUUID?.() ?? `insight_${timestamp}_${Math.random().toString(36).slice(2, 8)}`,
+    // A caller-provided id is the stable durable record id (reused across retries
+    // of the same approval — see Reflect handleConfirmSummary). One approved
+    // Reflect = one durable record.
+    id: id ?? crypto.randomUUID?.() ?? `insight_${timestamp}_${Math.random().toString(36).slice(2, 8)}`,
     source: 'reflect',
     approvedByUser: true,
     createdAt: timestamp,

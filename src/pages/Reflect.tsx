@@ -229,6 +229,17 @@ export default function Reflect() {
   /** Which ?conversation=<id> has already been restored (avoids restore loops). */
   const restoredConvoRef = useRef<string | null>(null);
 
+  /**
+   * Stable durable record id for the pending approval. Minted once per pending
+   * summary and REUSED across retries of the same Keep (so a failed-then-retried
+   * durable write upserts one record instead of duplicating). Reset whenever a new
+   * summary becomes pending. See handleConfirmSummary.
+   */
+  const pendingRecordIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    pendingRecordIdRef.current = null;
+  }, [pendingSummary]);
+
   const conversationEnded = conversationStatus === 'completed';
 
   /**
@@ -775,18 +786,29 @@ export default function Reflect() {
     setIsSavingDecision(true);
     try {
       if (pendingSummary) {
+        // Stable durable record id — reused across retries of THIS approval so a
+        // failed-then-retried Keep upserts one record instead of duplicating.
+        if (!pendingRecordIdRef.current) {
+          pendingRecordIdRef.current = crypto.randomUUID();
+        }
+        const recordId = pendingRecordIdRef.current;
+
+        // Durable persistence is authoritative: saveApprovedSummary THROWS if the
+        // Firestore write fails, so the catch below keeps the transcript and shows
+        // the retry state instead of silently reporting success.
         await saveApprovedSummary(
           pendingSummary,
           firebaseUser?.uid || seenUser?.uid,
           currentSessionId,
-          { aboutMeSignals: seenUser?.soulProfile?.aboutMeSignals },
+          { aboutMeSignals: seenUser?.soulProfile?.aboutMeSignals, recordId },
         );
         // Reflection History (Sprint 2 data capability): keep the approved
-        // reflection itself — never the transcript. Surfaced in Me in Sprint 3.
+        // reflection itself — never the transcript. Shares the durable record id.
         saveKeptReflection({
           text: pendingSummary.summaryText,
           language: effectiveLanguage === 'zh' ? 'zh' : 'en',
           sessionId: currentSessionId,
+          id: recordId,
         });
       }
     } catch (error) {
