@@ -143,10 +143,21 @@ function httpResponse(statusCode, body) {
 
 const EXPRESSION_TONES = ["真诚", "浪漫", "轻松幽默", "克制含蓄", "简单直接"];
 
+// English equivalents for each Chinese tone the client sends, so the English
+// prompt never injects a Chinese tone word (which would nudge the model toward
+// Chinese output).
+const EXPRESSION_TONES_EN = {
+  真诚: "sincere",
+  浪漫: "romantic",
+  轻松幽默: "light and playful",
+  克制含蓄: "understated and restrained",
+  简单直接: "simple and direct",
+};
+
 function buildExpressDraftPrompt({ situation, tone, language }) {
   const isZh = language !== "en";
-  const safeTone = EXPRESSION_TONES.includes(tone) ? tone : (isZh ? "真诚" : "sincere");
   if (isZh) {
+    const safeTone = EXPRESSION_TONES.includes(tone) ? tone : "真诚";
     return [
       "你在帮一个人，把一句想对某个具体的人说的话，写得更好。",
       `语气：${safeTone}。`,
@@ -157,13 +168,15 @@ function buildExpressDraftPrompt({ situation, tone, language }) {
       situation,
     ].join("\n");
   }
+  const toneEn = EXPRESSION_TONES_EN[tone] || tone || "sincere";
   return [
     "You help someone say one thing to a specific person, more beautifully.",
-    `Tone: ${safeTone}.`,
+    `Tone: ${toneEn}.`,
+    "Write every option in natural, idiomatic English — the way a native English speaker would actually say it. Never translate word-for-word from Chinese; avoid stiff, formal, or 'translated' phrasing.",
     "Write in the first person, addressed directly to the person ('you'). No letter format, no signature, no quotation marks.",
-    "Each option is 1–3 sentences, sincere and restrained, close to a real voice.",
+    "Each option is 1–3 sentences, sincere and restrained, close to a real spoken voice.",
     'Output ONLY a JSON array of exactly 3 candidate strings, e.g. ["…","…","…"]. Nothing else.',
-    "Situation:",
+    "The situation below may be written in Chinese — regardless, write ALL of your options in English:",
     situation,
   ].join("\n");
 }
