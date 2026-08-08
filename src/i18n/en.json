@@ -726,6 +726,21 @@
     "conversation_style": "Conversation Style",
     "similar_frequency": "Similar Frequency"
   },
+  "connection_origin": {
+    "title": "Met in Resonance",
+    "moment": {
+      "explanation": "Because of the choices you make in everyday life,\nyou found your way to each other.",
+      "tag": "Everyday life"
+    },
+    "reflect": {
+      "explanation": "Because of how you each understand the world,\nyou have grown closer.",
+      "tag": "Ways of understanding"
+    },
+    "both": {
+      "explanation": "Because you share both similar life choices\nand a similar way of understanding the world.",
+      "tag": "Both"
+    }
+  },
   "voice": {
     "recording": "Recording...",
     "transcribing": "Transcribing...",

@@ -47,3 +47,10 @@ export function computeMomentResonance(
   mA: MomentProfileRI,
   mB: MomentProfileRI,
 ): MomentResonanceResult;
+
+export type ConnectionOriginSource = 'moment' | 'reflect' | 'both' | 'none';
+
+export function classifyOrigin(
+  reflectScore: number,
+  momentScore: number,
+): ConnectionOriginSource;
