@@ -114,8 +114,11 @@ describe('single-step first login', () => {
     expect(onboardingSource).toContain('onboardingCompleted: true');
   });
 
-  it('the understanding sliders remain reachable under Me', () => {
-    expect(appSource).toContain("path=\"/me/understanding\"");
+  it('Me exposes the Current Understanding letter, not the old slider questionnaire', () => {
+    expect(appSource).toContain("path=\"/me/current-understanding\"");
+    // The standalone 我的理解方式 questionnaire page was removed to avoid
+    // confusion with the letter; its slider cards live only in onboarding now.
+    expect(appSource).not.toContain("path=\"/me/understanding\"");
   });
 });
 

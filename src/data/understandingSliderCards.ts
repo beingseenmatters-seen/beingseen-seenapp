@@ -1,5 +1,5 @@
 /**
- * Slider-only cards shared by onboarding Step 2 and settings/Understanding.tsx.
+ * Slider-only cards used by onboarding Step 2.
  * Same ids and 0–100 values stored under `soulProfile.understanding`.
  */
 export const UNDERSTANDING_SLIDER_CARD_DEFS = [

@@ -12,7 +12,6 @@ import WelcomeScreen from './pages/auth/WelcomeScreen';
 import AuthOptionsScreen from './pages/auth/AuthOptionsScreen';
 import EmailInputScreen from './pages/auth/EmailInputScreen';
 import EmailLinkWaitingScreen from './pages/auth/EmailLinkWaitingScreen';
-import Understanding from './pages/settings/Understanding';
 import AIResponse from './pages/settings/AIResponse';
 import PrivacyData from './pages/settings/PrivacyData';
 import AccountLanguage from './pages/settings/AccountLanguage';
@@ -152,7 +151,6 @@ function AppRoutes() {
         <Route path="/me" element={<Me />} />
       </Route>
       <Route path="/me/profile" element={<BasicProfile />} />
-      <Route path="/me/understanding" element={<Understanding />} />
       <Route path="/me/ai-response" element={<AIResponse />} />
       <Route path="/me/privacy" element={<PrivacyData />} />
       <Route path="/me/account" element={<AccountLanguage />} />
