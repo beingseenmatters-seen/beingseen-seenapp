@@ -727,17 +727,17 @@
     "similar_frequency": "Similar Frequency"
   },
   "connection_origin": {
-    "title": "Met in Resonance",
+    "title": "Met in Sync",
     "moment": {
-      "explanation": "Because of the choices you make in everyday life,\nyou found your way to each other.",
-      "tag": "Everyday life"
+      "explanation": "Because the way you move through everyday life feels similar.",
+      "tag": "Everyday Life"
     },
     "reflect": {
-      "explanation": "Because of how you each understand the world,\nyou have grown closer.",
-      "tag": "Ways of understanding"
+      "explanation": "Because the way you understand people and the world feels close.",
+      "tag": "Ways of Understanding"
     },
     "both": {
-      "explanation": "Because you share both similar life choices\nand a similar way of understanding the world.",
+      "explanation": "Because you share both similar everyday choices and similar ways of understanding.",
       "tag": "Both"
     }
   },

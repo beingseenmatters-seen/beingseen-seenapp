@@ -31,3 +31,21 @@ export function connectionOriginExplanationKey(origin: ConnectionOrigin): string
 export function connectionOriginTagKey(origin: ConnectionOrigin): string {
   return `connection_origin.${origin}.tag`;
 }
+
+/**
+ * DEV-ONLY preview override for reviewing the Connection Origin UI before the
+ * server change ships. Reads `?originPreview=moment|reflect|both` (or the
+ * `seen_dev_origin_preview` localStorage key). Compiled out of production
+ * builds (import.meta.env.DEV is statically false → dead-code eliminated), so
+ * it can never affect real users.
+ */
+export function devPreviewOrigin(): ConnectionOrigin | undefined {
+  if (!import.meta.env.DEV) return undefined;
+  try {
+    const fromQuery = new URLSearchParams(window.location.search).get('originPreview');
+    const fromStorage = window.localStorage.getItem('seen_dev_origin_preview');
+    return asConnectionOrigin(fromQuery ?? fromStorage ?? undefined);
+  } catch {
+    return undefined;
+  }
+}

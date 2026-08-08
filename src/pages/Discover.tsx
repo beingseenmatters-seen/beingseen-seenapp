@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../i18n';
 import { useAuth } from '../auth/AuthContext';
 import { getResonateCandidate, sendConnectionRequest } from '../services/connections';
-import { asConnectionOrigin } from '../services/connectionOrigin';
+import { asConnectionOrigin, devPreviewOrigin } from '../services/connectionOrigin';
 import type { CandidateProfile } from '../services/connections';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -79,7 +79,7 @@ export default function Discover() {
   const hasReasons = reasons.length > 0;
   // Connection Origin (同频遇见) — the primary, emotional explanation of why Seen
   // brought these two together, driven by the dominant understanding channel.
-  const origin = asConnectionOrigin(candidate?.source);
+  const origin = devPreviewOrigin() ?? asConnectionOrigin(candidate?.source);
 
   const fade = {
     initial: { opacity: 0, y: 6 },

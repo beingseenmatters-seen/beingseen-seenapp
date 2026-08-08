@@ -14,7 +14,7 @@ import {
   subscribeToMessages
 } from '../services/connections';
 import type { ConnectionRequest, Connection, ChatMessage } from '../services/connections';
-import { asConnectionOrigin } from '../services/connectionOrigin';
+import { asConnectionOrigin, devPreviewOrigin } from '../services/connectionOrigin';
 
 export default function Inbox() {
   const { t, effectiveLanguage } = useLanguage();
@@ -254,7 +254,7 @@ export default function Inbox() {
             <div className="px-6 py-4 bg-gray-50/50">
               <p className="text-xs text-muted mb-1 tracking-wide">{t('connection_origin.title')}</p>
               {(() => {
-                const origin = asConnectionOrigin(selectedConnection?.origin);
+                const origin = devPreviewOrigin() ?? asConnectionOrigin(selectedConnection?.origin);
                 if (!origin) return null;
                 return (
                   <>
