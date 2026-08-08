@@ -41,26 +41,25 @@ export const REFLECT_SLUG_MOVEMENT_MAP: ReflectSlugMovementMapping[] = [
     rationale: 'Needing safety/stability before closeness protects one\'s own limits and pace.' },
   { slug: 'authenticity_requires_lowered_defenses', from: 'relationshipPhilosophy', movementId: 'trust_openness', directionMultiplier: 1, strengthMultiplier: 0.8,
     rationale: 'Opening up by lowering defenses is the positive direction of trust-openness.' },
-  { slug: 'slow_bonding_reveals_truth', from: 'relationshipPhilosophy', movementId: 'delayed_expression', directionMultiplier: 1, strengthMultiplier: 0.6,
-    rationale: 'Preferring to build slowly is timing/shaping connection before releasing it.' },
-  { slug: 'relationships_change_with_context', from: 'relationshipPhilosophy', movementId: 'perspective_taking', directionMultiplier: 1, strengthMultiplier: 0.6,
-    rationale: 'Reading relationships through changing context is situation-aware perspective-taking.' },
   { slug: 'distance_can_clarify_connection', from: 'relationshipPhilosophy', movementId: 'boundary_preservation', directionMultiplier: 1, strengthMultiplier: 0.6,
     rationale: 'Using distance to clarify a bond keeps protective space around it.' },
 
   // --- worldview (meaning/behaviour beliefs) → Meaning / Behaviour movements ---
   { slug: 'meaning_must_be_built_not_received', from: 'worldview', movementId: 'meaning_orientation', directionMultiplier: 1, strengthMultiplier: 0.9,
     rationale: 'Actively building meaning rather than receiving it is the canonical meaning-orientation.' },
-  { slug: 'order_is_temporary', from: 'worldview', movementId: 'uncertainty_tolerance', directionMultiplier: 1, strengthMultiplier: 0.7,
-    rationale: 'Accepting order as impermanent is comfort with unresolved, shifting states.' },
+  { slug: 'order_is_temporary', from: 'worldview', movementId: 'uncertainty_tolerance', directionMultiplier: 1, strengthMultiplier: 0.5,
+    rationale: 'Accepting impermanence MAY support uncertainty tolerance, but the concepts are not identical — weak strength (founder review, 2026-08).' },
   { slug: 'authenticity_emerges_when_defenses_drop', from: 'worldview', movementId: 'trust_openness', directionMultiplier: 1, strengthMultiplier: 0.6,
     rationale: 'Belief that realness appears as defenses drop leans toward openness in trust.' },
 
-  // Intentionally NOT mapped (no unambiguous Movement counterpart or unclear
-  // direction): trust_cannot_be_forced, alignment_matters_more_than_intensity,
-  // belonging_is_sought_under_uncertainty, and all analytical worldview slugs
-  // (systems_follow_incentives, power_and_wealth_shape_collective_order, …) —
-  // the analytical ones belong to the Thinking facet as Reflect signals.
+  // Intentionally NOT mapped — prefer silence over a distorted claim (founder
+  // principle): trust_cannot_be_forced, alignment_matters_more_than_intensity,
+  // belonging_is_sought_under_uncertainty; and (founder review, 2026-08):
+  //   slow_bonding_reveals_truth — slow bonding is NOT delayed expression.
+  //   relationships_change_with_context — noticing context-change is NOT
+  //     necessarily taking another person's perspective.
+  // All analytical worldview slugs (systems_follow_incentives, …) belong to the
+  // Thinking facet as Reflect signals, not Movements.
 ];
 
 export function reflectMappingsForSlug(slug: string): ReflectSlugMovementMapping[] {

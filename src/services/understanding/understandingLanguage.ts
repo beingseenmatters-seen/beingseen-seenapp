@@ -17,7 +17,6 @@
 import type { MovementId } from '../../data/understanding/movements';
 
 export interface Fragment { zh: string; en: string; }
-const FOUNDER: Fragment = { zh: '', en: '' }; // authored later
 
 /** Movement fragments (Behaviour + Meaning facets). Positive-direction phrasing. */
 export const MOVEMENT_FRAGMENTS: Record<MovementId, Fragment> = {
@@ -27,19 +26,19 @@ export const MOVEMENT_FRAGMENTS: Record<MovementId, Fragment> = {
   boundary_preservation: { zh: '守着自己的节奏和边界', en: 'guard your own pace and space' },
   structure_seeking: { zh: '喜欢先有清楚的安排再往前走', en: 'like a clear plan before moving ahead' },
   responsibility_orientation: { zh: '愿意把该扛的责任扛起来', en: 'take on what is yours to carry' },
-  // --- Behaviour · relational (FOUNDER — emotionally central) ---
-  relationship_preservation: FOUNDER,
-  trust_openness: FOUNDER,
-  emotional_attunement: FOUNDER,
-  conflict_engagement: FOUNDER,
-  perspective_taking: FOUNDER,
-  // --- Meaning / Values / Orientation (FOUNDER — emotionally central) ---
-  meaning_orientation: FOUNDER,
-  autonomy_orientation: FOUNDER,
-  stability_orientation: FOUNDER,
-  change_orientation: FOUNDER,
-  openness_to_revision: FOUNDER,
-  uncertainty_tolerance: FOUNDER,
+  // --- Behaviour · relational (founder-authored, 2026-08) ---
+  relationship_preservation: { zh: '对真正在意的人，你愿意持续投入', en: 'with the people who matter, you keep showing up' },
+  trust_openness: { zh: '当防备可以慢慢放下时，你也愿意让自己更靠近一些', en: 'when your guard can slowly come down, you let yourself move a little closer' },
+  emotional_attunement: { zh: '常会留意对方没有直接说出的情绪变化', en: 'often notice shifts in feeling that the other person has not said directly' },
+  conflict_engagement: { zh: '不太回避那些值得谈开的分歧', en: 'do not tend to avoid disagreements that are worth talking through' },
+  perspective_taking: { zh: '会先试着站在对方的处境里理解', en: 'try to understand things from where the other person stands' },
+  // --- Meaning / Values / Orientation (founder-authored, 2026-08) ---
+  meaning_orientation: { zh: '更愿意自己去建立意义，而不是等它被给予', en: 'would rather build meaning yourself than wait for it to be given' },
+  autonomy_orientation: { zh: '更愿意依据自己的判断，而不是只跟随外界的声音', en: 'tend to rely on your own judgment rather than simply follow outside voices' },
+  stability_orientation: { zh: '看重安稳，也愿意守护已经建立起来的东西', en: 'value steadiness, and tend to protect what has already been built' },
+  change_orientation: { zh: '面对变化，你更愿意主动回应，而不是只是等待', en: 'when things are changing, you tend to respond actively rather than simply wait' },
+  openness_to_revision: { zh: '愿意回头修正自己的想法', en: 'stay willing to revise how you see things' },
+  uncertainty_tolerance: { zh: '能和暂时没有答案的事情相处一阵', en: 'can stay with things that do not have an answer yet' },
 };
 
 /** Thinking-facet fragments (Reflect cognitive slugs). Mostly DRAFTED. */
@@ -71,10 +70,10 @@ export const THINKING_FRAGMENTS: Record<string, Fragment> = {
   how_does_entropy_affect_connection: { zh: '在想连接如何抵抗消散', en: 'think about how connection resists coming apart' },
   how_do_power_and_wealth_shape_order: { zh: '关注权力与财富如何塑造秩序', en: 'attend to how power and wealth shape order' },
   how_do_individual_bonds_survive_systems: { zh: '在想个体关系如何在大系统中存续', en: 'wonder how personal bonds survive inside systems' },
-  what_makes_relationships_endure: FOUNDER,
-  what_allows_real_trust: FOUNDER,
-  can_loyalty_be_measured: FOUNDER,
-  how_do_relationships_change_over_time: FOUNDER,
+  what_makes_relationships_endure: { zh: '你常常在想，是什么让一段关系走得长久', en: 'you often wonder what lets a relationship last' },
+  what_allows_real_trust: { zh: '你在意，真正的信任究竟从何而来', en: 'you care about where real trust actually comes from' },
+  can_loyalty_be_measured: { zh: '你会追问，忠诚能不能被看见、被确认', en: 'you keep asking whether loyalty can ever be seen and confirmed' },
+  how_do_relationships_change_over_time: { zh: '你会留意，关系如何随时间悄悄改变', en: 'you notice how bonds quietly shift over time' },
 };
 
 /** Letter scaffold. Title/connectors/provenance DRAFTED; closing + shift FOUNDER. */
@@ -84,8 +83,9 @@ export const LETTER_SCAFFOLD = {
   open_thinking: { zh: '你', en: 'You ' },
   connect_behaviour: { zh: '这份感觉也在你与人相处时显现：你', en: 'That shows up in how you relate, too: you ' },
   connect_meaning: { zh: '再往里看，你', en: 'Underneath it, you ' },
-  closing: FOUNDER, // the final line — founder authored
-  shifting_prefix: FOUNDER, // "Seen 还在继续认识你。最近…" — founder authored
+  closing: { zh: '这份理解，还会随着时间慢慢长出来。', en: 'this understanding will keep taking shape over time.' },
+  // Tentative by rule; only rendered when there is genuine recent evidence of change.
+  shifting_prefix: { zh: '最近，Seen 似乎又多看见了一点：', en: 'lately, Seen seems to have noticed something more:' },
   provenance: { zh: '这份理解来自你的 Moments 与 Reflect，会随你继续使用而更新。', en: 'This comes from your Moments and Reflect, and updates as you keep using Seen.' },
 };
 

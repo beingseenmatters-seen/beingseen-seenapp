@@ -34,7 +34,7 @@ const DAY_MS = 86_400_000;
 const MIN_DIRECTION = 0.35; // a movement pulled below this by contradiction is not surfaced
 const MIN_WEIGHT = 0.12; // a signal below this is not yet part of "today's" understanding
 const CLEAR_WEIGHT = 0.6;
-const EMERGING_WEIGHT = 0.3;
+const EMERGING_WEIGHT = 0.4;
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
@@ -52,8 +52,13 @@ function saturate(supportSum: number): number {
 }
 
 function band(weight: number, channels: EvidenceChannel[], count: number): UnderstandingConfidence {
-  if (weight >= CLEAR_WEIGHT && (channels.length >= 2 || count >= 3)) return 'clear';
-  if (weight >= EMERGING_WEIGHT) return 'emerging';
+  // Confidence requires REINFORCEMENT, not a single strong moment — so a brand-new
+  // user (one session) stays 'forming' and the letter stays short; understanding
+  // only firms up as evidence repeats across sessions/channels ("grows over time").
+  const reinforced = channels.length >= 2 || count >= 3;
+  const twice = channels.length >= 2 || count >= 2;
+  if (weight >= CLEAR_WEIGHT && reinforced) return 'clear';
+  if (weight >= EMERGING_WEIGHT && twice) return 'emerging';
   return 'forming';
 }
 
