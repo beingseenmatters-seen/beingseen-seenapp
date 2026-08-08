@@ -18,6 +18,7 @@ import * as firestoreOps from './firestore';
 import { registerDeepLinkListener } from './deepLink';
 import { isNative, isWeb } from './platform';
 import { detachAllUserLocalStorage } from '../services/userScopedStorage';
+import { hydrateSessionInsights } from '../services/userSummary';
 import { clearNativeAuthProviders } from './providers/nativeAuthSession';
 
 // ---------------------------------------------------------------------------
@@ -223,6 +224,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'SET_USER', firebaseUser: user, seenUser });
           syncLocalStorage(seenUser);
           syncMomentLibraryRegion(seenUser, true);
+          // Reflect Durability: rebuild the local Reflect evidence cache from
+          // Firestore (SSOT) so trait inference runs over ALL historical evidence
+          // on this device — not only sessions created here. Fire-and-forget;
+          // mirrors the kept-reflections hydration on auth.
+          void hydrateSessionInsights();
         } catch (err) {
           console.error('[auth] error fetching user document:', err);
           dispatch({ type: 'SET_USER', firebaseUser: user, seenUser: null });

@@ -153,6 +153,12 @@ export function saveKeptReflection(input: {
   text: string;
   language: 'zh' | 'en';
   sessionId?: string;
+  /**
+   * Stable durable record id for this approved Reflect. When Reflect supplies it,
+   * the kept sentence shares the id of its evidence record (one approved Reflect =
+   * one durable record) and a retried Keep upserts instead of duplicating.
+   */
+  id?: string;
 }): KeptReflection | null {
   const text = input.text?.trim();
   if (!text) return null;
@@ -164,14 +170,15 @@ export function saveKeptReflection(input: {
   }
 
   const reflection: KeptReflection = {
-    id: crypto.randomUUID(),
+    id: input.id ?? crypto.randomUUID(),
     text,
     createdAt: Date.now(),
     language: input.language,
     sessionId: input.sessionId,
   };
 
-  const all = readAllForUid(uid);
+  // Upsert by id so a retried Keep (same durable record id) never duplicates.
+  const all = readAllForUid(uid).filter((r) => r.id !== reflection.id);
   all.unshift(reflection);
   writeAllForUid(uid, all);
 
