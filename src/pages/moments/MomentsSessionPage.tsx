@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { useLanguage } from '../../i18n';
 import { momentsClient } from '../../services/moments/momentsClient';
 import { syncMomentUnderstanding } from '../../services/understanding/momentEvidenceStore';
+import { refreshCurrentUnderstanding } from '../../services/understanding/currentUnderstandingStore';
 import {
   nextQuestionIndex,
   validateSelection,
@@ -90,9 +91,10 @@ export default function MomentsSessionPage() {
       if (isLast) {
         const completed = await momentsClient.completeSession(session.id, effectiveLanguage);
         // Behaviour channel: persist durable Moment Evidence + refresh the Moment
-        // matching profile so this user can be matched immediately. Fire-and-forget;
-        // never blocks the result screen, never touches Reflect/emergentTraits.
-        void syncMomentUnderstanding();
+        // matching profile so this user can be matched immediately. Then recompose
+        // "查看我的理解" from the new evidence (letter only; never touches Matching).
+        // Fire-and-forget; never blocks the result screen.
+        void syncMomentUnderstanding().then(() => refreshCurrentUnderstanding());
         navigate(`/moments/result/${completed.id}`, { replace: true });
       } else {
         setIndex(index + 1);

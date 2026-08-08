@@ -43,6 +43,7 @@ import {
 } from '../services/userSummary';
 import type { ConversationExtraction } from '../types/userSummary';
 import { saveKeptReflection } from '../services/keptReflections';
+import { refreshCurrentUnderstanding } from '../services/understanding/currentUnderstandingStore';
 import { getResonateCandidate } from '../services/connections';
 import MomentsInvitationCard from '../components/moments/MomentsInvitationCard';
 import { useMomentsInvitation } from '../hooks/useMomentsInvitation';
@@ -810,6 +811,9 @@ export default function Reflect() {
           sessionId: currentSessionId,
           id: recordId,
         });
+        // Recompose "查看我的理解" from the durable evidence (letter only; never
+        // touches Matching). Fire-and-forget — must never block the Keep.
+        void refreshCurrentUnderstanding();
       }
     } catch (error) {
       // Never falsely mark it saved — keep the sentence and decision screen.

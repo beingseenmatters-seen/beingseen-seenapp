@@ -26,6 +26,7 @@ import MomentsResultPage from './pages/moments/MomentsResultPage';
 import MySketches from './pages/me/MySketches';
 import SketchDetail from './pages/me/SketchDetail';
 import ReflectionHistory from './pages/settings/ReflectionHistory';
+import CurrentUnderstandingPage from './pages/me/CurrentUnderstanding';
 import ExpressGift from './pages/connect/ExpressGift';
 import GiftReveal from './pages/gift/GiftReveal';
 import { useGiftDeepLink } from './services/gift/giftDeepLink';
@@ -162,6 +163,7 @@ function AppRoutes() {
       <Route path="/moments/result/:sessionId" element={<MomentsResultPage />} />
       <Route path="/me/sketches" element={<MySketches />} />
       <Route path="/me/sketches/:sessionId" element={<SketchDetail />} />
+      <Route path="/me/understanding" element={<CurrentUnderstandingPage />} />
       <Route path="/me/reflect-understandings" element={<ReflectionHistory />} />
       <Route path="/connect/express" element={<ExpressGift />} />
       <Route path="/s/:token" element={<GiftReveal />} />

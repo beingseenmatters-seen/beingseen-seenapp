@@ -20,6 +20,7 @@ import { isNative, isWeb } from './platform';
 import { detachAllUserLocalStorage } from '../services/userScopedStorage';
 import { hydrateSessionInsights } from '../services/userSummary';
 import { syncMomentUnderstanding } from '../services/understanding/momentEvidenceStore';
+import { refreshCurrentUnderstanding } from '../services/understanding/currentUnderstandingStore';
 import { clearNativeAuthProviders } from './providers/nativeAuthSession';
 
 // ---------------------------------------------------------------------------
@@ -229,12 +230,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Firestore (SSOT) so trait inference runs over ALL historical evidence
           // on this device — not only sessions created here. Fire-and-forget;
           // mirrors the kept-reflections hydration on auth.
-          void hydrateSessionInsights();
           // Behaviour channel: reconcile durable Moment Evidence + the Moment
           // matching profile from this account's retained sessions (backfills
           // existing users; keeps matching correct across devices). Independent
           // of Reflect — never touches emergentTraits/matchReady.
-          void syncMomentUnderstanding();
+          // Then recompose Current Understanding from BOTH durable evidence
+          // streams (letter surface only — never touches Matching).
+          void (async () => {
+            await Promise.allSettled([hydrateSessionInsights(), syncMomentUnderstanding()]);
+            await refreshCurrentUnderstanding();
+          })();
         } catch (err) {
           console.error('[auth] error fetching user document:', err);
           dispatch({ type: 'SET_USER', firebaseUser: user, seenUser: null });
