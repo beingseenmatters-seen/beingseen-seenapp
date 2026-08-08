@@ -30,9 +30,12 @@ describe('Reflect kept understandings Me surface', () => {
     const zh = JSON.parse(read('i18n/zh.json'));
     const en = JSON.parse(read('i18n/en.json'));
     expect(zh.me.current_understanding_title).toBe('Seen 对你的理解');
-    expect(zh.me.current_understanding_cta).toBe('继续了解我');
+    // V1 polish (Task B): the placeholder card's button now opens the existing
+    // understanding surface (/me/reflect-understandings) and is relabelled — it
+    // still does NOT implement aggregated Current Understanding (asserted above).
+    expect(zh.me.current_understanding_cta).toBe('查看我的理解');
     expect(en.me.current_understanding_title).toBe('Current Understanding');
-    expect(en.me.current_understanding_cta).toBe('Keep Exploring');
+    expect(en.me.current_understanding_cta).toBe('View my understanding');
   });
 
   it('App registers the history route without wiring Evidence or soulProfile', () => {

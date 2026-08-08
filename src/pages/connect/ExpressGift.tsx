@@ -23,12 +23,26 @@ const TONES = [
   { value: '简单直接', key: 'direct' },
 ] as const;
 
+/**
+ * Situation templates — the user never starts from a blank page. Selecting one
+ * pre-conditions the AI prompt (composed into the draft request, see
+ * composeSituation). 'custom' falls back to free-text only. Labels: i18n
+ * express.situations.<key>.
+ */
+const SITUATIONS = [
+  'confession', 'birthday', 'health', 'thanks', 'apology', 'christmas',
+  'new_year', 'graduation', 'proposal', 'wedding', 'newborn', 'moving',
+  'exam', 'company_annual', 'client', 'teammate', 'coffee', 'gift', 'custom',
+] as const;
+
 /** Connect → 有句话，想送给 TA. Sender composes a message and mints a QR Gift. */
 export default function ExpressGift() {
   const navigate = useNavigate();
   const { t, effectiveLanguage } = useLanguage();
 
   const [step, setStep] = useState<Step>('compose');
+  const [situationKey, setSituationKey] = useState<string>('');
+  const [recipientName, setRecipientName] = useState('');
   const [situation, setSituation] = useState('');
   const [senderName, setSenderName] = useState('');
   const [tone, setTone] = useState<string>('真诚');
@@ -54,12 +68,33 @@ export default function ExpressGift() {
       .catch(() => setQrDataUrl(''));
   }, [result]);
 
+  // A situation must be picked; 'custom' additionally needs the free-text.
+  const isCustomSituation = situationKey === 'custom';
+  const canGenerate = situationKey !== '' && (!isCustomSituation || situation.trim().length > 0);
+
+  // Compose the picked situation + recipient + free-text into the prompt input,
+  // so selecting a situation pre-conditions the AI (no backend change needed).
+  const composeSituation = (): string => {
+    const L =
+      effectiveLanguage === 'zh'
+        ? { scene: '情境', to: '写给', more: '补充' }
+        : { scene: 'Occasion', to: 'For', more: 'More' };
+    const label = situationKey && !isCustomSituation ? t(`express.situations.${situationKey}`) : '';
+    return [
+      label ? `${L.scene}：${label}` : '',
+      recipientName.trim() ? `${L.to}：${recipientName.trim()}` : '',
+      situation.trim() ? `${L.more}：${situation.trim()}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  };
+
   const handleGenerate = async () => {
-    if (!situation.trim()) return;
+    if (!canGenerate) return;
     setDrafting(true);
     setError(null);
     setStep('drafts');
-    const out = await draftExpressions(situation.trim(), tone, effectiveLanguage);
+    const out = await draftExpressions(composeSituation(), tone, effectiveLanguage);
     setDrafts(out);
     setDrafting(false);
   };
@@ -152,12 +187,48 @@ export default function ExpressGift() {
                 <p className="text-sm text-secondary font-light leading-relaxed">{t('express.subtitle')}</p>
               </div>
 
+              {/* Step 1 — pick a situation (never a blank page). */}
+              <div className="space-y-3">
+                <label className="text-xs text-muted font-medium">{t('express.situation_select_label')}</label>
+                <div className="flex flex-wrap gap-2">
+                  {SITUATIONS.map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setSituationKey(key)}
+                      className={clsx(
+                        'px-3.5 py-2 rounded-full text-sm font-light border transition-colors',
+                        situationKey === key
+                          ? 'bg-primary text-white border-primary'
+                          : 'bg-white text-secondary border-gray-200 hover:border-gray-300',
+                      )}
+                    >
+                      {t(`express.situations.${key}`)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* TA 的称呼 — conditions the generated message (optional). */}
               <div className="space-y-2">
-                <label className="text-xs text-muted font-medium">{t('express.situation_label')}</label>
+                <label className="text-xs text-muted font-medium">{t('express.recipient_label')}</label>
+                <input
+                  value={recipientName}
+                  onChange={(e) => setRecipientName(e.target.value)}
+                  placeholder={t('express.recipient_placeholder')}
+                  className="w-full bg-gray-50 rounded-2xl px-4 py-3 text-base text-primary placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-gray-200"
+                />
+              </div>
+
+              {/* Step 2 — free-text context (optional; required only for 自定义). */}
+              <div className="space-y-2">
+                <label className="text-xs text-muted font-medium">
+                  {isCustomSituation ? t('express.context_label_custom') : t('express.context_label')}
+                </label>
                 <textarea
                   value={situation}
                   onChange={(e) => setSituation(e.target.value)}
-                  placeholder={t('express.situation_placeholder')}
+                  placeholder={t('express.context_placeholder')}
                   className="w-full bg-gray-50 rounded-2xl p-4 text-base text-primary placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-gray-200 resize-none min-h-[120px]"
                 />
               </div>
@@ -195,7 +266,7 @@ export default function ExpressGift() {
               <div className="space-y-3 pt-2">
                 <button
                   onClick={handleGenerate}
-                  disabled={!situation.trim()}
+                  disabled={!canGenerate}
                   className="w-full py-3.5 rounded-2xl bg-primary text-white text-sm font-medium hover:bg-black disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
                 >
                   {t('express.help_write')}
