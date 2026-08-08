@@ -1293,9 +1293,16 @@ Seen · Being seen matters`;
             nickname: cData.nickname || cData.basic?.nickname || "Anonymous User",
             score: rankingScore,
             resonance,
+            reflectScore: resonance.resonanceScore,
+            momentScore: momentResonance.momentScore,
           };
         }
       }
+
+      // Developer observability: unified-pool composition (reflect vs moment).
+      console.log(
+        `[match/candidate] pool ${uid} | reflect:${reflectPool.size} moment:${momentPool.size} unified:${poolDocs.length}`,
+      );
 
       if (!best) {
         return httpResponse(200, { success: true, candidate: null, state: "no_candidate" });
@@ -1304,8 +1311,10 @@ Seen · Being seen matters`;
       const reasons = buildReasons(best.resonance);
 
       // Internal-only telemetry (server logs; never returned to client).
+      // Split the combined score into its two independent channels for audits.
       console.log(
-        `[match/candidate] ${uid} -> ${best.uid} | resonance:${best.score.toFixed(3)} reasons:${reasons.length}`,
+        `[match/candidate] ${uid} -> ${best.uid} | score:${best.score.toFixed(3)} ` +
+          `(reflect:${best.reflectScore.toFixed(3)} moment:${best.momentScore.toFixed(3)}) reasons:${reasons.length}`,
       );
 
       // Response is intentionally minimal: no traitId/name/family/confidence, no score.

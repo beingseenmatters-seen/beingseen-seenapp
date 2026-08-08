@@ -32,6 +32,7 @@ import { momentsClient } from '../moments/momentsClient';
 import type { UnderstandingEvidence } from '../../types/evidence';
 import { createMomentEvidenceFromSession } from './momentEvidence';
 import { buildMomentProfileFromEvidence, isMomentReady } from './momentMatchingProfile';
+import { logMomentPipelineDiagnostics } from './momentDiagnostics';
 
 const FIRESTORE_WRITE_MS = 12_000;
 /** Stay well under Firestore's 500-write batch limit. */
@@ -90,6 +91,9 @@ export async function syncMomentUnderstanding(): Promise<void> {
     const snapshot = await getDocs(evidenceCollection);
     const allEvidence = snapshot.docs.map((d) => d.data() as UnderstandingEvidence);
     const profile = buildMomentProfileFromEvidence(allEvidence);
+
+    // Developer observability (opt-in, dev only): full pipeline snapshot.
+    logMomentPipelineDiagnostics(uid, retained, profile);
 
     await withTimeout(
       setDoc(
