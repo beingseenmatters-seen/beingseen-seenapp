@@ -163,7 +163,7 @@ function AppRoutes() {
       <Route path="/moments/result/:sessionId" element={<MomentsResultPage />} />
       <Route path="/me/sketches" element={<MySketches />} />
       <Route path="/me/sketches/:sessionId" element={<SketchDetail />} />
-      <Route path="/me/understanding" element={<CurrentUnderstandingPage />} />
+      <Route path="/me/current-understanding" element={<CurrentUnderstandingPage />} />
       <Route path="/me/reflect-understandings" element={<ReflectionHistory />} />
       <Route path="/connect/express" element={<ExpressGift />} />
       <Route path="/s/:token" element={<GiftReveal />} />

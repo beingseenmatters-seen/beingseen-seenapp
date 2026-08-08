@@ -101,7 +101,7 @@ export default function Me() {
             </div>
             <button
               type="button"
-              onClick={() => navigate('/me/understanding')}
+              onClick={() => navigate('/me/current-understanding')}
               className="w-full py-3 rounded-xl border border-stone-200 text-primary text-sm font-medium hover:bg-stone-50 transition-colors"
             >
               {t('me.current_understanding_cta')}
