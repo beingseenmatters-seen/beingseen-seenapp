@@ -9,6 +9,14 @@
       ]
     },
     {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "profile.momentReady", "order": "ASCENDING" },
+        { "fieldPath": "profile.updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "giftMessages",
       "queryScope": "COLLECTION",
       "fields": [

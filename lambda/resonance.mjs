@@ -172,6 +172,65 @@ export function computeResonance(riA, riB) {
   };
 }
 
+// ===========================================================================
+// Moment channel (Behaviour / first-touch) — SECOND, INDEPENDENT evidence stream.
+//
+// Progressive understanding: Moments make a user matchable immediately; Reflect
+// deepens matching as it accumulates. The two channels are scored separately in
+// their own vocabularies (traits vs Movements) and combined additively at the
+// ranking seam — there is NO trait↔movement bridge and the Reflect path above is
+// untouched. Weighting is deliberately trivial for V1 (an internal detail that
+// evolves with production data).
+// ===========================================================================
+
+/** Minimum meaningful Movements for the Moment channel to gate a user in. Internal. */
+const MIN_MOMENT_MOVEMENTS = 2;
+
+/** Normalize a denormalized momentProfile into the shape the Moment channel scores. */
+export function assembleMomentProfile(momentProfile) {
+  const raw = Array.isArray(momentProfile?.movements) ? momentProfile.movements : [];
+  const movements = [];
+  for (const m of raw) {
+    if (!m || typeof m.movementId !== "string") continue;
+    const weight = clamp(typeof m.weight === "number" ? m.weight : 0, 0, 1);
+    if (weight <= 0) continue;
+    movements.push({
+      movementId: m.movementId,
+      direction: clamp(typeof m.direction === "number" ? m.direction : 0, -1, 1),
+      weight,
+    });
+  }
+  return { movements };
+}
+
+/** Behaviour-channel readiness — Moments alone can qualify a user for matching. */
+export function isMomentEligible(momentRI) {
+  return (momentRI?.movements?.length || 0) >= MIN_MOMENT_MOVEMENTS;
+}
+
+/**
+ * Resonance between two Moment profiles: shared Movements expressed in the SAME
+ * direction (same side of the movement). Deliberately simple for V1 — no related-
+ * movement complements yet.
+ */
+export function computeMomentResonance(mA, mB) {
+  const byId = new Map((mB?.movements || []).map((m) => [m.movementId, m]));
+  let raw = 0;
+  const sharedHits = [];
+  for (const a of mA?.movements || []) {
+    const b = byId.get(a.movementId);
+    if (!b) continue;
+    // Same movement AND same side of it → genuine shared behaviour.
+    if ((a.direction >= 0) !== (b.direction >= 0)) continue;
+    const contribution = Math.min(a.weight, b.weight);
+    if (contribution <= 0) continue;
+    raw += contribution;
+    sharedHits.push({ movementId: a.movementId, contribution });
+  }
+  const momentScore = raw / (1 + raw); // monotonic squash → [0,1), internal only
+  return { momentScore, detail: { sharedHits } };
+}
+
 // --- Reason copy (W5) — motion/tendency language, no ids/names/numbers -------
 const SHARED_FAMILY_COPY = {
   Thinking: [

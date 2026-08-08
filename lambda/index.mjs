@@ -25,6 +25,9 @@ import {
   isEligibleToMatch,
   computeResonance,
   buildReasons,
+  assembleMomentProfile,
+  isMomentEligible,
+  computeMomentResonance,
 } from "./resonance.mjs";
 import {
   REFLECT_MODE_PROMPT_VERSION,
@@ -1205,8 +1208,11 @@ Seen · Being seen matters`;
         mySoul.reflectModel?.sourceInsightCount ??
         (mySoul.latestInsight ? 1 : 0);
       const myRI = assembleRIProfile(mySoul.emergentTraits);
+      const myMoment = assembleMomentProfile(myData.momentProfile);
 
-      if (!isEligibleToMatch(myRI, myInsightCount)) {
+      // Unified pool, progressive understanding: EITHER evidence channel makes the
+      // viewer matchable. Moments start understanding; Reflect deepens it.
+      if (!isEligibleToMatch(myRI, myInsightCount) && !isMomentEligible(myMoment)) {
         return httpResponse(200, { success: true, candidate: null, state: "viewer_not_ready" });
       }
 
@@ -1225,22 +1231,41 @@ Seen · Being seen matters`;
         console.warn("[match/candidate] exclusion read failed:", exErr?.message);
       }
 
-      // 3. Candidate pool (server-side, capped). Rank on resonance.
-      // T-301.1 — pre-filter on the denormalized readiness flag + recency so cold
-      // profiles are never loaded. Per-candidate isEligibleToMatch below remains the
-      // authoritative gate (the flag is only a query optimization).
+      // 3. Candidate pool (server-side, capped). ONE unified pool: a user is a
+      // candidate if EITHER channel is ready — Reflect (profile.matchReady) OR
+      // Moments (profile.momentReady). The two flags are written by independent
+      // producers; we union them here so there is a single Discover population.
+      // Per-candidate gates below remain authoritative (flags are a query pre-filter).
       const POOL_CAP = 500;
-      const poolSnap = await fdb
-        .collection("users")
-        .where("profile.matchReady", "==", true)
-        .orderBy("profile.updatedAt", "desc")
-        .limit(POOL_CAP)
-        .get();
+      const [reflectPool, momentPool] = await Promise.all([
+        fdb
+          .collection("users")
+          .where("profile.matchReady", "==", true)
+          .orderBy("profile.updatedAt", "desc")
+          .limit(POOL_CAP)
+          .get(),
+        fdb
+          .collection("users")
+          .where("profile.momentReady", "==", true)
+          .orderBy("profile.updatedAt", "desc")
+          .limit(POOL_CAP)
+          .get(),
+      ]);
+
+      const seenPool = new Set();
+      const poolDocs = [];
+      for (const snap of [reflectPool, momentPool]) {
+        snap.forEach((docSnap) => {
+          if (seenPool.has(docSnap.id)) return;
+          seenPool.add(docSnap.id);
+          poolDocs.push(docSnap);
+        });
+      }
 
       let best = null; // { uid, nickname, score, resonance }
-      poolSnap.forEach((docSnap) => {
+      for (const docSnap of poolDocs) {
         const cuid = docSnap.id;
-        if (excluded.has(cuid)) return;
+        if (excluded.has(cuid)) continue;
 
         const cData = docSnap.data() || {};
         const cSoul = cData.soulProfile || {};
@@ -1249,19 +1274,35 @@ Seen · Being seen matters`;
           cSoul.reflectModel?.sourceInsightCount ??
           (cSoul.latestInsight ? 1 : 0);
         const cRI = assembleRIProfile(cSoul.emergentTraits);
-        if (!isEligibleToMatch(cRI, cInsightCount)) return;
+        const cMoment = assembleMomentProfile(cData.momentProfile);
 
+        // Eligible via EITHER channel.
+        const reflectOk = isEligibleToMatch(cRI, cInsightCount);
+        if (!reflectOk && !isMomentEligible(cMoment)) continue;
+
+        // Two independent scores, each in its own vocabulary; combined additively.
+        // Reflect deepens (adds signal) rather than unlocks. Weighting is an
+        // internal detail and will evolve with production data.
         const resonance = computeResonance(myRI, cRI);
-        const rankingScore = resonance.resonanceScore; // recency hook = 1.0 for V1
+        const momentResonance = computeMomentResonance(myMoment, cMoment);
+        const rankingScore = resonance.resonanceScore + momentResonance.momentScore;
+
         if (!best || rankingScore > best.score) {
           best = {
             uid: cuid,
             nickname: cData.nickname || cData.basic?.nickname || "Anonymous User",
             score: rankingScore,
             resonance,
+            reflectScore: resonance.resonanceScore,
+            momentScore: momentResonance.momentScore,
           };
         }
-      });
+      }
+
+      // Developer observability: unified-pool composition (reflect vs moment).
+      console.log(
+        `[match/candidate] pool ${uid} | reflect:${reflectPool.size} moment:${momentPool.size} unified:${poolDocs.length}`,
+      );
 
       if (!best) {
         return httpResponse(200, { success: true, candidate: null, state: "no_candidate" });
@@ -1270,8 +1311,10 @@ Seen · Being seen matters`;
       const reasons = buildReasons(best.resonance);
 
       // Internal-only telemetry (server logs; never returned to client).
+      // Split the combined score into its two independent channels for audits.
       console.log(
-        `[match/candidate] ${uid} -> ${best.uid} | resonance:${best.score.toFixed(3)} reasons:${reasons.length}`,
+        `[match/candidate] ${uid} -> ${best.uid} | score:${best.score.toFixed(3)} ` +
+          `(reflect:${best.reflectScore.toFixed(3)} moment:${best.momentScore.toFixed(3)}) reasons:${reasons.length}`,
       );
 
       // Response is intentionally minimal: no traitId/name/family/confidence, no score.

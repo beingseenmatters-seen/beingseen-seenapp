@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { useLanguage } from '../../i18n';
 import { momentsClient } from '../../services/moments/momentsClient';
+import { syncMomentUnderstanding } from '../../services/understanding/momentEvidenceStore';
 import {
   nextQuestionIndex,
   validateSelection,
@@ -88,6 +89,10 @@ export default function MomentsSessionPage() {
       setSession({ ...updated });
       if (isLast) {
         const completed = await momentsClient.completeSession(session.id, effectiveLanguage);
+        // Behaviour channel: persist durable Moment Evidence + refresh the Moment
+        // matching profile so this user can be matched immediately. Fire-and-forget;
+        // never blocks the result screen, never touches Reflect/emergentTraits.
+        void syncMomentUnderstanding();
         navigate(`/moments/result/${completed.id}`, { replace: true });
       } else {
         setIndex(index + 1);

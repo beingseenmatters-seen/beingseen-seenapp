@@ -18,3 +18,32 @@ export function assembleRIProfile(
 ): RIProfile;
 
 export function isEligibleToMatch(ri: RIProfile, insightCount: number): boolean;
+
+export interface ResonanceResult {
+  resonanceScore: number;
+  detail: unknown;
+}
+
+export function computeResonance(riA: RIProfile, riB: RIProfile): ResonanceResult;
+
+// --- Moment channel (Behaviour / first-touch) — second, independent stream ---
+
+export interface MomentProfileRI {
+  movements: Array<{ movementId: string; direction: number; weight: number }>;
+}
+
+export function assembleMomentProfile(
+  momentProfile: unknown,
+): MomentProfileRI;
+
+export function isMomentEligible(momentRI: MomentProfileRI): boolean;
+
+export interface MomentResonanceResult {
+  momentScore: number;
+  detail: { sharedHits: Array<{ movementId: string; contribution: number }> };
+}
+
+export function computeMomentResonance(
+  mA: MomentProfileRI,
+  mB: MomentProfileRI,
+): MomentResonanceResult;
