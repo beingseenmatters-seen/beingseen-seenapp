@@ -44,6 +44,7 @@ export const USER_SCOPED_KEY_PREFIXES = [
   'seen_kept_reflections_v2_',
   'seen_last_reflect_mode_v1_',
   'seen_moments_invite_v1_',
+  'seen_current_understanding_v1_',
 ] as const;
 
 const SESSION_SCOPED_KEY_PREFIXES = ['seen_moments_invite_session_hidden_v1_'] as const;
