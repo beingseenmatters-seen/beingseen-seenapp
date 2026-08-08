@@ -28,6 +28,7 @@ import {
   assembleMomentProfile,
   isMomentEligible,
   computeMomentResonance,
+  classifyOrigin,
 } from "./resonance.mjs";
 import {
   REFLECT_MODE_PROMPT_VERSION,
@@ -1310,20 +1311,26 @@ Seen · Being seen matters`;
 
       const reasons = buildReasons(best.resonance);
 
+      // Connection Origin (同频遇见): internal channel classification, derived from
+      // the two scores already on `best`. Explainability only — no scoring change.
+      const source = classifyOrigin(best.reflectScore, best.momentScore);
+
       // Internal-only telemetry (server logs; never returned to client).
       // Split the combined score into its two independent channels for audits.
       console.log(
         `[match/candidate] ${uid} -> ${best.uid} | score:${best.score.toFixed(3)} ` +
-          `(reflect:${best.reflectScore.toFixed(3)} moment:${best.momentScore.toFixed(3)}) reasons:${reasons.length}`,
+          `(reflect:${best.reflectScore.toFixed(3)} moment:${best.momentScore.toFixed(3)}) origin:${source} reasons:${reasons.length}`,
       );
 
       // Response is intentionally minimal: no traitId/name/family/confidence, no score.
+      // `source` is the Connection Origin channel; the user-facing copy lives client-side.
       return httpResponse(200, {
         success: true,
         candidate: {
           uid: best.uid,
           nickname: best.nickname,
           reasons,
+          source,
         },
       });
     } catch (error) {

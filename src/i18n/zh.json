@@ -726,6 +726,21 @@
     "conversation_style": "沟通风格",
     "similar_frequency": "同频共振"
   },
+  "connection_origin": {
+    "title": "同频遇见",
+    "moment": {
+      "explanation": "因为生活中的选择，\n让你们走到了一起。",
+      "tag": "生活场景"
+    },
+    "reflect": {
+      "explanation": "因为理解世界的方式，\n让你们彼此靠近。",
+      "tag": "理解方式"
+    },
+    "both": {
+      "explanation": "因为你们既有相似的生活选择，\n也有相近的理解方式。",
+      "tag": "共同形成"
+    }
+  },
   "voice": {
     "recording": "录音中…",
     "transcribing": "正在转写…",

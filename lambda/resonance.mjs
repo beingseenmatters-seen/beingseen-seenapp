@@ -231,6 +231,19 @@ export function computeMomentResonance(mA, mB) {
   return { momentScore, detail: { sharedHits } };
 }
 
+// --- Connection Origin (同频遇见) — internal channel classification -----------
+// Explainability only: which understanding channel brought two people together.
+// Pure read of the two scores already computed; NEVER changes ranking/scoring.
+const ORIGIN_EPS = 1e-9;
+export function classifyOrigin(reflectScore, momentScore) {
+  const r = (reflectScore || 0) > ORIGIN_EPS;
+  const m = (momentScore || 0) > ORIGIN_EPS;
+  if (r && m) return "both"; // 共同形成
+  if (m) return "moment"; // 生活场景
+  if (r) return "reflect"; // 理解方式
+  return "none"; // no shared channel — UI falls back gracefully
+}
+
 // --- Reason copy (W5) — motion/tendency language, no ids/names/numbers -------
 const SHARED_FAMILY_COPY = {
   Thinking: [

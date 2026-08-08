@@ -14,6 +14,7 @@ import {
   subscribeToMessages
 } from '../services/connections';
 import type { ConnectionRequest, Connection, ChatMessage } from '../services/connections';
+import { asConnectionOrigin, devPreviewOrigin } from '../services/connectionOrigin';
 
 export default function Inbox() {
   const { t, effectiveLanguage } = useLanguage();
@@ -248,22 +249,24 @@ export default function Inbox() {
               </button>
             </div>
 
-            {/* Connection Reason Banner */}
+            {/* Connection Origin (同频遇见): branded title + emotional explanation
+                (primary) + category tag (secondary). */}
             <div className="px-6 py-4 bg-gray-50/50">
-               <p className="text-xs text-muted mb-2">{t('inbox.connection_reason')}</p>
-               <div className="flex flex-wrap gap-2">
-                 {selectedConnection?.matchReasons && selectedConnection.matchReasons.length > 0 ? (
-                   selectedConnection.matchReasons.map((reasonKey, idx) => (
-                     <span key={idx} className="px-2 py-1 bg-white border border-gray-100 rounded text-xs text-secondary">
-                       {t(`match_reasons.${reasonKey}`)}
-                     </span>
-                   ))
-                 ) : (
-                   <span className="px-2 py-1 bg-white border border-gray-100 rounded text-xs text-secondary">
-                     {t('match_reasons.similar_frequency')}
-                   </span>
-                 )}
-               </div>
+              <p className="text-xs text-muted mb-1 tracking-wide">{t('connection_origin.title')}</p>
+              {(() => {
+                const origin = devPreviewOrigin() ?? asConnectionOrigin(selectedConnection?.origin);
+                if (!origin) return null;
+                return (
+                  <>
+                    <p className="text-sm text-primary font-light leading-relaxed whitespace-pre-line mb-2">
+                      {t(`connection_origin.${origin}.explanation`)}
+                    </p>
+                    <span className="inline-block px-2 py-1 bg-white border border-gray-100 rounded-full text-xs text-secondary">
+                      {t(`connection_origin.${origin}.tag`)}
+                    </span>
+                  </>
+                );
+              })()}
             </div>
 
             {/* Messages */}

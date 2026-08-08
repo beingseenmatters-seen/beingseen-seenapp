@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../i18n';
 import { useAuth } from '../auth/AuthContext';
 import { getResonateCandidate, sendConnectionRequest } from '../services/connections';
+import { asConnectionOrigin, devPreviewOrigin } from '../services/connectionOrigin';
 import type { CandidateProfile } from '../services/connections';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -76,6 +77,9 @@ export default function Discover() {
 
   const reasons = candidate?.reasonsLocalized || [];
   const hasReasons = reasons.length > 0;
+  // Connection Origin (同频遇见) — the primary, emotional explanation of why Seen
+  // brought these two together, driven by the dominant understanding channel.
+  const origin = devPreviewOrigin() ?? asConnectionOrigin(candidate?.source);
 
   const fade = {
     initial: { opacity: 0, y: 6 },
@@ -102,6 +106,7 @@ export default function Discover() {
       'You both reflect deeply on similar themes.',
       null,
       reasonStrings,
+      candidate.source,
     );
     setIsSending(false);
     setStage(success ? 'sent' : 'still');
@@ -151,7 +156,21 @@ export default function Discover() {
                   {candidate?.nickname && (
                     <p className="text-sm text-secondary font-light">{candidate.nickname}</p>
                   )}
-                  {hasReasons ? (
+                  {origin ? (
+                    // Connection Origin (同频遇见): title + emotional explanation
+                    // (primary) + category tag (secondary cue).
+                    <div className="space-y-3">
+                      <p className="text-sm text-secondary font-light tracking-wide">
+                        {t('connection_origin.title')}
+                      </p>
+                      <p className="text-xl text-primary font-light leading-relaxed whitespace-pre-line">
+                        {t(`connection_origin.${origin}.explanation`)}
+                      </p>
+                      <span className="inline-block px-2 py-1 rounded-full border border-gray-100 text-xs text-muted">
+                        {t(`connection_origin.${origin}.tag`)}
+                      </span>
+                    </div>
+                  ) : hasReasons ? (
                     reasons.map((r, i) => (
                       <p key={i} className="text-xl text-primary font-light leading-relaxed">
                         {isZh ? r.zh : r.en}

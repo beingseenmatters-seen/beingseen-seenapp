@@ -726,6 +726,21 @@
     "conversation_style": "Conversation Style",
     "similar_frequency": "Similar Frequency"
   },
+  "connection_origin": {
+    "title": "Met in Sync",
+    "moment": {
+      "explanation": "Because the way you move through everyday life feels similar.",
+      "tag": "Everyday Life"
+    },
+    "reflect": {
+      "explanation": "Because the way you understand people and the world feels close.",
+      "tag": "Ways of Understanding"
+    },
+    "both": {
+      "explanation": "Because you share both similar everyday choices and similar ways of understanding.",
+      "tag": "Both"
+    }
+  },
   "voice": {
     "recording": "Recording...",
     "transcribing": "Transcribing...",

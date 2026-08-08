@@ -16,6 +16,7 @@ import { db } from './firebase';
 import type { SeenUser } from '../auth/providers/types';
 import { apiClient } from './apiClient';
 import { MATCH_CANDIDATE_API } from '../config/api';
+import { asConnectionOrigin, type ConnectionOrigin } from './connectionOrigin';
 
 export interface ConnectionRequest {
   id?: string;
@@ -25,6 +26,8 @@ export interface ConnectionRequest {
   reason: string;
   matchScore: number | null;
   matchReasons?: string[];
+  /** Connection Origin — which understanding channel brought them together. */
+  origin?: ConnectionOrigin;
   createdAt: any;
   updatedAt: any;
   // Hydrated fields for UI
@@ -38,6 +41,8 @@ export interface Connection {
   createdFromRequestId: string;
   userMap: Record<string, boolean>;
   matchReasons?: string[];
+  /** Connection Origin — carried from the originating request; shown to both users. */
+  origin?: ConnectionOrigin;
   lastMessage?: string;
   lastMessageAt?: any;
   // Hydrated fields for UI
@@ -62,6 +67,8 @@ export interface CandidateProfile {
   matchReasons?: string[];
   /** T-301: localized human-language resonance reasons from /match/candidate. */
   reasonsLocalized?: Array<{ zh: string; en: string }>;
+  /** Connection Origin — internal channel classification from /match/candidate. */
+  source?: ConnectionOrigin;
 }
 
 /**
@@ -100,6 +107,7 @@ async function getResonateCandidateServer(): Promise<CandidateProfile | null> {
       uid: c.uid,
       nickname: c.nickname,
       reasonsLocalized: Array.isArray(c.reasons) ? c.reasons : [],
+      source: asConnectionOrigin(c.source),
     };
   } catch (err) {
     console.error('[getResonateCandidateServer] failed:', err);
@@ -288,9 +296,10 @@ export async function getResonateCandidate(currentUid: string): Promise<Candidat
 export async function sendConnectionRequest(
   fromUid: string, 
   toUid: string, 
-  reason: string = 'You both reflect deeply on similar themes.', 
+  reason: string = 'You both reflect deeply on similar themes.',
   matchScore: number | null = null,
-  matchReasons: string[] = []
+  matchReasons: string[] = [],
+  origin?: ConnectionOrigin
 ): Promise<boolean> {
   console.log('[sendConnectionRequest] Called with:', { fromUid, toUid, reason, matchScore, matchReasons });
   try {
@@ -345,6 +354,7 @@ export async function sendConnectionRequest(
       reason,
       matchScore: matchScore === undefined ? null : matchScore, // Ensure no undefined values
       matchReasons: matchReasons || [],
+      ...(origin ? { origin } : {}), // Connection Origin (omit when unknown — no undefined in Firestore)
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
@@ -449,6 +459,7 @@ export async function acceptConnectionRequest(requestId: string): Promise<boolea
           [reqData.toUid]: true
         },
         matchReasons: reqData.matchReasons || [],
+        ...(reqData.origin ? { origin: reqData.origin } : {}), // carry Connection Origin to both users
         createdAt: serverTimestamp(),
         createdFromRequestId: requestId
       });
