@@ -1238,24 +1238,36 @@ Seen · Being seen matters`;
       // producers; we union them here so there is a single Discover population.
       // Per-candidate gates below remain authoritative (flags are a query pre-filter).
       const POOL_CAP = 500;
+      // Each channel's pool query is guarded INDEPENDENTLY: if one channel's
+      // composite index is missing or still building, we degrade to the other
+      // channel instead of failing the whole request. A missing index must never
+      // take matching down — the worst case is that one channel is temporarily
+      // unavailable, not a 500.
+      const safePool = async (field) => {
+        try {
+          return await fdb
+            .collection("users")
+            .where(field, "==", true)
+            .orderBy("profile.updatedAt", "desc")
+            .limit(POOL_CAP)
+            .get();
+        } catch (poolErr) {
+          console.warn(
+            `[match/candidate] pool query ${field} failed (degrading to other channel):`,
+            poolErr?.code || poolErr?.message,
+          );
+          return null;
+        }
+      };
       const [reflectPool, momentPool] = await Promise.all([
-        fdb
-          .collection("users")
-          .where("profile.matchReady", "==", true)
-          .orderBy("profile.updatedAt", "desc")
-          .limit(POOL_CAP)
-          .get(),
-        fdb
-          .collection("users")
-          .where("profile.momentReady", "==", true)
-          .orderBy("profile.updatedAt", "desc")
-          .limit(POOL_CAP)
-          .get(),
+        safePool("profile.matchReady"),
+        safePool("profile.momentReady"),
       ]);
 
       const seenPool = new Set();
       const poolDocs = [];
       for (const snap of [reflectPool, momentPool]) {
+        if (!snap) continue;
         snap.forEach((docSnap) => {
           if (seenPool.has(docSnap.id)) return;
           seenPool.add(docSnap.id);
@@ -1302,7 +1314,7 @@ Seen · Being seen matters`;
 
       // Developer observability: unified-pool composition (reflect vs moment).
       console.log(
-        `[match/candidate] pool ${uid} | reflect:${reflectPool.size} moment:${momentPool.size} unified:${poolDocs.length}`,
+        `[match/candidate] pool ${uid} | reflect:${reflectPool?.size ?? "ERR"} moment:${momentPool?.size ?? "ERR"} unified:${poolDocs.length}`,
       );
 
       if (!best) {
