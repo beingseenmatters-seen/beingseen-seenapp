@@ -260,8 +260,49 @@ export async function retrieveGift({ db, body, now = Date.now() }) {
       tone: rec.tone ?? null,
       createdAt: rec.createdAt,
       redeemedAt,
+      // Invitation RSVP state, when one has been recorded (null otherwise) —
+      // lets a reopened invitation show the answer already given.
+      rsvpStatus: rec.rsvpStatus ?? null,
+      rsvpAt: rec.rsvpAt ?? null,
     },
   };
+}
+
+/**
+ * POST /gift/rsvp — app-key only, no account (an Invitation receiver responds
+ * without signing in; this is intentional).
+ *
+ * The retrieval key doubles as proof the responder actually opened the
+ * invitation: the UI only offers RSVP after a successful unlock, so a wrong
+ * key here is a client fault rather than a guessing attack — no
+ * failed-attempt escalation, just a plain 401 (retrieve remains the only
+ * guarded door). Responding again is allowed and simply replaces the answer;
+ * rsvpAt always reflects the latest response.
+ */
+export async function rsvpGift({ db, body, now = Date.now() }) {
+  const token = typeof body?.token === "string" ? body.token.trim() : "";
+  const key = normalizeKey(body?.key);
+  const status =
+    body?.status === "accepted" || body?.status === "declined" ? body.status : null;
+  if (!token || !status) return { status: 400, body: { error: "invalid_request" } };
+
+  const tokenHash = sha256Hex(token);
+  const ref = db.collection(GIFT_COLLECTION).doc(tokenHash);
+  const snap = await ref.get();
+  if (!snap.exists) return { status: 404, body: { error: "not_found" } };
+
+  const rec = snap.data();
+  if (rec.revoked) return { status: 410, body: { error: "revoked" } };
+  if (rec.expiresAt && now > rec.expiresAt) return { status: 410, body: { error: "expired" } };
+  if (rec.lockedUntil && now < rec.lockedUntil) {
+    return { status: 423, body: { error: "locked", lockedUntil: rec.lockedUntil } };
+  }
+  if (!(key.length > 0 && giftCrypto.verifyKey(key, rec.keySalt, rec.keyHash))) {
+    return { status: 401, body: { error: "invalid_key" } };
+  }
+
+  await ref.update({ rsvpStatus: status, rsvpAt: now });
+  return { status: 200, body: { ok: true, rsvpStatus: status, rsvpAt: now } };
 }
 
 /** POST /gift/revoke — sender-only. The only way a Gift becomes inaccessible. */

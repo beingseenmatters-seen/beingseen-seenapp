@@ -41,7 +41,7 @@ import {
   parseExtractionContent,
   toExtractResponsePayload,
 } from "./reflectModes.mjs";
-import { createGift, retrieveGift, revokeGift } from "./gift.mjs";
+import { createGift, retrieveGift, revokeGift, rsvpGift } from "./gift.mjs";
 
 // ========================
 // Version & Constants
@@ -905,6 +905,10 @@ export const handler = async (event) => {
   }
   if (path === "/gift/retrieve") {
     const result = await retrieveGift({ db: admin.firestore(), body });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/gift/rsvp") {
+    const result = await rsvpGift({ db: admin.firestore(), body });
     return httpResponse(result.status, result.body);
   }
   if (path === "/gift/revoke") {
