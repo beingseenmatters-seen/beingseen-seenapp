@@ -42,6 +42,12 @@ import {
   toExtractResponsePayload,
 } from "./reflectModes.mjs";
 import { createGift, retrieveGift, revokeGift, rsvpGift } from "./gift.mjs";
+import {
+  createHandoff,
+  inspectHandoff,
+  redeemHandoff,
+  allHandoffOrigins,
+} from "./authHandoff.mjs";
 
 // ========================
 // Version & Constants
@@ -857,7 +863,31 @@ function calculateSoulSimilarity(soul1, soul2) {
 // Lambda Handler
 // ========================
 
+// MATTERS SSO handoff routes get origin-restricted CORS (not the global `*`).
+// Only genuine MATTERS origins (plus explicit HANDOFF_DEV_ORIGINS) are echoed.
+function handoffResponse(statusCode, body, event) {
+  const origin = event.headers?.origin || event.headers?.Origin || "";
+  const allowed = allHandoffOrigins().includes(origin) ? origin : null;
+  const headers = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Seen-App-Key,Accept,Origin",
+    "Access-Control-Allow-Methods": "POST,OPTIONS",
+    "Vary": "Origin",
+  };
+  if (allowed) headers["Access-Control-Allow-Origin"] = allowed;
+  return { statusCode, headers, body: JSON.stringify(body) };
+}
+
 export const handler = async (event) => {
+  // MATTERS SSO handoff preflight — must run before the generic `*` OPTIONS block.
+  {
+    const method = event.requestContext?.http?.method || event.httpMethod;
+    const p = event.requestContext?.http?.path || event.rawPath || event.path || "";
+    if (method === "OPTIONS" && p.startsWith("/auth/handoff/")) {
+      return handoffResponse(200, { ok: true }, event);
+    }
+  }
+
   // CORS preflight
   if (
     event.requestContext?.http?.method === "OPTIONS" || 
@@ -918,6 +948,47 @@ export const handler = async (event) => {
   }
   if (path === "/express/draft") {
     return await handleExpressDraft(body);
+  }
+
+  // ---- MATTERS SSO handoff (Phase 1 Rev.2) --------------------------------
+  // One-time cross-subdomain identity handoff. IDENTITY ONLY — no product
+  // data is read or written. create requires the www user's ID token;
+  // inspect requires the DESTINATION's local user's ID token; redeem is
+  // app-key-only (the unguessable single-use code is the credential).
+  {
+    const handoffCommon = () => ({
+      db: admin.firestore(),
+      origin: event.headers?.origin || event.headers?.Origin || "",
+      sourceIp: event.requestContext?.http?.sourceIp || null,
+    });
+    if (path === "/auth/handoff/create") {
+      const decoded = await verifyAuthToken(event);
+      const result = await createHandoff({
+        ...handoffCommon(),
+        decoded,
+        body,
+        makeExpireTimestamp: (ms) => admin.firestore.Timestamp.fromMillis(ms),
+      });
+      return handoffResponse(result.status, result.body, event);
+    }
+    if (path === "/auth/handoff/inspect") {
+      const decoded = await verifyAuthToken(event);
+      const result = await inspectHandoff({
+        ...handoffCommon(),
+        authAdmin: admin.auth(),
+        decoded,
+        body,
+      });
+      return handoffResponse(result.status, result.body, event);
+    }
+    if (path === "/auth/handoff/redeem") {
+      const result = await redeemHandoff({
+        ...handoffCommon(),
+        authAdmin: admin.auth(),
+        body,
+      });
+      return handoffResponse(result.status, result.body, event);
+    }
   }
 
   // Route: /test/push

@@ -52,6 +52,14 @@ if [ ! -f gift.mjs ]; then
   echo "ERROR: gift.mjs runtime module is missing — refusing to package." >&2
   exit 1
 fi
+if ! grep -q 'from "./authHandoff.mjs"' index.mjs; then
+  echo "ERROR: index.mjs is missing the ./authHandoff.mjs import (MATTERS SSO handoff) — refusing to package." >&2
+  exit 1
+fi
+if [ ! -f authHandoff.mjs ]; then
+  echo "ERROR: authHandoff.mjs runtime module is missing — refusing to package." >&2
+  exit 1
+fi
 
 echo "4. Creating zip file (index.mjs stays canonical; no overwrite)..."
 # Explicit include list — runtime modules only. *.test.mjs is never listed and
@@ -59,6 +67,7 @@ echo "4. Creating zip file (index.mjs stays canonical; no overwrite)..."
 zip -r "$PACKAGE" \
   index.mjs \
   gift.mjs \
+  authHandoff.mjs \
   reflect-handler.mjs \
   reflectModes.mjs \
   resonance.mjs \
