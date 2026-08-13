@@ -777,5 +777,13 @@
     "error_generic": "录音出了点问题，请重试",
     "error_transcribe": "转写失败，请重试",
     "retry": "重试"
+  },
+  "sso": {
+    "currentIntro": "Seen 当前登录的是",
+    "continueAs": "以此账户继续：",
+    "keepUsing": "继续使用",
+    "otherAccount": "另一个账户",
+    "expired": "该登录链接已失效。你可以继续使用当前账户。",
+    "close": "好的"
   }
 }

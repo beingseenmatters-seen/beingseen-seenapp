@@ -777,5 +777,13 @@
     "error_generic": "Something went wrong, please try again",
     "error_transcribe": "Transcription failed, please try again",
     "retry": "Retry"
+  },
+  "sso": {
+    "currentIntro": "Seen is currently signed in as",
+    "continueAs": "Continue as",
+    "keepUsing": "Keep using",
+    "otherAccount": "the other account",
+    "expired": "That sign-in link is no longer valid. You can keep using Seen as you are.",
+    "close": "OK"
   }
 }
