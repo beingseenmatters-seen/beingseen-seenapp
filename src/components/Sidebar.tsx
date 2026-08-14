@@ -45,9 +45,18 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* Logo + Toggle */}
       <div className="flex items-center justify-between px-4 h-14 shrink-0">
         {!collapsed && (
-          <span className="text-lg font-light tracking-widest text-gray-800 uppercase select-none">
-            Seen
-          </span>
+          <a
+            href="https://www.beingseenmatters.com/"
+            aria-label="Being Seen Matters — Home"
+            className="flex items-baseline gap-1.5 select-none transition-opacity hover:opacity-70"
+          >
+            <span className="text-lg font-bold tracking-tight text-[#F4685A] leading-none">
+              seen
+            </span>
+            <span className="text-[9px] font-medium uppercase tracking-[0.3em] text-stone-500 leading-none">
+              Matters
+            </span>
+          </a>
         )}
         <button
           onClick={onToggle}
