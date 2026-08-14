@@ -398,3 +398,264 @@ test("accessMode: direct invitation RSVPs without a key; heart_key RSVP still re
   const withKey = await rsvpGift({ db, body: { token: keyed.body.token, key: "080216", status: "declined" }, now: 2500 });
   assert.equal(withKey.status, 200);
 });
+
+// --- Structured Occasion (Wedding V1) ---------------------------------------
+
+function weddingOccasion(overrides = {}) {
+  return {
+    type: "wedding",
+    version: 1,
+    couple: { partner1: "冯志俊", partner2: "吴姗姗" },
+    date: "2026-10-01",
+    time: { start: "17:00" },
+    venue: { displayName: "临平温德姆大酒店" },
+    inviter: "姚科奇全家",
+    audienceType: "elders",
+    ...overrides,
+  };
+}
+
+test("occasion: createGift seals validated wedding facts; retrieve returns them on both access paths", async () => {
+  const db = makeFakeDb();
+  const direct = await createGift({
+    db,
+    decoded: AUTHOR,
+    body: { message: "婚礼邀请正文", accessMode: "direct", occasion: weddingOccasion() },
+    now: 1000,
+  });
+  assert.equal(direct.status, 200);
+  const rec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(direct.body.token)}`);
+  assert.equal(rec.occasion.type, "wedding");
+  assert.equal(rec.occasion.version, 1);
+  assert.equal(rec.occasion.couple.partner1, "冯志俊");
+  assert.equal(rec.occasion.venue.formattedAddress, null); // normalized optional
+
+  const opened = await retrieveGift({ db, body: { token: direct.body.token }, now: 2000 });
+  assert.equal(opened.status, 200);
+  assert.equal(opened.body.occasion.venue.displayName, "临平温德姆大酒店");
+  assert.equal(opened.body.occasion.time.start, "17:00");
+
+  const keyed = await createGift({
+    db,
+    decoded: AUTHOR,
+    body: { message: "正文", retrievalKey: "080216", occasion: weddingOccasion() },
+    now: 1000,
+  });
+  const unlocked = await retrieveGift({ db, body: { token: keyed.body.token, key: "080216" }, now: 2000 });
+  assert.equal(unlocked.status, 200);
+  assert.equal(unlocked.body.occasion.inviter, "姚科奇全家");
+});
+
+test("occasion: malformed wedding data is rejected clearly, never silently dropped", async () => {
+  const db = makeFakeDb();
+  const cases = [
+    [weddingOccasion({ type: "birthday" }), "type"],
+    [weddingOccasion({ version: 2 }), "version"],
+    [weddingOccasion({ date: "2026-13-01" }), "date"],
+    [weddingOccasion({ couple: { partner1: "只有一位" } }), "couple.partner2"],
+    [weddingOccasion({ venue: { displayName: "" } }), "venue.displayName"],
+    [weddingOccasion({ audienceType: "vip" }), "audienceType"],
+    ["wedding", "occasion"],
+  ];
+  for (const [occasion, field] of cases) {
+    const res = await createGift({ db, decoded: AUTHOR, body: { message: "hi", occasion }, now: 1000 });
+    assert.equal(res.status, 400, `expected 400 for ${field}`);
+    assert.equal(res.body.error, "invalid_occasion");
+    assert.equal(res.body.field, field);
+  }
+  // Nothing was written for any rejected create.
+  assert.equal(db._store.size, 0);
+});
+
+test("occasion: personalContext is never part of the sealed record even if a client sends it", async () => {
+  const db = makeFakeDb();
+  const res = await createGift({
+    db,
+    decoded: AUTHOR,
+    body: {
+      message: "正文",
+      accessMode: "direct",
+      personalContext: "TA 是看着孩子长大的长辈",
+      occasion: { ...weddingOccasion(), personalContext: "TA 是看着孩子长大的长辈" },
+    },
+    now: 1000,
+  });
+  assert.equal(res.status, 200);
+  const rec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(res.body.token)}`);
+  assert.equal(rec.personalContext, undefined);
+  assert.equal(rec.occasion.personalContext, undefined);
+  const opened = await retrieveGift({ db, body: { token: res.body.token }, now: 2000 });
+  assert.equal(JSON.stringify(opened.body).includes("长辈"), false);
+});
+
+test("occasion: ordinary gifts keep an identical record shape (no occasion key) and retrieve occasion:null", async () => {
+  const db = makeFakeDb();
+  const plain = await createGift({ db, decoded: AUTHOR, body: { message: "生日快乐", retrievalKey: "080216" }, now: 1000 });
+  const rec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(plain.body.token)}`);
+  assert.equal("occasion" in rec, false);
+  assert.deepEqual(Object.keys(rec).sort(), [
+    "accessMode", "cooldownTier", "createdAt", "expiresAt", "failedAttempts",
+    "keyHash", "keySalt", "lockedUntil", "message", "redeemedAt", "region",
+    "revoked", "schemaVersion", "senderName", "senderUid", "tone",
+  ]);
+  const opened = await retrieveGift({ db, body: { token: plain.body.token, key: "080216" }, now: 2000 });
+  assert.equal(opened.status, 200);
+  assert.equal(opened.body.occasion, null);
+});
+
+test("occasion: legacy records (sealed before the field existed) retrieve exactly as before", async () => {
+  const db = makeFakeDb();
+  const { salt, hash } = giftCrypto.hashKey("080216");
+  db._store.set(`${GIFT_COLLECTION}/${sha256Hex("legacy-token")}`, {
+    schemaVersion: 1,
+    senderUid: "author-1",
+    senderName: null,
+    tone: null,
+    message: "旧的心意",
+    keySalt: salt,
+    keyHash: hash,
+    region: "GLOBAL",
+    createdAt: 500,
+    expiresAt: 999999999,
+    redeemedAt: null,
+    revoked: false,
+    failedAttempts: 0,
+    lockedUntil: null,
+    cooldownTier: 0,
+  });
+  const opened = await retrieveGift({ db, body: { token: "legacy-token", key: "080216" }, now: 2000 });
+  assert.equal(opened.status, 200);
+  assert.equal(opened.body.message, "旧的心意");
+  assert.equal(opened.body.occasion, null);
+});
+
+// --- RSVP hardening (Phase 1) ------------------------------------------------
+
+test("rsvp hardening: wrong keys increment the shared failure counter and trip the retrieve-style cooldown", async () => {
+  const db = makeFakeDb();
+  const gift = await createGift({ db, decoded: AUTHOR, body: { message: "invite", retrievalKey: "080216" }, now: 1000 });
+  const token = gift.body.token;
+  const recKey = `${GIFT_COLLECTION}/${sha256Hex(token)}`;
+
+  for (let i = 1; i <= 4; i += 1) {
+    const res = await rsvpGift({ db, body: { token, key: "111112", status: "accepted" }, now: 1000 + i });
+    assert.equal(res.status, 401);
+    assert.equal(res.body.error, "invalid_key");
+    assert.equal(res.body.attemptsRemaining, 5 - i);
+    assert.equal(db._store.get(recKey).failedAttempts, i);
+  }
+  // 5th wrong attempt → 423 with a lock, same tier ladder as retrieve.
+  const locked = await rsvpGift({ db, body: { token, key: "111112", status: "accepted" }, now: 2000 });
+  assert.equal(locked.status, 423);
+  assert.equal(locked.body.error, "locked");
+  assert.equal(locked.body.lockedUntil, 2000 + 15 * 60 * 1000);
+  assert.equal(db._store.get(recKey).failedAttempts, 5);
+
+  // While locked, BOTH doors refuse — even with the correct key.
+  const duringLockRsvp = await rsvpGift({ db, body: { token, key: "080216", status: "accepted" }, now: 3000 });
+  assert.equal(duringLockRsvp.status, 423);
+  const duringLockRetrieve = await retrieveGift({ db, body: { token, key: "080216" }, now: 3000 });
+  assert.equal(duringLockRetrieve.status, 423);
+
+  // After the cooldown, the correct key works and resets the counters.
+  const after = 2000 + 15 * 60 * 1000 + 1;
+  const ok = await rsvpGift({ db, body: { token, key: "080216", status: "accepted" }, now: after });
+  assert.equal(ok.status, 200);
+  const rec = db._store.get(recKey);
+  assert.equal(rec.failedAttempts, 0);
+  assert.equal(rec.lockedUntil, null);
+  assert.equal(rec.cooldownTier, 0);
+  assert.equal(rec.rsvpStatus, "accepted");
+});
+
+test("rsvp hardening: rsvp and retrieve share ONE counter (guesses cannot be split across doors)", async () => {
+  const db = makeFakeDb();
+  const gift = await createGift({ db, decoded: AUTHOR, body: { message: "invite", retrievalKey: "080216" }, now: 1000 });
+  const token = gift.body.token;
+
+  // 3 wrong guesses at retrieve + 2 at rsvp = lock on the 5th cumulative.
+  for (let i = 0; i < 3; i += 1) {
+    const r = await retrieveGift({ db, body: { token, key: "111112" }, now: 1100 + i });
+    assert.equal(r.status, 401);
+  }
+  const fourth = await rsvpGift({ db, body: { token, key: "111112", status: "declined" }, now: 1200 });
+  assert.equal(fourth.status, 401);
+  assert.equal(fourth.body.attemptsRemaining, 1);
+  const fifth = await rsvpGift({ db, body: { token, key: "111112", status: "declined" }, now: 1300 });
+  assert.equal(fifth.status, 423);
+});
+
+test("rsvp hardening: empty key on a heart_key gift is a plain 401 without burning an attempt", async () => {
+  const db = makeFakeDb();
+  const gift = await createGift({ db, decoded: AUTHOR, body: { message: "invite", retrievalKey: "080216" }, now: 1000 });
+  const res = await rsvpGift({ db, body: { token: gift.body.token, status: "accepted" }, now: 2000 });
+  assert.equal(res.status, 401);
+  assert.equal(res.body.error, "invalid_key");
+  assert.equal(db._store.get(`${GIFT_COLLECTION}/${sha256Hex(gift.body.token)}`).failedAttempts, 0);
+});
+
+test("rsvp hardening: direct gifts are untouched and repeated valid changes still work", async () => {
+  const db = makeFakeDb();
+  const direct = await createGift({ db, decoded: AUTHOR, body: { message: "来", accessMode: "direct" }, now: 1000 });
+  const a = await rsvpGift({ db, body: { token: direct.body.token, status: "accepted" }, now: 2000 });
+  assert.equal(a.status, 200);
+  const b = await rsvpGift({ db, body: { token: direct.body.token, status: "declined" }, now: 3000 });
+  assert.equal(b.status, 200);
+  assert.equal(db._store.get(`${GIFT_COLLECTION}/${sha256Hex(direct.body.token)}`).rsvpStatus, "declined");
+
+  const keyed = await createGift({ db, decoded: AUTHOR, body: { message: "invite", retrievalKey: "080216" }, now: 1000 });
+  const first = await rsvpGift({ db, body: { token: keyed.body.token, key: "080216", status: "accepted" }, now: 2000 });
+  assert.equal(first.status, 200);
+  const changed = await rsvpGift({ db, body: { token: keyed.body.token, key: "080216", status: "declined" }, now: 3000 });
+  assert.equal(changed.status, 200);
+  assert.equal(changed.body.rsvpStatus, "declined");
+});
+
+test("rsvp hardening: legacy records (no accessMode) still RSVP with the correct key", async () => {
+  const db = makeFakeDb();
+  const { salt, hash } = giftCrypto.hashKey("080216");
+  db._store.set(`${GIFT_COLLECTION}/${sha256Hex("legacy-token")}`, {
+    schemaVersion: 1, senderUid: "author-1", senderName: null, tone: null,
+    message: "旧邀请", keySalt: salt, keyHash: hash, region: "GLOBAL",
+    createdAt: 500, expiresAt: 999999999, redeemedAt: null, revoked: false,
+    failedAttempts: 0, lockedUntil: null, cooldownTier: 0,
+  });
+  const ok = await rsvpGift({ db, body: { token: "legacy-token", key: "080216", status: "accepted" }, now: 2000 });
+  assert.equal(ok.status, 200);
+  const wrong = await rsvpGift({ db, body: { token: "legacy-token", key: "111112", status: "accepted" }, now: 3000 });
+  assert.equal(wrong.status, 401);
+  assert.equal(db._store.get(`${GIFT_COLLECTION}/${sha256Hex("legacy-token")}`).failedAttempts, 1);
+});
+
+test("invitation access policy: occasion gifts default to direct; explicit heart_key still honored; ordinary default unchanged", async () => {
+  const db = makeFakeDb();
+
+  // Occasion + no accessMode → direct (effortless by default), no key material.
+  const invite = await createGift({ db, decoded: AUTHOR, body: { message: "正文", occasion: weddingOccasion() }, now: 1000 });
+  assert.equal(invite.status, 200);
+  assert.equal(invite.body.accessMode, "direct");
+  assert.equal(invite.body.retrievalKey, null);
+  const invRec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(invite.body.token)}`);
+  assert.equal(invRec.accessMode, "direct");
+  assert.equal(invRec.keyHash, null);
+  const opened = await retrieveGift({ db, body: { token: invite.body.token }, now: 2000 });
+  assert.equal(opened.status, 200);
+
+  // Occasion + explicit heart_key → private invitation, fully supported.
+  const priv = await createGift({
+    db, decoded: AUTHOR,
+    body: { message: "正文", accessMode: "heart_key", retrievalKey: "080216", occasion: weddingOccasion() },
+    now: 1000,
+  });
+  assert.equal(priv.status, 200);
+  assert.equal(priv.body.accessMode, "heart_key");
+  assert.equal(priv.body.retrievalKey, "080216");
+  const probe = await retrieveGift({ db, body: { token: priv.body.token }, now: 2000 });
+  assert.equal(probe.status, 401);
+  assert.equal(probe.body.error, "key_required");
+
+  // Ordinary gift + no accessMode → heart_key, exactly as before.
+  const plain = await createGift({ db, decoded: AUTHOR, body: { message: "生日快乐" }, now: 1000 });
+  assert.equal(plain.body.accessMode, "heart_key");
+  assert.ok(plain.body.retrievalKey);
+});

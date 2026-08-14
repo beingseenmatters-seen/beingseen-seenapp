@@ -42,6 +42,7 @@ import {
   toExtractResponsePayload,
 } from "./reflectModes.mjs";
 import { createGift, retrieveGift, revokeGift, rsvpGift } from "./gift.mjs";
+import { runWeddingDraft } from "./occasion.mjs";
 import {
   createHandoff,
   inspectHandoff,
@@ -208,6 +209,35 @@ function parseDrafts(content) {
     .map((l) => l.replace(/^\s*(?:\d+[.)、]|[-*•])\s*/, "").trim())
     .filter(Boolean)
     .slice(0, 3);
+}
+
+/**
+ * Model transport for the Structured Occasion path (occasion.mjs owns the
+ * prompt, validation, and retry policy; this owns only key + HTTP). Throws on
+ * any transport/HTTP failure so the orchestrator can count the round.
+ */
+async function callExpressModel({ system, user, maxTokens, temperature, jsonObject }) {
+  const apiKey = await getOpenAIKey();
+  const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: MODEL,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      temperature,
+      max_tokens: maxTokens,
+      ...(jsonObject ? { response_format: { type: "json_object" } } : {}),
+    }),
+  });
+  if (!r.ok) {
+    console.error("[Occasion] OpenAI error", await r.text());
+    throw new Error(`model_http_${r.status}`);
+  }
+  const data = await r.json();
+  return data.choices?.[0]?.message?.content || "";
 }
 
 async function handleExpressDraft(body) {
@@ -952,6 +982,14 @@ export const handler = async (event) => {
     return httpResponse(result.status, result.body);
   }
   if (path === "/express/draft") {
+    // Structured Occasion mode (body.occasion present) requires a verified
+    // sender identity — Founder decision. The legacy free-text Expression
+    // path below stays app-key-only, exactly as before.
+    if (body && typeof body === "object" && body.occasion !== undefined) {
+      const decoded = await verifyAuthToken(event);
+      const result = await runWeddingDraft({ decoded, body, callModel: callExpressModel });
+      return httpResponse(result.status, result.body);
+    }
     return await handleExpressDraft(body);
   }
 

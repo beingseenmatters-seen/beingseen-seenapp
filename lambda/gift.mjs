@@ -8,8 +8,9 @@
  *   1. The raw 128-bit opaque token is NEVER persisted. Firestore keys the
  *      record by tokenHash = SHA-256(token). Retrieve hashes the request token
  *      and looks up by hash. The raw token lives only in the QR URL.
- *   2. Failed retrieval attempts NEVER permanently lock a Gift. They apply
- *      escalating *temporary* cooldowns only. Only the sender may revoke.
+ *   2. Failed key attempts (retrieve AND rsvp — one shared counter) NEVER
+ *      permanently lock a Gift. They apply escalating *temporary* cooldowns
+ *      only. Only the sender may revoke.
  *   3. The retrieval key (心意钥匙) is a six-digit numeric SECOND secret; the
  *      opaque token is the primary entropy. No token-only retrieval path.
  *
@@ -20,6 +21,7 @@
  */
 
 import crypto from "node:crypto";
+import { validateWeddingOccasion } from "./occasion.mjs";
 
 // --- Config ---------------------------------------------------------------
 export const GIFT_PUBLIC_BASE_URL =
@@ -146,12 +148,37 @@ export async function createGift({ db, decoded, body, now = Date.now() }) {
     return { status: 429, body: { error: "rate_limited" } };
   }
 
-  // Access mode (sealing-time, immutable): 'heart_key' (default) keeps the
-  // six-digit challenge; 'direct' lets the recipient open with the link alone —
-  // the ~128-bit token stays the possession credential. Stored EXPLICITLY;
-  // unknown/absent values resolve to 'heart_key' (safe default, and what all
-  // legacy clients get).
-  const accessMode = body?.accessMode === "direct" ? "direct" : "heart_key";
+  // Structured Occasion (Wedding V1): optional, validated, immutable once
+  // sealed. Facts persist as first-class data — never only inside AI prose,
+  // and never carrying presentation/QR identity (those are separate layers
+  // derived later from occasion.type). Absent for ordinary Expression gifts,
+  // whose record shape stays identical. Malformed occasion data is REJECTED,
+  // never silently dropped.
+  let occasion = null;
+  if (body?.occasion !== undefined && body?.occasion !== null) {
+    const res = validateWeddingOccasion(body.occasion);
+    if (!res.ok) {
+      return { status: 400, body: { error: "invalid_occasion", field: res.field } };
+    }
+    occasion = res.occasion;
+  }
+
+  // Access mode (sealing-time, immutable): 'heart_key' keeps the six-digit
+  // challenge; 'direct' lets the recipient open with the link alone — the
+  // ~128-bit token stays the possession credential. Stored EXPLICITLY.
+  // Defaults (Founder-approved Invitation access policy): ordinary gifts
+  // default to 'heart_key' (unchanged, what all legacy clients get);
+  // Invitation-type gifts (occasion present) default to 'direct' — effortless
+  // by default, private by choice. An explicit accessMode always wins, so
+  // 私密邀请 (heart_key) remains fully supported for invitations.
+  const accessMode =
+    body?.accessMode === "direct"
+      ? "direct"
+      : body?.accessMode === "heart_key"
+        ? "heart_key"
+        : occasion
+          ? "direct"
+          : "heart_key";
 
   // Heart Key: use a sender-chosen custom key when provided, else generate one.
   // A custom key is stored/hashed EXACTLY like a generated key (no difference);
@@ -198,6 +225,7 @@ export async function createGift({ db, decoded, body, now = Date.now() }) {
     failedAttempts: 0,
     lockedUntil: null,
     cooldownTier: 0,
+    ...(occasion ? { occasion } : {}),
   };
 
   // Doc id = tokenHash. The raw token is never written to Firestore.
@@ -206,6 +234,40 @@ export async function createGift({ db, decoded, body, now = Date.now() }) {
   return {
     status: 200,
     body: { token, url: `${GIFT_PUBLIC_BASE_URL}/s/${token}`, retrievalKey, accessMode },
+  };
+}
+
+/**
+ * Shared failed-key escalation — the ONE security model for every door that
+ * verifies the 心意钥匙 (retrieve and rsvp share the same per-gift counters,
+ * so guesses cannot be laundered through whichever endpoint is cheaper).
+ * Returns the Firestore field updates plus the response facts.
+ */
+function registerFailedKeyAttempt(rec, now, tokenHash, door) {
+  const failedAttempts = (rec.failedAttempts || 0) + 1;
+  let lockedUntil = null;
+  let cooldownTier = rec.cooldownTier || 0;
+  let locked = false;
+
+  if (failedAttempts % LOCK_EVERY === 0) {
+    const tierIndex = Math.min(
+      Math.floor(failedAttempts / LOCK_EVERY) - 1,
+      COOLDOWN_TIERS_MS.length - 1,
+    );
+    lockedUntil = now + COOLDOWN_TIERS_MS[tierIndex];
+    cooldownTier = tierIndex + 1;
+    locked = true;
+    // Reserved: emit an abuse/security event or sender notification here.
+    console.warn(
+      `[gift] repeated failed ${door} on ${tokenHash.slice(0, 8)}… attempts=${failedAttempts} tier=${cooldownTier}`,
+    );
+  }
+
+  return {
+    updates: { failedAttempts, lockedUntil, cooldownTier },
+    locked,
+    lockedUntil,
+    attemptsRemaining: LOCK_EVERY - (failedAttempts % LOCK_EVERY),
   };
 }
 
@@ -247,6 +309,7 @@ export async function retrieveGift({ db, body, now = Date.now() }) {
         rsvpStatus: rec.rsvpStatus ?? null,
         rsvpAt: rec.rsvpAt ?? null,
         accessMode,
+        occasion: rec.occasion ?? null,
       },
     };
   }
@@ -260,33 +323,15 @@ export async function retrieveGift({ db, body, now = Date.now() }) {
   const ok = giftCrypto.verifyKey(key, rec.keySalt, rec.keyHash);
 
   if (!ok) {
-    const failedAttempts = (rec.failedAttempts || 0) + 1;
-    let lockedUntil = null;
-    let cooldownTier = rec.cooldownTier || 0;
-    let locked = false;
+    const fail = registerFailedKeyAttempt(rec, now, tokenHash, "retrieval");
+    await ref.update(fail.updates);
 
-    if (failedAttempts % LOCK_EVERY === 0) {
-      const tierIndex = Math.min(
-        Math.floor(failedAttempts / LOCK_EVERY) - 1,
-        COOLDOWN_TIERS_MS.length - 1,
-      );
-      lockedUntil = now + COOLDOWN_TIERS_MS[tierIndex];
-      cooldownTier = tierIndex + 1;
-      locked = true;
-      // Reserved: emit an abuse/security event or sender notification here.
-      console.warn(
-        `[gift] repeated failed retrieval on ${tokenHash.slice(0, 8)}… attempts=${failedAttempts} tier=${cooldownTier}`,
-      );
-    }
-
-    await ref.update({ failedAttempts, lockedUntil, cooldownTier });
-
-    if (locked) {
-      return { status: 423, body: { error: "locked", lockedUntil, attemptsRemaining: 0 } };
+    if (fail.locked) {
+      return { status: 423, body: { error: "locked", lockedUntil: fail.lockedUntil, attemptsRemaining: 0 } };
     }
     return {
       status: 401,
-      body: { error: "invalid_key", attemptsRemaining: LOCK_EVERY - (failedAttempts % LOCK_EVERY) },
+      body: { error: "invalid_key", attemptsRemaining: fail.attemptsRemaining },
     };
   }
 
@@ -308,6 +353,9 @@ export async function retrieveGift({ db, body, now = Date.now() }) {
       rsvpStatus: rec.rsvpStatus ?? null,
       rsvpAt: rec.rsvpAt ?? null,
       accessMode,
+      // Structured Occasion facts (Wedding V1) — first-class data, returned
+      // only after successful access. null for every gift sealed without one.
+      occasion: rec.occasion ?? null,
     },
   };
 }
@@ -316,12 +364,18 @@ export async function retrieveGift({ db, body, now = Date.now() }) {
  * POST /gift/rsvp — app-key only, no account (an Invitation receiver responds
  * without signing in; this is intentional).
  *
- * The retrieval key doubles as proof the responder actually opened the
- * invitation: the UI only offers RSVP after a successful unlock, so a wrong
- * key here is a client fault rather than a guessing attack — no
- * failed-attempt escalation, just a plain 401 (retrieve remains the only
- * guarded door). Responding again is allowed and simply replaces the answer;
- * rsvpAt always reflects the latest response.
+ * Security (Phase 1 hardening): this door verifies the same Heart Key as
+ * retrieve, so it runs the SAME escalation model — wrong non-empty keys
+ * increment the shared per-gift failure counter and trip the same escalating
+ * temporary cooldowns. Before this, /gift/rsvp answered wrong keys with an
+ * uncounted 401, making it a free brute-force oracle for the six-digit key.
+ *
+ * Kept behaviors: direct gifts RSVP on token possession alone (no key);
+ * an EMPTY key on a heart_key gift is a client fault, not a guess — plain
+ * 401 without burning an attempt (mirrors retrieve's keyless probe); a
+ * correct key resets the counters (a legitimate guest can never lock
+ * themselves out by answering again); responding again replaces the answer,
+ * and rsvpAt always reflects the latest response.
  */
 export async function rsvpGift({ db, body, now = Date.now() }) {
   const token = typeof body?.token === "string" ? body.token.trim() : "";
@@ -341,11 +395,26 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
   if (rec.lockedUntil && now < rec.lockedUntil) {
     return { status: 423, body: { error: "locked", lockedUntil: rec.lockedUntil } };
   }
+
   // Same access policy as retrieve: direct gifts RSVP on token possession
   // alone; heart_key (and every legacy record) still proves the key.
   const rsvpMode = rec.accessMode === "direct" ? "direct" : "heart_key";
-  if (rsvpMode === "heart_key" && !(key.length > 0 && giftCrypto.verifyKey(key, rec.keySalt, rec.keyHash))) {
-    return { status: 401, body: { error: "invalid_key" } };
+  if (rsvpMode === "heart_key") {
+    if (key.length === 0) {
+      return { status: 401, body: { error: "invalid_key" } };
+    }
+    if (!giftCrypto.verifyKey(key, rec.keySalt, rec.keyHash)) {
+      const fail = registerFailedKeyAttempt(rec, now, tokenHash, "rsvp");
+      await ref.update(fail.updates);
+      if (fail.locked) {
+        return { status: 423, body: { error: "locked", lockedUntil: fail.lockedUntil, attemptsRemaining: 0 } };
+      }
+      return { status: 401, body: { error: "invalid_key", attemptsRemaining: fail.attemptsRemaining } };
+    }
+    // Valid key — clear any stale failure state so a legitimate guest who
+    // mistyped earlier is never cooled down after proving the key.
+    await ref.update({ failedAttempts: 0, lockedUntil: null, cooldownTier: 0, rsvpStatus: status, rsvpAt: now });
+    return { status: 200, body: { ok: true, rsvpStatus: status, rsvpAt: now } };
   }
 
   await ref.update({ rsvpStatus: status, rsvpAt: now });
