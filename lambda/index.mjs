@@ -904,15 +904,20 @@ export const handler = async (event) => {
     return httpResponse(200, { ok: true });
   }
 
-  // API key check
+  // App identifier check (X-Seen-App-Key). Non-secret application
+  // identification — real authorization is per-route (Firebase ID tokens,
+  // possession credentials, one-time codes). SEEN_APP_API_KEY may hold a
+  // comma-separated list ONLY during a rotation window; steady state is a
+  // single value.
   const appKey =
     event.headers?.["x-seen-app-key"] ||
     event.headers?.["X-Seen-App-Key"];
 
-  if (
-    process.env.SEEN_APP_API_KEY &&
-    appKey !== process.env.SEEN_APP_API_KEY
-  ) {
+  const validAppKeys = (process.env.SEEN_APP_API_KEY || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (validAppKeys.length > 0 && !validAppKeys.includes(appKey)) {
     return httpResponse(401, { error: "unauthorized" });
   }
 
