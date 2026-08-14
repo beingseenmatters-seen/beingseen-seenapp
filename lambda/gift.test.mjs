@@ -9,6 +9,7 @@ import {
   createGift,
   retrieveGift,
   revokeGift,
+  rsvpGift,
   GIFT_COLLECTION,
 } from "./gift.mjs";
 
@@ -278,4 +279,122 @@ test("only the sender may revoke; revoke makes the gift 410", async () => {
   const afterRevoke = await retrieveGift({ db, body: { token: gift.token, key: gift.retrievalKey } });
   assert.equal(afterRevoke.status, 410);
   assert.equal(afterRevoke.body.error, "revoked");
+});
+
+// --- Access mode: heart_key | direct (sealing-time, immutable) --------------
+
+test("accessMode: newly created gift defaults to heart_key", async () => {
+  const db = makeFakeDb();
+  const res = await createGift({ db, decoded: AUTHOR, body: { message: "hi" }, now: 1000 });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.accessMode, "heart_key");
+  assert.ok(res.body.retrievalKey);
+  const rec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(res.body.token)}`);
+  assert.equal(rec.accessMode, "heart_key");
+  assert.ok(rec.keyHash && rec.keySalt);
+});
+
+test("accessMode: explicit heart_key behaves exactly as before (wrong key fails, right key opens)", async () => {
+  const db = makeFakeDb();
+  const res = await createGift({
+    db, decoded: AUTHOR,
+    body: { message: "hello", accessMode: "heart_key", retrievalKey: "080216" },
+    now: 1000,
+  });
+  assert.equal(res.body.accessMode, "heart_key");
+  const wrong = await retrieveGift({ db, body: { token: res.body.token, key: "111319" }, now: 2000 });
+  assert.equal(wrong.status, 401);
+  assert.equal(wrong.body.error, "invalid_key");
+  const right = await retrieveGift({ db, body: { token: res.body.token, key: "080216" }, now: 3000 });
+  assert.equal(right.status, 200);
+  assert.equal(right.body.accessMode, "heart_key");
+});
+
+test("accessMode: direct gift has no key anywhere and opens without one", async () => {
+  const db = makeFakeDb();
+  const res = await createGift({
+    db, decoded: AUTHOR,
+    body: { message: "打开就好", accessMode: "direct" },
+    now: 1000,
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.accessMode, "direct");
+  assert.equal(res.body.retrievalKey, null);
+  const rec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(res.body.token)}`);
+  assert.equal(rec.accessMode, "direct");
+  assert.equal(rec.keyHash, null);
+  assert.equal(rec.keySalt, null);
+  const r = await retrieveGift({ db, body: { token: res.body.token }, now: 2000 });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.message, "打开就好");
+  assert.equal(r.body.accessMode, "direct");
+  // Re-openable (keepsake) and redeemedAt stamped once.
+  const again = await retrieveGift({ db, body: { token: res.body.token }, now: 3000 });
+  assert.equal(again.status, 200);
+  assert.equal(again.body.redeemedAt, 2000);
+});
+
+test("accessMode: keyless probe on a heart_key gift returns key_required WITHOUT burning an attempt", async () => {
+  const db = makeFakeDb();
+  const res = await createGift({ db, decoded: AUTHOR, body: { message: "x", retrievalKey: "080216" }, now: 1000 });
+  const probe = await retrieveGift({ db, body: { token: res.body.token }, now: 1500 });
+  assert.equal(probe.status, 401);
+  assert.equal(probe.body.error, "key_required");
+  const rec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(res.body.token)}`);
+  assert.equal(rec.failedAttempts || 0, 0); // probe is not a guess
+  const right = await retrieveGift({ db, body: { token: res.body.token, key: "080216" }, now: 2000 });
+  assert.equal(right.status, 200);
+});
+
+test("accessMode: legacy record without the field behaves as heart_key", async () => {
+  const db = makeFakeDb();
+  // Simulate a pre-feature record: build via createGift then strip the field.
+  const res = await createGift({ db, decoded: AUTHOR, body: { message: "old", retrievalKey: "080216" }, now: 1000 });
+  const k = `${GIFT_COLLECTION}/${sha256Hex(res.body.token)}`;
+  const rec = db._store.get(k);
+  delete rec.accessMode;
+  db._store.set(k, rec);
+  const probe = await retrieveGift({ db, body: { token: res.body.token }, now: 1500 });
+  assert.equal(probe.body.error, "key_required"); // NOT treated as direct
+  const right = await retrieveGift({ db, body: { token: res.body.token, key: "080216" }, now: 2000 });
+  assert.equal(right.status, 200);
+  assert.equal(right.body.accessMode, "heart_key");
+});
+
+test("accessMode: revoked and expired direct gifts stay inaccessible; unknown token 404", async () => {
+  const db = makeFakeDb();
+  const res = await createGift({ db, decoded: AUTHOR, body: { message: "d", accessMode: "direct" }, now: 1000 });
+  await revokeGift({ db, decoded: AUTHOR, body: { token: res.body.token } });
+  const revoked = await retrieveGift({ db, body: { token: res.body.token }, now: 2000 });
+  assert.equal(revoked.status, 410);
+  assert.equal(revoked.body.error, "revoked");
+
+  const res2 = await createGift({ db, decoded: AUTHOR, body: { message: "e", accessMode: "direct" }, now: 1000 });
+  const rec2Key = `${GIFT_COLLECTION}/${sha256Hex(res2.body.token)}`;
+  const rec2 = db._store.get(rec2Key);
+  rec2.expiresAt = 1500;
+  db._store.set(rec2Key, rec2);
+  const expired = await retrieveGift({ db, body: { token: res2.body.token }, now: 2000 });
+  assert.equal(expired.status, 410);
+  assert.equal(expired.body.error, "expired");
+
+  const unknown = await retrieveGift({ db, body: { token: "no-such-token" }, now: 2000 });
+  assert.equal(unknown.status, 404);
+});
+
+test("accessMode: direct invitation RSVPs without a key; heart_key RSVP still requires it", async () => {
+  const db = makeFakeDb();
+  const direct = await createGift({ db, decoded: AUTHOR, body: { message: "来我的生日会", accessMode: "direct" }, now: 1000 });
+  const r1 = await rsvpGift({ db, body: { token: direct.body.token, status: "accepted" }, now: 2000 });
+  assert.equal(r1.status, 200);
+  assert.equal(r1.body.rsvpStatus, "accepted");
+  // Answer visible on reopen, exactly like today.
+  const reopen = await retrieveGift({ db, body: { token: direct.body.token }, now: 3000 });
+  assert.equal(reopen.body.rsvpStatus, "accepted");
+
+  const keyed = await createGift({ db, decoded: AUTHOR, body: { message: "invite", retrievalKey: "080216" }, now: 1000 });
+  const noKey = await rsvpGift({ db, body: { token: keyed.body.token, status: "declined" }, now: 2000 });
+  assert.equal(noKey.status, 401);
+  const withKey = await rsvpGift({ db, body: { token: keyed.body.token, key: "080216", status: "declined" }, now: 2500 });
+  assert.equal(withKey.status, 200);
 });

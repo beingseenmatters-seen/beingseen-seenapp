@@ -146,21 +146,33 @@ export async function createGift({ db, decoded, body, now = Date.now() }) {
     return { status: 429, body: { error: "rate_limited" } };
   }
 
+  // Access mode (sealing-time, immutable): 'heart_key' (default) keeps the
+  // six-digit challenge; 'direct' lets the recipient open with the link alone —
+  // the ~128-bit token stays the possession credential. Stored EXPLICITLY;
+  // unknown/absent values resolve to 'heart_key' (safe default, and what all
+  // legacy clients get).
+  const accessMode = body?.accessMode === "direct" ? "direct" : "heart_key";
+
   // Heart Key: use a sender-chosen custom key when provided, else generate one.
   // A custom key is stored/hashed EXACTLY like a generated key (no difference);
   // weak values are refused server-side regardless of client validation.
-  const provided = normalizeKey(body?.retrievalKey);
-  let retrievalKey;
-  if (provided) {
-    if (isWeakKey(provided)) return { status: 400, body: { error: "weak_key" } };
-    retrievalKey = provided;
-  } else {
-    retrievalKey = generateRetrievalKey();
+  // Direct gifts have NO key at all (nothing to manage, share, or hash).
+  let retrievalKey = null;
+  let keySalt = null;
+  let keyHash = null;
+  if (accessMode === "heart_key") {
+    const provided = normalizeKey(body?.retrievalKey);
+    if (provided) {
+      if (isWeakKey(provided)) return { status: 400, body: { error: "weak_key" } };
+      retrievalKey = provided;
+    } else {
+      retrievalKey = generateRetrievalKey();
+    }
+    ({ salt: keySalt, hash: keyHash } = giftCrypto.hashKey(retrievalKey));
   }
 
   const token = generateToken();
   const tokenHash = sha256Hex(token);
-  const { salt: keySalt, hash: keyHash } = giftCrypto.hashKey(retrievalKey);
 
   const senderName =
     typeof body?.senderName === "string" && body.senderName.trim()
@@ -174,6 +186,7 @@ export async function createGift({ db, decoded, body, now = Date.now() }) {
     senderUid: decoded.uid,
     senderName,
     tone,
+    accessMode,
     ...giftCrypto.seal(message), // { message } in V1
     keySalt,
     keyHash,
@@ -192,7 +205,7 @@ export async function createGift({ db, decoded, body, now = Date.now() }) {
 
   return {
     status: 200,
-    body: { token, url: `${GIFT_PUBLIC_BASE_URL}/s/${token}`, retrievalKey },
+    body: { token, url: `${GIFT_PUBLIC_BASE_URL}/s/${token}`, retrievalKey, accessMode },
   };
 }
 
@@ -214,7 +227,37 @@ export async function retrieveGift({ db, body, now = Date.now() }) {
     return { status: 423, body: { error: "locked", lockedUntil: rec.lockedUntil } };
   }
 
-  const ok = key.length > 0 && giftCrypto.verifyKey(key, rec.keySalt, rec.keyHash);
+  // Access mode: EXPLICIT field; every legacy record (no field) is heart_key —
+  // all previously sealed gifts keep today's behavior exactly.
+  const accessMode = rec.accessMode === "direct" ? "direct" : "heart_key";
+
+  if (accessMode === "direct") {
+    // Possession of the unguessable token IS the credential: skip only the
+    // key challenge. Revoke/expiry/not-found above remain fully in force.
+    const redeemedAt = rec.redeemedAt || now;
+    await ref.update({ failedAttempts: 0, lockedUntil: null, cooldownTier: 0, redeemedAt });
+    return {
+      status: 200,
+      body: {
+        message: giftCrypto.open(rec),
+        senderName: rec.senderName ?? null,
+        tone: rec.tone ?? null,
+        createdAt: rec.createdAt,
+        redeemedAt,
+        rsvpStatus: rec.rsvpStatus ?? null,
+        rsvpAt: rec.rsvpAt ?? null,
+        accessMode,
+      },
+    };
+  }
+
+  // heart_key: a keyless probe (the client asking "which mode?") is answered
+  // WITHOUT burning an attempt — real guesses always carry a non-empty key.
+  if (key.length === 0) {
+    return { status: 401, body: { error: "key_required" } };
+  }
+
+  const ok = giftCrypto.verifyKey(key, rec.keySalt, rec.keyHash);
 
   if (!ok) {
     const failedAttempts = (rec.failedAttempts || 0) + 1;
@@ -264,6 +307,7 @@ export async function retrieveGift({ db, body, now = Date.now() }) {
       // lets a reopened invitation show the answer already given.
       rsvpStatus: rec.rsvpStatus ?? null,
       rsvpAt: rec.rsvpAt ?? null,
+      accessMode,
     },
   };
 }
@@ -297,7 +341,10 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
   if (rec.lockedUntil && now < rec.lockedUntil) {
     return { status: 423, body: { error: "locked", lockedUntil: rec.lockedUntil } };
   }
-  if (!(key.length > 0 && giftCrypto.verifyKey(key, rec.keySalt, rec.keyHash))) {
+  // Same access policy as retrieve: direct gifts RSVP on token possession
+  // alone; heart_key (and every legacy record) still proves the key.
+  const rsvpMode = rec.accessMode === "direct" ? "direct" : "heart_key";
+  if (rsvpMode === "heart_key" && !(key.length > 0 && giftCrypto.verifyKey(key, rec.keySalt, rec.keyHash))) {
     return { status: 401, body: { error: "invalid_key" } };
   }
 
