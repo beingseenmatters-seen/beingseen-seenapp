@@ -68,6 +68,7 @@ zip -r "$PACKAGE" \
   index.mjs \
   gift.mjs \
   occasion.mjs \
+  giftMedia.mjs \
   authHandoff.mjs \
   reflect-handler.mjs \
   reflectModes.mjs \

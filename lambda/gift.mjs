@@ -22,6 +22,7 @@
 
 import crypto from "node:crypto";
 import { validateWeddingOccasion } from "./occasion.mjs";
+import { finalizeOpeningMedia, deleteSealedMedia, mintOpeningMedia } from "./giftMedia.mjs";
 
 // --- Config ---------------------------------------------------------------
 export const GIFT_PUBLIC_BASE_URL =
@@ -122,7 +123,7 @@ export async function moderateGiftMessage(message) {
 // --- Handlers -------------------------------------------------------------
 
 /** POST /gift/create — requires a verified Firebase ID token (author). */
-export async function createGift({ db, decoded, body, now = Date.now() }) {
+export async function createGift({ db, decoded, body, now = Date.now(), media = null }) {
   if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
 
   const message = typeof body?.message === "string" ? body.message.trim() : "";
@@ -201,6 +202,25 @@ export async function createGift({ db, decoded, body, now = Date.now() }) {
   const token = generateToken();
   const tokenHash = sha256Hex(token);
 
+  // Opening Media (Wedding V1, Phase 3B-1): optional, ONE asset, occasion
+  // gifts only. Finalized BEFORE the record write so a failed promotion can
+  // never leave a corrupt gift; the staging key derives from the verified
+  // sender uid, so foreign assets are unreachable by construction.
+  let openingMedia = null;
+  if (body?.openingMedia !== undefined && body?.openingMedia !== null) {
+    if (!occasion) {
+      return { status: 400, body: { error: "invalid_media", field: "occasion" } };
+    }
+    const fin = await finalizeOpeningMedia({
+      store: media,
+      decoded,
+      openingMedia: body.openingMedia,
+      tokenHash,
+    });
+    if (!fin.ok) return { status: fin.status, body: fin.body };
+    openingMedia = fin.media;
+  }
+
   const senderName =
     typeof body?.senderName === "string" && body.senderName.trim()
       ? body.senderName.trim().slice(0, 40)
@@ -226,10 +246,20 @@ export async function createGift({ db, decoded, body, now = Date.now() }) {
     lockedUntil: null,
     cooldownTier: 0,
     ...(occasion ? { occasion } : {}),
+    ...(openingMedia ? { openingMedia } : {}),
   };
 
   // Doc id = tokenHash. The raw token is never written to Firestore.
-  await db.collection(GIFT_COLLECTION).doc(tokenHash).set(record);
+  try {
+    await db.collection(GIFT_COLLECTION).doc(tokenHash).set(record);
+  } catch (err) {
+    // Never strand a sealed media object behind a record that failed to
+    // exist — compensate, then surface the failure.
+    if (openingMedia) {
+      await deleteSealedMedia({ store: media, tokenHash, assetId: openingMedia.assetId, reason: "create_failed" });
+    }
+    throw err;
+  }
 
   return {
     status: 200,
@@ -272,7 +302,7 @@ function registerFailedKeyAttempt(rec, now, tokenHash, door) {
 }
 
 /** POST /gift/retrieve — app-key only (recipient may have no Seen account). */
-export async function retrieveGift({ db, body, now = Date.now() }) {
+export async function retrieveGift({ db, body, now = Date.now(), media = null }) {
   const token = typeof body?.token === "string" ? body.token.trim() : "";
   const key = normalizeKey(body?.key);
   if (!token) return { status: 400, body: { error: "invalid_request" } };
@@ -310,6 +340,9 @@ export async function retrieveGift({ db, body, now = Date.now() }) {
         rsvpAt: rec.rsvpAt ?? null,
         accessMode,
         occasion: rec.occasion ?? null,
+        // Short-lived media descriptor, minted only on successful access;
+        // minting failure degrades to null — never blocks the invitation.
+        openingMedia: await mintOpeningMedia({ store: media, rec, tokenHash }),
       },
     };
   }
@@ -356,6 +389,9 @@ export async function retrieveGift({ db, body, now = Date.now() }) {
       // Structured Occasion facts (Wedding V1) — first-class data, returned
       // only after successful access. null for every gift sealed without one.
       occasion: rec.occasion ?? null,
+      // Minted only AFTER the Heart Key verified above — private media is
+      // structurally unobtainable before unlock.
+      openingMedia: await mintOpeningMedia({ store: media, rec, tokenHash }),
     },
   };
 }
@@ -422,7 +458,7 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
 }
 
 /** POST /gift/revoke — sender-only. The only way a Gift becomes inaccessible. */
-export async function revokeGift({ db, decoded, body }) {
+export async function revokeGift({ db, decoded, body, media = null }) {
   if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
   const token = typeof body?.token === "string" ? body.token.trim() : "";
   const tokenHash = token
@@ -439,5 +475,12 @@ export async function revokeGift({ db, decoded, body }) {
   if (rec.senderUid !== decoded.uid) return { status: 403, body: { error: "forbidden" } };
 
   await ref.update({ revoked: true });
+  // Revocation gate is the record flag above (blocks all future retrieves and
+  // therefore all future media URLs). Object deletion is best-effort privacy
+  // hygiene: success also kills any already-minted URL early; failure leaves
+  // the ≤15-minute URL tail + bucket lifecycle as fallback — never un-revokes.
+  if (rec.openingMedia?.assetId) {
+    await deleteSealedMedia({ store: media, tokenHash, assetId: rec.openingMedia.assetId, reason: "revoke" });
+  }
   return { status: 200, body: { ok: true } };
 }

@@ -659,3 +659,238 @@ test("invitation access policy: occasion gifts default to direct; explicit heart
   assert.equal(plain.body.accessMode, "heart_key");
   assert.ok(plain.body.retrievalKey);
 });
+
+// --- Opening Media (Phase 3B-1) ----------------------------------------------
+
+function makeMediaStore() {
+  const objects = new Map();
+  const store = {
+    _objects: objects,
+    failCopy: false,
+    failPresign: false,
+    async putStaging({ uid, assetId, bytes, contentType, metadata }) {
+      objects.set(`staging/${uid}/${assetId}`, { bytes, contentType, metadata });
+    },
+    async headStaging({ uid, assetId }) {
+      const o = objects.get(`staging/${uid}/${assetId}`);
+      return o ? { bytes: o.bytes.length, contentType: o.contentType, metadata: o.metadata } : null;
+    },
+    async copyToSealed({ uid, assetId, tokenHash }) {
+      if (store.failCopy) throw new Error("injected copy failure");
+      const o = objects.get(`staging/${uid}/${assetId}`);
+      if (!o) throw new Error("missing source");
+      objects.set(`sealed/${tokenHash}/${assetId}`, o);
+    },
+    async deleteStaging({ uid, assetId }) { objects.delete(`staging/${uid}/${assetId}`); },
+    async deleteSealed({ tokenHash, assetId }) { objects.delete(`sealed/${tokenHash}/${assetId}`); },
+    async presignSealedGet({ tokenHash, assetId }) {
+      if (store.failPresign) throw new Error("injected presign failure");
+      return `https://media.example/sealed/${tokenHash}/${assetId}?sig=test`;
+    },
+  };
+  return store;
+}
+
+async function stageTestPhoto(media, uid = AUTHOR.uid) {
+  const bytes = Buffer.alloc(2048, 0x20);
+  bytes[0] = 0xff; bytes[1] = 0xd8; bytes[2] = 0xff;
+  const { uploadGiftMedia } = await import("./giftMedia.mjs");
+  const res = await uploadGiftMedia({
+    store: media, decoded: { uid },
+    body: { type: "photo", contentType: "image/jpeg", data: bytes.toString("base64") },
+  });
+  if (res.status !== 200) throw new Error("stage failed");
+  return res.body.assetId;
+}
+
+test("media: wedding gift seals a staged photo immutably; staging is promoted", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  const assetId = await stageTestPhoto(media);
+  const res = await createGift({
+    db, decoded: AUTHOR, media,
+    body: { message: "正文", occasion: weddingOccasion(), openingMedia: { type: "photo", assetId } },
+    now: 1000,
+  });
+  assert.equal(res.status, 200);
+  const rec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(res.body.token)}`);
+  assert.deepEqual(rec.openingMedia, { type: "photo", assetId, contentType: "image/jpeg", bytes: 2048 });
+  assert.ok(media._objects.has(`sealed/${sha256Hex(res.body.token)}/${assetId}`));
+  assert.equal([...media._objects.keys()].some((k) => k.startsWith("staging/")), false);
+
+  // Immutable: RSVP and reopen never touch openingMedia.
+  await rsvpGift({ db, body: { token: res.body.token, status: "accepted" }, now: 2000 });
+  assert.deepEqual(db._store.get(`${GIFT_COLLECTION}/${sha256Hex(res.body.token)}`).openingMedia,
+    { type: "photo", assetId, contentType: "image/jpeg", bytes: 2048 });
+});
+
+test("media: requires an occasion, rejects foreign/nonexistent assets, never writes a corrupt record", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  const assetId = await stageTestPhoto(media);
+
+  const noOccasion = await createGift({
+    db, decoded: AUTHOR, media,
+    body: { message: "hi", openingMedia: { type: "photo", assetId } }, now: 1000,
+  });
+  assert.equal(noOccasion.status, 400);
+  assert.equal(noOccasion.body.field, "occasion");
+
+  const foreignId = await stageTestPhoto(media, "someone-else");
+  const foreign = await createGift({
+    db, decoded: AUTHOR, media,
+    body: { message: "hi", occasion: weddingOccasion(), openingMedia: { type: "photo", assetId: foreignId } }, now: 1000,
+  });
+  assert.equal(foreign.status, 400);
+  assert.equal(foreign.body.error, "invalid_media");
+
+  media.failCopy = true;
+  const copyFail = await createGift({
+    db, decoded: AUTHOR, media,
+    body: { message: "hi", occasion: weddingOccasion(), openingMedia: { type: "photo", assetId } }, now: 1000,
+  });
+  assert.equal(copyFail.status, 502);
+  assert.equal(copyFail.body.error, "media_seal_failed");
+  assert.equal(db._store.size, 0); // no gift record ever written on any failure
+});
+
+test("media: Firestore write failure compensates by deleting the sealed object", async () => {
+  const media = makeMediaStore();
+  const assetId = await stageTestPhoto(media);
+  const failingDb = {
+    collection: () => ({
+      doc: () => ({ set: async () => { throw new Error("firestore down"); } }),
+      where: () => ({ where: () => ({ get: async () => ({ size: 0, docs: [] }) }) }),
+    }),
+  };
+  await assert.rejects(() =>
+    createGift({
+      db: failingDb, decoded: AUTHOR, media,
+      body: { message: "hi", occasion: weddingOccasion(), openingMedia: { type: "photo", assetId } }, now: 1000,
+    }),
+  );
+  assert.equal([...media._objects.keys()].some((k) => k.startsWith("sealed/")), false);
+});
+
+test("media: direct retrieve returns a short-lived descriptor exposing no storage identity", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  const assetId = await stageTestPhoto(media);
+  const gift = await createGift({
+    db, decoded: AUTHOR, media,
+    body: { message: "正文", occasion: weddingOccasion(), openingMedia: { type: "photo", assetId } }, now: 1000,
+  });
+  const opened = await retrieveGift({ db, media, body: { token: gift.body.token }, now: 2000 });
+  assert.equal(opened.status, 200);
+  assert.equal(opened.body.openingMedia.type, "photo");
+  assert.equal(opened.body.openingMedia.contentType, "image/jpeg");
+  assert.ok(opened.body.openingMedia.url.includes("sig=test"));
+  const raw = JSON.stringify(opened.body);
+  assert.equal(raw.includes("assetId"), false);
+  assert.equal(raw.includes(AUTHOR.uid), false);
+  assert.equal(raw.includes("bucket"), false);
+});
+
+test("media: heart_key gift reveals no media before unlock; unlock mints it", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  const assetId = await stageTestPhoto(media);
+  const gift = await createGift({
+    db, decoded: AUTHOR, media,
+    body: { message: "正文", accessMode: "heart_key", retrievalKey: "080216", occasion: weddingOccasion(), openingMedia: { type: "photo", assetId } },
+    now: 1000,
+  });
+  const probe = await retrieveGift({ db, media, body: { token: gift.body.token }, now: 2000 });
+  assert.equal(probe.status, 401);
+  assert.equal(JSON.stringify(probe.body).includes("media.example"), false);
+  const wrong = await retrieveGift({ db, media, body: { token: gift.body.token, key: "111112" }, now: 2100 });
+  assert.equal(wrong.status, 401);
+  assert.equal(JSON.stringify(wrong.body).includes("media.example"), false);
+  const ok = await retrieveGift({ db, media, body: { token: gift.body.token, key: "080216" }, now: 2200 });
+  assert.equal(ok.status, 200);
+  assert.ok(ok.body.openingMedia.url.includes("sig=test"));
+});
+
+test("media: revoked and expired gifts mint nothing; revoke deletes the sealed object", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  const assetId = await stageTestPhoto(media);
+  const gift = await createGift({
+    db, decoded: AUTHOR, media,
+    body: { message: "正文", occasion: weddingOccasion(), openingMedia: { type: "photo", assetId } }, now: 1000,
+  });
+  const tokenHash = sha256Hex(gift.body.token);
+  assert.ok(media._objects.has(`sealed/${tokenHash}/${assetId}`));
+
+  const rev = await revokeGift({ db, decoded: AUTHOR, media, body: { token: gift.body.token } });
+  assert.equal(rev.status, 200);
+  assert.equal(media._objects.has(`sealed/${tokenHash}/${assetId}`), false);
+  const after = await retrieveGift({ db, media, body: { token: gift.body.token }, now: 3000 });
+  assert.equal(after.status, 410);
+
+  // Expired: record present, past expiresAt → 410, no descriptor anywhere.
+  const g2 = await createGift({
+    db, decoded: AUTHOR, media,
+    body: { message: "e", occasion: weddingOccasion(), openingMedia: { type: "photo", assetId: await stageTestPhoto(media) } },
+    now: 1000,
+  });
+  const k2 = `${GIFT_COLLECTION}/${sha256Hex(g2.body.token)}`;
+  const rec2 = db._store.get(k2);
+  rec2.expiresAt = 1500;
+  db._store.set(k2, rec2);
+  const expired = await retrieveGift({ db, media, body: { token: g2.body.token }, now: 2000 });
+  assert.equal(expired.status, 410);
+  assert.equal(JSON.stringify(expired.body).includes("media.example"), false);
+});
+
+test("media: revoke delete failure never un-revokes the gift", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  const assetId = await stageTestPhoto(media);
+  const gift = await createGift({
+    db, decoded: AUTHOR, media,
+    body: { message: "正文", occasion: weddingOccasion(), openingMedia: { type: "photo", assetId } }, now: 1000,
+  });
+  media.deleteSealed = async () => { throw new Error("injected"); };
+  const rev = await revokeGift({ db, decoded: AUTHOR, media, body: { token: gift.body.token } });
+  assert.equal(rev.status, 200);
+  const after = await retrieveGift({ db, media, body: { token: gift.body.token }, now: 3000 });
+  assert.equal(after.status, 410);
+});
+
+test("media: presign failure degrades to null media without failing the gift", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  const assetId = await stageTestPhoto(media);
+  const gift = await createGift({
+    db, decoded: AUTHOR, media,
+    body: { message: "正文", occasion: weddingOccasion(), openingMedia: { type: "photo", assetId } }, now: 1000,
+  });
+  media.failPresign = true;
+  const opened = await retrieveGift({ db, media, body: { token: gift.body.token }, now: 2000 });
+  assert.equal(opened.status, 200);
+  assert.equal(opened.body.openingMedia, null);
+  assert.equal(opened.body.message, "正文");
+});
+
+test("media: ordinary gifts and media-less wedding gifts are unchanged (openingMedia null, no record key)", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  const plain = await createGift({ db, decoded: AUTHOR, media, body: { message: "生日快乐", accessMode: "direct" }, now: 1000 });
+  const rec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(plain.body.token)}`);
+  assert.equal("openingMedia" in rec, false);
+  const opened = await retrieveGift({ db, media, body: { token: plain.body.token }, now: 2000 });
+  assert.equal(opened.status, 200);
+  assert.equal(opened.body.openingMedia, null);
+
+  const wed = await createGift({ db, decoded: AUTHOR, media, body: { message: "正文", occasion: weddingOccasion() }, now: 1000 });
+  const wrec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(wed.body.token)}`);
+  assert.equal("openingMedia" in wrec, false);
+  const wopen = await retrieveGift({ db, media, body: { token: wed.body.token }, now: 2000 });
+  assert.equal(wopen.body.openingMedia, null);
+
+  // No store configured at all (env absent) — everything still works.
+  const noStore = await retrieveGift({ db, body: { token: plain.body.token }, now: 2500 });
+  assert.equal(noStore.status, 200);
+  assert.equal(noStore.body.openingMedia, null);
+});

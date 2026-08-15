@@ -43,6 +43,12 @@ import {
 } from "./reflectModes.mjs";
 import { createGift, retrieveGift, revokeGift, rsvpGift } from "./gift.mjs";
 import { runWeddingDraft } from "./occasion.mjs";
+import { uploadGiftMedia, makeS3MediaStore } from "./giftMedia.mjs";
+
+// Opening Media store — one private bucket, this Lambda as the only gateway.
+// Absent GIFT_MEDIA_BUCKET → store is null → media routes answer 503 and
+// gifts seal/read exactly as before (media is optional ceremony content).
+const giftMediaStore = makeS3MediaStore({ bucket: process.env.GIFT_MEDIA_BUCKET });
 import {
   createHandoff,
   inspectHandoff,
@@ -965,11 +971,11 @@ export const handler = async (event) => {
   // can open a Gift by scanning the QR and entering the six-digit 心意钥匙.
   if (path === "/gift/create") {
     const decoded = await verifyAuthToken(event);
-    const result = await createGift({ db: admin.firestore(), decoded, body });
+    const result = await createGift({ db: admin.firestore(), decoded, body, media: giftMediaStore });
     return httpResponse(result.status, result.body);
   }
   if (path === "/gift/retrieve") {
-    const result = await retrieveGift({ db: admin.firestore(), body });
+    const result = await retrieveGift({ db: admin.firestore(), body, media: giftMediaStore });
     return httpResponse(result.status, result.body);
   }
   if (path === "/gift/rsvp") {
@@ -978,7 +984,13 @@ export const handler = async (event) => {
   }
   if (path === "/gift/revoke") {
     const decoded = await verifyAuthToken(event);
-    const result = await revokeGift({ db: admin.firestore(), decoded, body });
+    const result = await revokeGift({ db: admin.firestore(), decoded, body, media: giftMediaStore });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/gift/media/upload") {
+    // Opening Media staging — authenticated sender only (Phase 3B-1).
+    const decoded = await verifyAuthToken(event);
+    const result = await uploadGiftMedia({ store: giftMediaStore, decoded, body });
     return httpResponse(result.status, result.body);
   }
   if (path === "/express/draft") {
