@@ -954,16 +954,20 @@ test("presentation: photo only / voice only / both / neither seal to the canonic
   assert.equal("presentation" in db._store.get(`${GIFT_COLLECTION}/${sha256Hex(none.body.token)}`), false);
 });
 
-test("presentation: music theme allowlist boundary — empty list rejects, DI list accepts, id stored verbatim", async () => {
+test("presentation: music theme allowlist boundary — approved ids seal, unknown ids reject", async () => {
   const db = makeFakeDb();
   const media = makeMediaStore();
-  // Production allowlist is EMPTY (no rights-cleared assets yet) → any theme rejected.
-  const rejected = await createGift({ db, decoded: AUTHOR, media, now: 1000,
+  // Rights-verified themes (2026-08-15) are allowlisted and seal verbatim.
+  const ok = await createGift({ db, decoded: AUTHOR, media, now: 1000,
     body: { message: "m", occasion: weddingOccasion(), presentation: { musicThemeId: "wedding_warm_piano_v1" } } });
+  assert.equal(ok.status, 200);
+  assert.equal(db._store.get(`${GIFT_COLLECTION}/${sha256Hex(ok.body.token)}`).presentation.musicThemeId, "wedding_warm_piano_v1");
+  // Unknown/unapproved ids remain rejected — fake themes are never sealable.
+  const rejected = await createGift({ db, decoded: AUTHOR, media, now: 1000,
+    body: { message: "m", occasion: weddingOccasion(), presentation: { musicThemeId: "wedding_warm_piano_v99" } } });
   assert.equal(rejected.status, 400);
   assert.equal(rejected.body.error, "invalid_presentation");
   assert.equal(rejected.body.field, "musicThemeId");
-  assert.equal(db._store.size, 0);
 
   // The mechanics accept an allowlisted id (DI through finalizePresentation).
   const { finalizePresentation } = await import("./giftMedia.mjs");

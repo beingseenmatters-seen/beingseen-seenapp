@@ -63,7 +63,15 @@ export const WEDDING_DRAFT_TEMPERATURE = 0.8;
  * explicitly licensed for product distribution; "royalty-free" alone is not
  * sufficient. Music is Gift.Seen-owned presentation, never sender media.
  */
-export const WEDDING_MUSIC_THEMES = [];
+export const WEDDING_MUSIC_THEMES = [
+  // Rights-verified 2026-08-15 (giftseen/docs/WEDDING_MUSIC_RIGHTS.md):
+  // Pixabay Content License; ids immutable — a different recording is a _v2.
+  "wedding_warm_piano_v1",        // 温暖钢琴 — default
+  "wedding_romantic_ceremony_v1", // 浪漫仪式
+  "wedding_light_invitation_v1",  // 轻盈邀请
+  // DEV-ONLY escape hatch for local rig E2E (production never sets this).
+  ...(process.env.GIFT_MEDIA_DEV_THEMES === "1" ? ["dev_placeholder_tone_v0"] : []),
+];
 
 const LIMITS = {
   partner: 40,
