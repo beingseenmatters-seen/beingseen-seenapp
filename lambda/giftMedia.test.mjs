@@ -19,7 +19,9 @@ export function makeFakeMediaStore() {
     failCopy: false,
     failPresign: false,
     async putStaging({ uid, assetId, bytes, contentType, metadata }) {
-      objects.set(`staging/${uid}/${assetId}`, { bytes, contentType, metadata });
+      // Mirror real S3: user-metadata keys come back LOWERCASED.
+      const meta = Object.fromEntries(Object.entries(metadata || {}).map(([k, v]) => [k.toLowerCase(), v]));
+      objects.set(`staging/${uid}/${assetId}`, { bytes, contentType, metadata: meta });
     },
     async headStaging({ uid, assetId }) {
       const o = objects.get(`staging/${uid}/${assetId}`);
@@ -152,7 +154,8 @@ test("upload stages a valid photo and audio under the sender's namespace", async
   assert.equal(audio.body.durationMs, 12_346); // rounded
   const staged = store._objects.get(`staging/${SENDER.uid}/${audio.body.assetId}`);
   assert.equal(staged.metadata.type, "audio");
-  assert.equal(staged.metadata.durationMs, "12346");
+  // S3 lowercases user-metadata keys — the stored contract is `durationms`.
+  assert.equal(staged.metadata.durationms, "12346");
 });
 
 // --- Finalize -----------------------------------------------------------------------
@@ -231,4 +234,22 @@ test("deleteSealedMedia is best-effort and reports outcome", async () => {
   store.deleteSealed = async () => { throw new Error("injected"); };
   assert.equal(await deleteSealedMedia({ store, tokenHash: "t", assetId: "aaaaaaaaaaaaaaaaaaaaaa" }), false);
   assert.equal(await deleteSealedMedia({ store: null, tokenHash: "t", assetId: "a" }), false);
+});
+
+test("S3 metadata key lowercasing: voice seals correctly through the real casing behavior", async () => {
+  const store = makeFakeMediaStore();
+  const bytes = m4aBytes();
+  const up = await uploadGiftMedia({
+    store, decoded: SENDER,
+    body: { type: "audio", contentType: "audio/mp4", data: bytes.toString("base64"), durationMs: 12000 },
+  });
+  assert.equal(up.status, 200);
+  // The staged object's metadata keys are lowercase — exactly as S3 stores them.
+  const staged = store._objects.get(`staging/${SENDER.uid}/${up.body.assetId}`);
+  assert.equal(staged.metadata.durationms, "12000");
+  assert.equal(staged.metadata.durationMs, undefined);
+  // Finalize must still read the duration (the 3C-1 production bug).
+  const fin = await finalizeOpeningMedia({ store, decoded: SENDER, openingMedia: { type: "audio", assetId: up.body.assetId }, tokenHash: "t" });
+  assert.equal(fin.ok, true);
+  assert.equal(fin.media.durationMs, 12000);
 });

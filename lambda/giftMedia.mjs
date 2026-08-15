@@ -143,12 +143,14 @@ export async function uploadGiftMedia({ store, decoded, body, now = Date.now() }
       assetId,
       bytes,
       contentType,
+      // S3 lowercases user-metadata keys — write them lowercase so the
+      // stored form IS the contract (read side stays case-tolerant).
       metadata: {
         uid: decoded.uid,
         type,
         bytes: String(bytes.length),
-        ...(durationMs ? { durationMs: String(durationMs) } : {}),
-        uploadedAt: String(now),
+        ...(durationMs ? { durationms: String(durationMs) } : {}),
+        uploadedat: String(now),
       },
     });
   } catch (e) {
@@ -244,7 +246,8 @@ export async function finalizeOpeningMedia({ store, decoded, openingMedia, token
   const meta = head.metadata || {};
   const bytes = Number(meta.bytes ?? head.bytes ?? NaN);
   const contentType = String(head.contentType || "").toLowerCase();
-  const durationMs = meta.durationMs ? Number(meta.durationMs) : null;
+  const rawDuration = meta.durationms ?? meta.durationMs;
+  const durationMs = rawDuration ? Number(rawDuration) : null;
   if (meta.type !== type) return { ok: false, status: 400, body: { error: "invalid_media", field: "type" } };
   if (!contentTypesFor(type).includes(contentType)) {
     return { ok: false, status: 400, body: { error: "invalid_media", field: "contentType" } };
@@ -303,7 +306,9 @@ async function validateStagedRole({ store, decoded, role, assetId }) {
   const meta = head.metadata || {};
   const bytes = Number(meta.bytes ?? head.bytes ?? NaN);
   const contentType = String(head.contentType || "").toLowerCase();
-  const durationMs = meta.durationMs ? Number(meta.durationMs) : null;
+  // S3 returns user-metadata keys lowercased; tolerate both forms.
+  const rawDuration = meta.durationms ?? meta.durationMs;
+  const durationMs = rawDuration ? Number(rawDuration) : null;
   const expectedType = ROLE_EXPECTED_TYPE[role];
   if (meta.type !== expectedType) {
     return { ok: false, status: 400, body: { error: "invalid_media", field } };

@@ -669,7 +669,9 @@ function makeMediaStore() {
     failCopy: false,
     failPresign: false,
     async putStaging({ uid, assetId, bytes, contentType, metadata }) {
-      objects.set(`staging/${uid}/${assetId}`, { bytes, contentType, metadata });
+      // Mirror real S3: user-metadata keys come back LOWERCASED.
+      const meta = Object.fromEntries(Object.entries(metadata || {}).map(([k, v]) => [k.toLowerCase(), v]));
+      objects.set(`staging/${uid}/${assetId}`, { bytes, contentType, metadata: meta });
     },
     async headStaging({ uid, assetId }) {
       const o = objects.get(`staging/${uid}/${assetId}`);
