@@ -161,6 +161,54 @@ export async function uploadGiftMedia({ store, decoded, body, now = Date.now() }
   return { status: 200, body: { assetId, type, contentType, bytes: bytes.length, durationMs } };
 }
 
+// --- Presentation contract (Phase 3C-1) --------------------------------------
+
+/**
+ * Role-aware Invitation Presentation contract. Three INDEPENDENT roles:
+ *   photo — sender-owned private visual opening (staged type 'photo')
+ *   voice — sender-owned private personal voice  (staged type 'audio')
+ *   musicThemeId — Gift.Seen-owned shared atmosphere; never a sender asset,
+ *     never stored in the private bucket, validated against the occasion's
+ *     server-side allowlist of genuinely available, rights-cleared themes.
+ * Deliberately NOT a generic media[] — role semantics are the product model.
+ */
+export const PRESENTATION_VERSION = 1;
+
+/** Which staged upload type each presentation role must carry. */
+const ROLE_EXPECTED_TYPE = { photo: "photo", voice: "audio" };
+
+/**
+ * Legacy adapter (dual-read): a record sealed with the 3B-era single
+ * `openingMedia` reads as the equivalent presentation. photo→photo,
+ * audio→voice. Old records are never rewritten.
+ */
+export function adaptLegacyOpeningMedia(om) {
+  if (!om || !om.assetId) return null;
+  if (om.type === "photo") {
+    return {
+      v: PRESENTATION_VERSION,
+      photo: { assetId: om.assetId, contentType: om.contentType, bytes: om.bytes },
+    };
+  }
+  if (om.type === "audio") {
+    return {
+      v: PRESENTATION_VERSION,
+      voice: {
+        assetId: om.assetId,
+        contentType: om.contentType,
+        bytes: om.bytes,
+        ...(om.durationMs ? { durationMs: om.durationMs } : {}),
+      },
+    };
+  }
+  return null;
+}
+
+/** Canonical read: new field first, legacy adapted second. */
+export function readPresentation(rec) {
+  return rec?.presentation ?? adaptLegacyOpeningMedia(rec?.openingMedia) ?? null;
+}
+
 // --- Sealing ---------------------------------------------------------------------
 
 /**
@@ -231,6 +279,191 @@ export async function finalizeOpeningMedia({ store, decoded, openingMedia, token
       ...(type === "audio" ? { durationMs } : {}),
     },
   };
+}
+
+/**
+ * Validate a staged asset for a ROLE without promoting it. Server-side
+ * re-validation from the object, never client claims; role/type mismatch
+ * (audio in photo role, photo in voice role) is rejected.
+ */
+async function validateStagedRole({ store, decoded, role, assetId }) {
+  const field = `presentation.${role}`;
+  if (!ASSET_ID_RE.test(assetId || "")) {
+    return { ok: false, status: 400, body: { error: "invalid_media", field } };
+  }
+  let head;
+  try {
+    head = await store.headStaging({ uid: decoded.uid, assetId });
+  } catch (e) {
+    console.error(`[giftMedia] staging head failed (${role}):`, e?.message);
+    return { ok: false, status: 502, body: { error: "media_seal_failed" } };
+  }
+  if (!head) return { ok: false, status: 400, body: { error: "invalid_media", field } };
+
+  const meta = head.metadata || {};
+  const bytes = Number(meta.bytes ?? head.bytes ?? NaN);
+  const contentType = String(head.contentType || "").toLowerCase();
+  const durationMs = meta.durationMs ? Number(meta.durationMs) : null;
+  const expectedType = ROLE_EXPECTED_TYPE[role];
+  if (meta.type !== expectedType) {
+    return { ok: false, status: 400, body: { error: "invalid_media", field } };
+  }
+  if (!contentTypesFor(expectedType).includes(contentType)) {
+    return { ok: false, status: 400, body: { error: "invalid_media", field } };
+  }
+  if (!Number.isFinite(bytes) || bytes > MEDIA_MAX_BYTES || bytes < MEDIA_MIN_BYTES) {
+    return { ok: false, status: 400, body: { error: "invalid_media", field } };
+  }
+  if (expectedType === "audio" && (!Number.isFinite(durationMs) || durationMs <= 0 || durationMs > AUDIO_MAX_DURATION_MS)) {
+    return { ok: false, status: 400, body: { error: "invalid_media", field } };
+  }
+  return {
+    ok: true,
+    fragment: {
+      assetId,
+      contentType,
+      bytes,
+      ...(expectedType === "audio" ? { durationMs } : {}),
+    },
+  };
+}
+
+/**
+ * Finalize the full presentation atomically at seal time.
+ *
+ * Order: validate EVERY role → copy EVERY role to sealed → only then delete
+ * stagings (best-effort). Any copy failure compensates by deleting the
+ * sealed copies made so far while KEEPING every staging object — the sender
+ * can retry the seal without re-uploading. No partial gift state can exist.
+ *
+ * `allowedMusicThemes` is the occasion's server-side allowlist (empty until
+ * genuinely rights-cleared assets exist — fake themes are never sealable).
+ *
+ * Returns { ok:true, presentation|null } or { ok:false, status, body }.
+ */
+export async function finalizePresentation({ store, decoded, presentation, tokenHash, allowedMusicThemes = [] }) {
+  if (presentation === undefined || presentation === null) return { ok: true, presentation: null };
+  if (typeof presentation !== "object" || Array.isArray(presentation)) {
+    return { ok: false, status: 400, body: { error: "invalid_presentation", field: "presentation" } };
+  }
+
+  const roles = [];
+  for (const role of ["photo", "voice"]) {
+    const entry = presentation[role];
+    if (entry === undefined || entry === null) continue;
+    if (typeof entry !== "object" || typeof entry.assetId !== "string") {
+      return { ok: false, status: 400, body: { error: "invalid_media", field: `presentation.${role}` } };
+    }
+    roles.push({ role, assetId: entry.assetId });
+  }
+
+  let musicThemeId = null;
+  if (presentation.musicThemeId !== undefined && presentation.musicThemeId !== null && presentation.musicThemeId !== "") {
+    if (typeof presentation.musicThemeId !== "string" || !allowedMusicThemes.includes(presentation.musicThemeId)) {
+      return { ok: false, status: 400, body: { error: "invalid_presentation", field: "musicThemeId" } };
+    }
+    musicThemeId = presentation.musicThemeId;
+  }
+
+  if (roles.length === 0 && !musicThemeId) return { ok: true, presentation: null };
+
+  if (roles.length > 0 && !store) {
+    return { ok: false, status: 503, body: { error: "media_unavailable" } };
+  }
+
+  // Phase 1 — validate everything before touching sealed storage.
+  const fragments = {};
+  for (const { role, assetId } of roles) {
+    const res = await validateStagedRole({ store, decoded, role, assetId });
+    if (!res.ok) return res;
+    fragments[role] = res.fragment;
+  }
+
+  // Phase 2 — promote all roles; compensate on any failure (stagings kept).
+  const promoted = [];
+  for (const { role, assetId } of roles) {
+    try {
+      await store.copyToSealed({ uid: decoded.uid, assetId, tokenHash });
+      promoted.push(assetId);
+    } catch (e) {
+      console.error(`[giftMedia] seal copy failed (${role}):`, e?.message);
+      for (const done of promoted) {
+        await deleteSealedMedia({ store, tokenHash, assetId: done, reason: "seal_compensation" });
+      }
+      return { ok: false, status: 502, body: { error: "media_seal_failed" } };
+    }
+  }
+
+  // Phase 3 — staging cleanup, best-effort only (lifecycle is the fallback).
+  for (const { role, assetId } of roles) {
+    try {
+      await store.deleteStaging({ uid: decoded.uid, assetId });
+    } catch (e) {
+      console.warn(`[giftMedia] staging delete failed (${role}; lifecycle will clean):`, e?.message);
+    }
+  }
+
+  return {
+    ok: true,
+    presentation: {
+      v: PRESENTATION_VERSION,
+      ...(fragments.photo ? { photo: fragments.photo } : {}),
+      ...(fragments.voice ? { voice: fragments.voice } : {}),
+      ...(musicThemeId ? { musicThemeId } : {}),
+    },
+  };
+}
+
+/** Every sealed private asset a record owns (new contract or legacy). */
+export function sealedAssetIds(rec) {
+  const p = readPresentation(rec);
+  if (!p) return [];
+  return [p.photo?.assetId, p.voice?.assetId].filter(Boolean);
+}
+
+/**
+ * Mint the recipient presentation for a SUCCESSFUL retrieve. Each private
+ * role mints its own independent 15-minute descriptor; one role's minting
+ * failure never suppresses the other role, the music theme, or the
+ * invitation (§27 failure isolation). musicThemeId is not private media but
+ * rides the same post-access response — no partial pre-unlock exposure.
+ */
+export async function mintPresentation({ store, rec, tokenHash }) {
+  const p = readPresentation(rec);
+  if (!p) return null;
+  const out = {};
+  if (p.photo?.assetId && store) {
+    try {
+      const url = await store.presignSealedGet({
+        tokenHash,
+        assetId: p.photo.assetId,
+        contentType: p.photo.contentType,
+        ttlSeconds: MEDIA_URL_TTL_SECONDS,
+      });
+      out.photo = { url, contentType: p.photo.contentType };
+    } catch (e) {
+      console.warn("[giftMedia] photo presign failed — role degrades:", e?.message);
+    }
+  }
+  if (p.voice?.assetId && store) {
+    try {
+      const url = await store.presignSealedGet({
+        tokenHash,
+        assetId: p.voice.assetId,
+        contentType: p.voice.contentType,
+        ttlSeconds: MEDIA_URL_TTL_SECONDS,
+      });
+      out.voice = {
+        url,
+        contentType: p.voice.contentType,
+        ...(p.voice.durationMs ? { durationMs: p.voice.durationMs } : {}),
+      };
+    } catch (e) {
+      console.warn("[giftMedia] voice presign failed — role degrades:", e?.message);
+    }
+  }
+  if (p.musicThemeId) out.musicThemeId = p.musicThemeId;
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 /** Best-effort compensation/revocation delete of a sealed object. */

@@ -46,6 +46,25 @@ export const WEDDING_TONES = [
 export const WEDDING_DRAFT_MAX_TOKENS = 1800;
 export const WEDDING_DRAFT_TEMPERATURE = 0.8;
 
+/**
+ * Wedding music theme allowlist (Invitation Presentation, Phase 3C-1).
+ *
+ * EMPTY until genuinely rights-cleared production assets exist — a theme id
+ * here means a real, approved, playable asset; fake themes are never
+ * sealable. Approved naming pattern (versioned, immutable, append-only —
+ * frozen-presentation discipline; a sealed gift's sound never changes):
+ *   wedding_warm_piano_v1        温暖钢琴 (default candidate)
+ *   wedding_romantic_strings_v1  浪漫弦乐
+ *   wedding_chinese_elegance_v1  中式雅韵
+ *   wedding_quiet_celebration_v1 静谧喜悦
+ * A materially different recording gets a _v2, never a replacement.
+ * Every entry requires recorded rights provenance (source / license /
+ * reference / internal approval) in the frontend registry — commissioned or
+ * explicitly licensed for product distribution; "royalty-free" alone is not
+ * sufficient. Music is Gift.Seen-owned presentation, never sender media.
+ */
+export const WEDDING_MUSIC_THEMES = [];
+
 const LIMITS = {
   partner: 40,
   venueName: 80,

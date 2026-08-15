@@ -21,8 +21,13 @@
  */
 
 import crypto from "node:crypto";
-import { validateWeddingOccasion } from "./occasion.mjs";
-import { finalizeOpeningMedia, deleteSealedMedia, mintOpeningMedia } from "./giftMedia.mjs";
+import { validateWeddingOccasion, WEDDING_MUSIC_THEMES } from "./occasion.mjs";
+import {
+  finalizePresentation,
+  mintPresentation,
+  sealedAssetIds,
+  deleteSealedMedia,
+} from "./giftMedia.mjs";
 
 // --- Config ---------------------------------------------------------------
 export const GIFT_PUBLIC_BASE_URL =
@@ -202,23 +207,35 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
   const token = generateToken();
   const tokenHash = sha256Hex(token);
 
-  // Opening Media (Wedding V1, Phase 3B-1): optional, ONE asset, occasion
-  // gifts only. Finalized BEFORE the record write so a failed promotion can
-  // never leave a corrupt gift; the staging key derives from the verified
-  // sender uid, so foreign assets are unreachable by construction.
-  let openingMedia = null;
-  if (body?.openingMedia !== undefined && body?.openingMedia !== null) {
+  // Invitation Presentation (Phase 3C-1): role-aware {photo?, voice?,
+  // musicThemeId?}, occasion gifts only. Dual-INPUT during the transition —
+  // the legacy single `openingMedia` body normalizes into the same contract
+  // (photo→photo role, audio→voice role) so already-deployed clients keep
+  // sealing correctly. New records persist ONLY `presentation`. All roles
+  // finalize atomically before the record write: any failure compensates
+  // promoted copies and KEEPS stagings, so no partial gift can exist and the
+  // sender can retry without re-uploading.
+  let presentationInput = body?.presentation;
+  if ((presentationInput === undefined || presentationInput === null) && body?.openingMedia) {
+    const om = body.openingMedia;
+    if (om?.type === "photo") presentationInput = { photo: { assetId: om.assetId } };
+    else if (om?.type === "audio") presentationInput = { voice: { assetId: om.assetId } };
+    else return { status: 400, body: { error: "invalid_media", field: "type" } };
+  }
+  let presentation = null;
+  if (presentationInput !== undefined && presentationInput !== null) {
     if (!occasion) {
       return { status: 400, body: { error: "invalid_media", field: "occasion" } };
     }
-    const fin = await finalizeOpeningMedia({
+    const fin = await finalizePresentation({
       store: media,
       decoded,
-      openingMedia: body.openingMedia,
+      presentation: presentationInput,
       tokenHash,
+      allowedMusicThemes: WEDDING_MUSIC_THEMES,
     });
     if (!fin.ok) return { status: fin.status, body: fin.body };
-    openingMedia = fin.media;
+    presentation = fin.presentation;
   }
 
   const senderName =
@@ -246,17 +263,17 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
     lockedUntil: null,
     cooldownTier: 0,
     ...(occasion ? { occasion } : {}),
-    ...(openingMedia ? { openingMedia } : {}),
+    ...(presentation ? { presentation } : {}),
   };
 
   // Doc id = tokenHash. The raw token is never written to Firestore.
   try {
     await db.collection(GIFT_COLLECTION).doc(tokenHash).set(record);
   } catch (err) {
-    // Never strand a sealed media object behind a record that failed to
-    // exist — compensate, then surface the failure.
-    if (openingMedia) {
-      await deleteSealedMedia({ store: media, tokenHash, assetId: openingMedia.assetId, reason: "create_failed" });
+    // Never strand sealed media objects behind a record that failed to
+    // exist — compensate every promoted role, then surface the failure.
+    for (const assetId of sealedAssetIds(record)) {
+      await deleteSealedMedia({ store: media, tokenHash, assetId, reason: "create_failed" });
     }
     throw err;
   }
@@ -340,9 +357,11 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
         rsvpAt: rec.rsvpAt ?? null,
         accessMode,
         occasion: rec.occasion ?? null,
-        // Short-lived media descriptor, minted only on successful access;
-        // minting failure degrades to null — never blocks the invitation.
-        openingMedia: await mintOpeningMedia({ store: media, rec, tokenHash }),
+        // Role-aware presentation, minted only on successful access; each
+        // role degrades independently and never blocks the invitation. The
+        // legacy openingMedia shape is SYNTHESIZED from the photo role so
+        // already-cached production bundles keep rendering photo gifts.
+        ...(await presentationResponse({ store: media, rec, tokenHash })),
       },
     };
   }
@@ -389,10 +408,27 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
       // Structured Occasion facts (Wedding V1) — first-class data, returned
       // only after successful access. null for every gift sealed without one.
       occasion: rec.occasion ?? null,
-      // Minted only AFTER the Heart Key verified above — private media is
-      // structurally unobtainable before unlock.
-      openingMedia: await mintOpeningMedia({ store: media, rec, tokenHash }),
+      // Minted only AFTER the Heart Key verified above — private roles are
+      // structurally unobtainable before unlock (photo AND voice).
+      ...(await presentationResponse({ store: media, rec, tokenHash })),
     },
+  };
+}
+
+/**
+ * Build the transition-compatible presentation fields for a successful
+ * retrieve: the new role-aware `presentation` plus a legacy `openingMedia`
+ * synthesized from the minted photo descriptor (photo-only, matching what
+ * every deployed bundle understands). Remove the synthesis once cached
+ * pre-3C bundles have aged out.
+ */
+async function presentationResponse({ store, rec, tokenHash }) {
+  const presentation = await mintPresentation({ store, rec, tokenHash });
+  return {
+    presentation,
+    openingMedia: presentation?.photo
+      ? { type: "photo", url: presentation.photo.url, contentType: presentation.photo.contentType }
+      : null,
   };
 }
 
@@ -477,10 +513,12 @@ export async function revokeGift({ db, decoded, body, media = null }) {
   await ref.update({ revoked: true });
   // Revocation gate is the record flag above (blocks all future retrieves and
   // therefore all future media URLs). Object deletion is best-effort privacy
-  // hygiene: success also kills any already-minted URL early; failure leaves
-  // the ≤15-minute URL tail + bucket lifecycle as fallback — never un-revokes.
-  if (rec.openingMedia?.assetId) {
-    await deleteSealedMedia({ store: media, tokenHash, assetId: rec.openingMedia.assetId, reason: "revoke" });
+  // hygiene for EVERY private presentation asset the record owns (new
+  // contract or legacy openingMedia, photo and voice alike): success kills
+  // any already-minted URL early; failure leaves the ≤15-minute URL tail +
+  // bucket lifecycle as fallback — never un-revokes.
+  for (const assetId of sealedAssetIds(rec)) {
+    await deleteSealedMedia({ store: media, tokenHash, assetId, reason: "revoke" });
   }
   return { status: 200, body: { ok: true } };
 }

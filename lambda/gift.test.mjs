@@ -714,14 +714,22 @@ test("media: wedding gift seals a staged photo immutably; staging is promoted", 
   });
   assert.equal(res.status, 200);
   const rec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(res.body.token)}`);
-  assert.deepEqual(rec.openingMedia, { type: "photo", assetId, contentType: "image/jpeg", bytes: 2048 });
+  // 3C-1: legacy openingMedia INPUT normalizes into the canonical role-aware
+  // presentation record; openingMedia is never written to new records.
+  assert.equal("openingMedia" in rec, false);
+  assert.deepEqual(rec.presentation, {
+    v: 1,
+    photo: { assetId, contentType: "image/jpeg", bytes: 2048 },
+  });
   assert.ok(media._objects.has(`sealed/${sha256Hex(res.body.token)}/${assetId}`));
   assert.equal([...media._objects.keys()].some((k) => k.startsWith("staging/")), false);
 
-  // Immutable: RSVP and reopen never touch openingMedia.
+  // Immutable: RSVP and reopen never touch presentation.
   await rsvpGift({ db, body: { token: res.body.token, status: "accepted" }, now: 2000 });
-  assert.deepEqual(db._store.get(`${GIFT_COLLECTION}/${sha256Hex(res.body.token)}`).openingMedia,
-    { type: "photo", assetId, contentType: "image/jpeg", bytes: 2048 });
+  assert.deepEqual(db._store.get(`${GIFT_COLLECTION}/${sha256Hex(res.body.token)}`).presentation, {
+    v: 1,
+    photo: { assetId, contentType: "image/jpeg", bytes: 2048 },
+  });
 });
 
 test("media: requires an occasion, rejects foreign/nonexistent assets, never writes a corrupt record", async () => {
@@ -893,4 +901,246 @@ test("media: ordinary gifts and media-less wedding gifts are unchanged (openingM
   const noStore = await retrieveGift({ db, body: { token: plain.body.token }, now: 2500 });
   assert.equal(noStore.status, 200);
   assert.equal(noStore.body.openingMedia, null);
+});
+
+// --- Invitation Presentation contract (Phase 3C-1) ----------------------------
+
+async function stageTestVoice(media, uid = AUTHOR.uid, durationMs = 12000) {
+  const bytes = Buffer.alloc(2048, 0x20);
+  bytes[4] = 0x66; bytes[5] = 0x74; bytes[6] = 0x79; bytes[7] = 0x70; // ftyp
+  const { uploadGiftMedia } = await import("./giftMedia.mjs");
+  const res = await uploadGiftMedia({
+    store: media, decoded: { uid },
+    body: { type: "audio", contentType: "audio/mp4", data: bytes.toString("base64"), durationMs },
+  });
+  if (res.status !== 200) throw new Error("stage voice failed");
+  return res.body.assetId;
+}
+
+test("presentation: photo only / voice only / both / neither seal to the canonical record", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+
+  const photoId = await stageTestPhoto(media);
+  const pOnly = await createGift({ db, decoded: AUTHOR, media, now: 1000,
+    body: { message: "p", occasion: weddingOccasion(), presentation: { photo: { assetId: photoId } } } });
+  assert.equal(pOnly.status, 200);
+  const pRec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(pOnly.body.token)}`);
+  assert.deepEqual(Object.keys(pRec.presentation).sort(), ["photo", "v"]);
+
+  const voiceId = await stageTestVoice(media);
+  const vOnly = await createGift({ db, decoded: AUTHOR, media, now: 1000,
+    body: { message: "v", occasion: weddingOccasion(), presentation: { voice: { assetId: voiceId } } } });
+  assert.equal(vOnly.status, 200);
+  const vRec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(vOnly.body.token)}`);
+  assert.deepEqual(vRec.presentation.voice, { assetId: voiceId, contentType: "audio/mp4", bytes: 2048, durationMs: 12000 });
+
+  const photo2 = await stageTestPhoto(media);
+  const voice2 = await stageTestVoice(media);
+  const both = await createGift({ db, decoded: AUTHOR, media, now: 1000,
+    body: { message: "pv", occasion: weddingOccasion(),
+      presentation: { photo: { assetId: photo2 }, voice: { assetId: voice2 } } } });
+  assert.equal(both.status, 200);
+  const bRec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(both.body.token)}`);
+  assert.ok(bRec.presentation.photo && bRec.presentation.voice);
+  const th = sha256Hex(both.body.token);
+  assert.ok(media._objects.has(`sealed/${th}/${photo2}`) && media._objects.has(`sealed/${th}/${voice2}`));
+
+  const none = await createGift({ db, decoded: AUTHOR, media, now: 1000,
+    body: { message: "n", occasion: weddingOccasion(), presentation: {} } });
+  assert.equal(none.status, 200);
+  assert.equal("presentation" in db._store.get(`${GIFT_COLLECTION}/${sha256Hex(none.body.token)}`), false);
+});
+
+test("presentation: music theme allowlist boundary — empty list rejects, DI list accepts, id stored verbatim", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  // Production allowlist is EMPTY (no rights-cleared assets yet) → any theme rejected.
+  const rejected = await createGift({ db, decoded: AUTHOR, media, now: 1000,
+    body: { message: "m", occasion: weddingOccasion(), presentation: { musicThemeId: "wedding_warm_piano_v1" } } });
+  assert.equal(rejected.status, 400);
+  assert.equal(rejected.body.error, "invalid_presentation");
+  assert.equal(rejected.body.field, "musicThemeId");
+  assert.equal(db._store.size, 0);
+
+  // The mechanics accept an allowlisted id (DI through finalizePresentation).
+  const { finalizePresentation } = await import("./giftMedia.mjs");
+  const fin = await finalizePresentation({
+    store: media, decoded: AUTHOR, tokenHash: "t",
+    presentation: { musicThemeId: "wedding_warm_piano_v1" },
+    allowedMusicThemes: ["wedding_warm_piano_v1"],
+  });
+  assert.equal(fin.ok, true);
+  assert.deepEqual(fin.presentation, { v: 1, musicThemeId: "wedding_warm_piano_v1" });
+});
+
+test("presentation: role/type mismatches and foreign assets are rejected per-field", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  const photoId = await stageTestPhoto(media);
+  const voiceId = await stageTestVoice(media);
+  const foreignPhoto = await stageTestPhoto(media, "someone-else");
+  const foreignVoice = await stageTestVoice(media, "someone-else");
+
+  const cases = [
+    [{ photo: { assetId: voiceId } }, "presentation.photo"],   // audio in photo role
+    [{ voice: { assetId: photoId } }, "presentation.voice"],   // photo in voice role
+    [{ photo: { assetId: foreignPhoto } }, "presentation.photo"],
+    [{ voice: { assetId: foreignVoice } }, "presentation.voice"],
+    [{ photo: { assetId: "nope" } }, "presentation.photo"],
+  ];
+  for (const [presentation, field] of cases) {
+    const res = await createGift({ db, decoded: AUTHOR, media, now: 1000,
+      body: { message: "x", occasion: weddingOccasion(), presentation } });
+    assert.equal(res.status, 400, `expected 400 for ${field}`);
+    assert.equal(res.body.field, field);
+  }
+  assert.equal(db._store.size, 0);
+});
+
+test("presentation: atomicity — second-role failure compensates the first and KEEPS stagings", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  const photoId = await stageTestPhoto(media);
+  const voiceId = await stageTestVoice(media);
+  // photo copies fine; voice copy fails
+  const realCopy = media.copyToSealed.bind(media);
+  media.copyToSealed = async (args) => {
+    if (args.assetId === voiceId) throw new Error("injected voice copy failure");
+    return realCopy(args);
+  };
+  const res = await createGift({ db, decoded: AUTHOR, media, now: 1000,
+    body: { message: "x", occasion: weddingOccasion(),
+      presentation: { photo: { assetId: photoId }, voice: { assetId: voiceId } } } });
+  assert.equal(res.status, 502);
+  assert.equal(res.body.error, "media_seal_failed");
+  assert.equal(db._store.size, 0); // no partial gift
+  assert.equal([...media._objects.keys()].some((k) => k.startsWith("sealed/")), false); // photo compensated
+  // stagings KEPT — sender can retry the seal without re-uploading
+  assert.ok(media._objects.has(`staging/${AUTHOR.uid}/${photoId}`));
+  assert.ok(media._objects.has(`staging/${AUTHOR.uid}/${voiceId}`));
+});
+
+test("presentation: Firestore failure after both promotions compensates BOTH sealed assets", async () => {
+  const media = makeMediaStore();
+  const photoId = await stageTestPhoto(media);
+  const voiceId = await stageTestVoice(media);
+  const failingDb = {
+    collection: () => ({
+      doc: () => ({ set: async () => { throw new Error("firestore down"); } }),
+      where: () => ({ where: () => ({ get: async () => ({ size: 0, docs: [] }) }) }),
+    }),
+  };
+  await assert.rejects(() => createGift({ db: failingDb, decoded: AUTHOR, media, now: 1000,
+    body: { message: "x", occasion: weddingOccasion(),
+      presentation: { photo: { assetId: photoId }, voice: { assetId: voiceId } } } }));
+  assert.equal([...media._objects.keys()].some((k) => k.startsWith("sealed/")), false);
+});
+
+test("presentation: retrieve mints independent role descriptors; one presign failure never suppresses the other", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  const photoId = await stageTestPhoto(media);
+  const voiceId = await stageTestVoice(media);
+  const gift = await createGift({ db, decoded: AUTHOR, media, now: 1000,
+    body: { message: "正文", occasion: weddingOccasion(),
+      presentation: { photo: { assetId: photoId }, voice: { assetId: voiceId } } } });
+
+  const opened = await retrieveGift({ db, media, body: { token: gift.body.token }, now: 2000 });
+  assert.equal(opened.status, 200);
+  assert.ok(opened.body.presentation.photo.url.includes("sig=test"));
+  assert.equal(opened.body.presentation.voice.durationMs, 12000);
+  // transition synthesis: legacy openingMedia mirrors the photo role
+  assert.equal(opened.body.openingMedia.type, "photo");
+  assert.equal(opened.body.openingMedia.url, opened.body.presentation.photo.url);
+  const raw = JSON.stringify(opened.body);
+  assert.equal(raw.includes("assetId"), false);
+  assert.equal(raw.includes(AUTHOR.uid), false);
+
+  // photo presign fails → voice + invitation still fine, openingMedia null
+  const realPresign = media.presignSealedGet.bind(media);
+  media.presignSealedGet = async (args) => {
+    if (args.assetId === photoId) throw new Error("injected photo presign failure");
+    return realPresign(args);
+  };
+  const degraded = await retrieveGift({ db, media, body: { token: gift.body.token }, now: 3000 });
+  assert.equal(degraded.status, 200);
+  assert.equal(degraded.body.presentation.photo, undefined);
+  assert.ok(degraded.body.presentation.voice.url);
+  assert.equal(degraded.body.openingMedia, null);
+  assert.equal(degraded.body.message, "正文");
+});
+
+test("presentation: heart_key leaks neither role before unlock; unlock returns both", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  const photoId = await stageTestPhoto(media);
+  const voiceId = await stageTestVoice(media);
+  const gift = await createGift({ db, decoded: AUTHOR, media, now: 1000,
+    body: { message: "正文", accessMode: "heart_key", retrievalKey: "080216", occasion: weddingOccasion(),
+      presentation: { photo: { assetId: photoId }, voice: { assetId: voiceId } } } });
+  const probe = await retrieveGift({ db, media, body: { token: gift.body.token }, now: 2000 });
+  const wrong = await retrieveGift({ db, media, body: { token: gift.body.token, key: "111112" }, now: 2100 });
+  const pre = JSON.stringify(probe.body) + JSON.stringify(wrong.body);
+  assert.equal(pre.includes("media.example"), false);
+  const ok = await retrieveGift({ db, media, body: { token: gift.body.token, key: "080216" }, now: 2200 });
+  assert.ok(ok.body.presentation.photo.url && ok.body.presentation.voice.url);
+});
+
+test("presentation: legacy records adapt on read — photo, audio, and none", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  // Simulate 3B-era records exactly as production wrote them.
+  media._objects.set("sealed/legacy-photo-hash/photoasset_123456789a", { bytes: Buffer.alloc(9), contentType: "image/jpeg", metadata: {} });
+  db._store.set(`${GIFT_COLLECTION}/${sha256Hex("legacy-photo")}`, {
+    schemaVersion: 1, senderUid: "author-1", senderName: null, tone: null, accessMode: "direct",
+    message: "旧照片婚礼", keySalt: null, keyHash: null, region: "GLOBAL",
+    createdAt: 500, expiresAt: 999999999, redeemedAt: null, revoked: false,
+    failedAttempts: 0, lockedUntil: null, cooldownTier: 0,
+    occasion: weddingOccasion(),
+    openingMedia: { type: "photo", assetId: "photoasset_123456789a", contentType: "image/jpeg", bytes: 9 },
+  });
+  const photo = await retrieveGift({ db, media, body: { token: "legacy-photo" }, now: 2000 });
+  assert.equal(photo.status, 200);
+  assert.ok(photo.body.presentation.photo.url);
+  assert.equal(photo.body.openingMedia.type, "photo"); // old bundles keep working
+
+  db._store.set(`${GIFT_COLLECTION}/${sha256Hex("legacy-audio")}`, {
+    ...db._store.get(`${GIFT_COLLECTION}/${sha256Hex("legacy-photo")}`),
+    message: "旧音频",
+    openingMedia: { type: "audio", assetId: "audioasset_123456789a", contentType: "audio/mp4", bytes: 9, durationMs: 9000 },
+  });
+  const audio = await retrieveGift({ db, media, body: { token: "legacy-audio" }, now: 2000 });
+  assert.equal(audio.body.presentation.voice.durationMs, 9000); // audio → voice role
+  assert.equal(audio.body.openingMedia, null); // synthesis is photo-only
+
+  const plain = await createGift({ db, decoded: AUTHOR, media, body: { message: "普通", accessMode: "direct" }, now: 1000 });
+  const pr = await retrieveGift({ db, media, body: { token: plain.body.token }, now: 2000 });
+  assert.equal(pr.body.presentation, null);
+  assert.equal(pr.body.openingMedia, null);
+});
+
+test("presentation: revoke attempts deletion of EVERY private role asset (new and legacy records)", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  const photoId = await stageTestPhoto(media);
+  const voiceId = await stageTestVoice(media);
+  const gift = await createGift({ db, decoded: AUTHOR, media, now: 1000,
+    body: { message: "x", occasion: weddingOccasion(),
+      presentation: { photo: { assetId: photoId }, voice: { assetId: voiceId } } } });
+  const th = sha256Hex(gift.body.token);
+  const rev = await revokeGift({ db, decoded: AUTHOR, media, body: { token: gift.body.token } });
+  assert.equal(rev.status, 200);
+  assert.equal(media._objects.has(`sealed/${th}/${photoId}`), false);
+  assert.equal(media._objects.has(`sealed/${th}/${voiceId}`), false);
+
+  // deletion failure never un-revokes
+  const photo2 = await stageTestPhoto(media);
+  const g2 = await createGift({ db, decoded: AUTHOR, media, now: 1000,
+    body: { message: "y", occasion: weddingOccasion(), presentation: { photo: { assetId: photo2 } } } });
+  media.deleteSealed = async () => { throw new Error("injected"); };
+  const rev2 = await revokeGift({ db, decoded: AUTHOR, media, body: { token: g2.body.token } });
+  assert.equal(rev2.status, 200);
+  const after = await retrieveGift({ db, media, body: { token: g2.body.token }, now: 3000 });
+  assert.equal(after.status, 410);
 });
