@@ -695,3 +695,13 @@ test("4.5-C §12: shared-link invitation never enters household aggregate", asyn
   const retH = await retrieveGift({ db, body: { token: c1.body.token } });
   assert.equal(retH.body.sharedDistribution, false);
 });
+
+test("4.5-D: library rows expose presentation role FLAGS only (no urls/assetIds)", async () => {
+  const db = makeFakeDb();
+  const c = await createGift({ db, decoded: A, share: fakeShare(), body: eventCreateBody("张先生全家", { presentation: { musicThemeId: "wedding_warm_piano_v1" } }) });
+  const det = await eventDetail({ db, decoded: A, body: { eventId: c.body.eventId }, giftCollection: GIFT_COLLECTION });
+  const row = det.body.invitations[0];
+  assert.deepEqual(row.presentationRoles, { photo: false, voice: false, musicThemeId: "wedding_warm_piano_v1" });
+  assert.equal(JSON.stringify(row).includes("assetId"), false);
+  assert.equal(JSON.stringify(row).includes("url"), false);
+});

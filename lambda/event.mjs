@@ -172,6 +172,17 @@ function libraryRow(id, rec, now) {
     ...(rec.recipientLabel ? { recipientLabel: rec.recipientLabel } : {}),
     rsvp: rsvpOf(rec),
     ...(rec.sharedDistribution === true ? { sharedDistribution: true } : {}),
+    // Role FLAGS only (4.5-D library continuation needs to know what a
+    // source invitation can lend) — never URLs, never assetIds.
+    ...(rec.presentation
+      ? {
+          presentationRoles: {
+            photo: Boolean(rec.presentation.photo),
+            voice: Boolean(rec.presentation.voice),
+            musicThemeId: rec.presentation.musicThemeId ?? null,
+          },
+        }
+      : {}),
     shareRecoverable: Boolean(rec.shareTokenSealed),
   };
 }
