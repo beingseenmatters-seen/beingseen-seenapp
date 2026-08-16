@@ -67,6 +67,8 @@ echo "4. Creating zip file (index.mjs stays canonical; no overwrite)..."
 zip -r "$PACKAGE" \
   index.mjs \
   gift.mjs \
+  event.mjs \
+  shareCrypto.mjs \
   occasion.mjs \
   giftMedia.mjs \
   authHandoff.mjs \

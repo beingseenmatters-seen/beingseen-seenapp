@@ -41,7 +41,9 @@ import {
   parseExtractionContent,
   toExtractResponsePayload,
 } from "./reflectModes.mjs";
-import { createGift, retrieveGift, revokeGift, rsvpGift } from "./gift.mjs";
+import { createGift, retrieveGift, revokeGift, rsvpGift, GIFT_COLLECTION } from "./gift.mjs";
+import { senderLibrary, eventDetail, recoverShare } from "./event.mjs";
+import { makeKmsShareCrypto } from "./shareCrypto.mjs";
 import { runWeddingDraft } from "./occasion.mjs";
 import { uploadGiftMedia, makeS3MediaStore } from "./giftMedia.mjs";
 
@@ -49,6 +51,11 @@ import { uploadGiftMedia, makeS3MediaStore } from "./giftMedia.mjs";
 // Absent GIFT_MEDIA_BUCKET → store is null → media routes answer 503 and
 // gifts seal/read exactly as before (media is optional ceremony content).
 const giftMediaStore = makeS3MediaStore({ bucket: process.env.GIFT_MEDIA_BUCKET });
+
+// Sender-recoverable share credential (Phase 4.5-A) — KMS-backed. Absent
+// GIFT_SHARE_KMS_KEY_ID → null → event-based creation answers 503
+// share_unavailable explicitly; ordinary gifts seal exactly as before.
+const giftShareCrypto = makeKmsShareCrypto();
 import {
   createHandoff,
   inspectHandoff,
@@ -971,7 +978,13 @@ export const handler = async (event) => {
   // can open a Gift by scanning the QR and entering the six-digit 心意钥匙.
   if (path === "/gift/create") {
     const decoded = await verifyAuthToken(event);
-    const result = await createGift({ db: admin.firestore(), decoded, body, media: giftMediaStore });
+    const result = await createGift({
+      db: admin.firestore(),
+      decoded,
+      body,
+      media: giftMediaStore,
+      share: giftShareCrypto,
+    });
     return httpResponse(result.status, result.body);
   }
   if (path === "/gift/retrieve") {
@@ -991,6 +1004,41 @@ export const handler = async (event) => {
     // Opening Media staging — authenticated sender only (Phase 3B-1).
     const decoded = await verifyAuthToken(event);
     const result = await uploadGiftMedia({ store: giftMediaStore, decoded, body });
+    return httpResponse(result.status, result.body);
+  }
+
+  // ---- Sender Library / Event management (Phase 4.5-A) --------------------
+  // Sender-authenticated ONLY: every handler additionally verifies
+  // senderUid === decoded.uid on each touched record. Recipient tokens can
+  // never reach event data, RSVP aggregates, or share credentials.
+  if (path === "/sender/library") {
+    const decoded = await verifyAuthToken(event);
+    const result = await senderLibrary({
+      db: admin.firestore(),
+      decoded,
+      giftCollection: GIFT_COLLECTION,
+    });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/event/detail") {
+    const decoded = await verifyAuthToken(event);
+    const result = await eventDetail({
+      db: admin.firestore(),
+      decoded,
+      body,
+      giftCollection: GIFT_COLLECTION,
+    });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/gift/share") {
+    const decoded = await verifyAuthToken(event);
+    const result = await recoverShare({
+      db: admin.firestore(),
+      decoded,
+      body,
+      giftCollection: GIFT_COLLECTION,
+      shareCrypto: giftShareCrypto,
+    });
     return httpResponse(result.status, result.body);
   }
   if (path === "/express/draft") {

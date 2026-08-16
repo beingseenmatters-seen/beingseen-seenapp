@@ -23,6 +23,12 @@
 import crypto from "node:crypto";
 import { validateWeddingOccasion, WEDDING_MUSIC_THEMES } from "./occasion.mjs";
 import {
+  normalizeRecipientLabel,
+  validateRsvpCounts,
+  ensureEvent,
+  deleteCreatedEvent,
+} from "./event.mjs";
+import {
   finalizePresentation,
   mintPresentation,
   sealedAssetIds,
@@ -128,7 +134,7 @@ export async function moderateGiftMessage(message) {
 // --- Handlers -------------------------------------------------------------
 
 /** POST /gift/create — requires a verified Firebase ID token (author). */
-export async function createGift({ db, decoded, body, now = Date.now(), media = null }) {
+export async function createGift({ db, decoded, body, now = Date.now(), media = null, share = null }) {
   if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
 
   const message = typeof body?.message === "string" ? body.message.trim() : "";
@@ -169,6 +175,27 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
     occasion = res.occasion;
   }
 
+  // Event linkage (Phase 4.5-A): a recipient-specific Invitation belongs to
+  // a Wedding Event. Two intents — eventCreate (first seal silently creates
+  // the Event from these facts) or eventId (attach to the sender's own
+  // active event). Both REQUIRE occasion facts, a recipientLabel (household
+  // display identity, sender-authored), and a configured share crypto —
+  // an Event invitation the sender could never re-share would be a managed
+  // record with no handle, so its absence fails EXPLICITLY, never silently.
+  // Ordinary gifts and standalone Wedding gifts never enter this block.
+  const wantsEvent = body?.eventCreate === true || typeof body?.eventId === "string";
+  let recipientLabel = null;
+  if (wantsEvent) {
+    if (!occasion) return { status: 400, body: { error: "invalid_event", field: "occasion" } };
+    if (!share) return { status: 503, body: { error: "share_unavailable" } };
+    const lab = normalizeRecipientLabel(body?.recipientLabel);
+    if (!lab.ok) return { status: 400, body: { error: lab.error, field: lab.field } };
+    recipientLabel = lab.label;
+  } else if (body?.recipientLabel !== undefined) {
+    // A label without an event has no meaning — reject rather than drop.
+    return { status: 400, body: { error: "invalid_recipient_label", field: "event" } };
+  }
+
   // Access mode (sealing-time, immutable): 'heart_key' keeps the six-digit
   // challenge; 'direct' lets the recipient open with the link alone — the
   // ~128-bit token stays the possession credential. Stored EXPLICITLY.
@@ -207,6 +234,38 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
   const token = generateToken();
   const tokenHash = sha256Hex(token);
 
+  // Resolve/create the Event, then seal the sender-recoverable share
+  // credential. Order matters for atomicity: everything expensive that can
+  // fail AFTER an event exists must compensate the event we created (never
+  // an attached pre-existing one) so a failed first seal leaves no orphan.
+  let eventId = null;
+  let eventCreated = false;
+  let shareTokenSealed = null;
+  if (wantsEvent) {
+    const ev = await ensureEvent({ db, decoded, body, occasion, now });
+    if (!ev.ok) return ev.res;
+    eventId = ev.eventId;
+    eventCreated = ev.created;
+  }
+  const compensateEvent = async (reason) => {
+    if (eventCreated) await deleteCreatedEvent({ db, eventId, reason });
+  };
+  if (share) {
+    // Every NEW gift gets a recoverable credential while the feature is
+    // configured (the future 我发出的心意 lists ordinary gifts too);
+    // event-based creates REQUIRE it (checked above).
+    try {
+      shareTokenSealed = await share.seal(token, tokenHash);
+    } catch (err) {
+      console.error("[gift] share seal failed:", err?.message);
+      if (wantsEvent) {
+        await compensateEvent("share_seal_failed");
+        return { status: 503, body: { error: "share_seal_failed" } };
+      }
+      shareTokenSealed = null; // ordinary gifts keep sealing (recovery is additive there)
+    }
+  }
+
   // Invitation Presentation (Phase 3C-1): role-aware {photo?, voice?,
   // musicThemeId?}, occasion gifts only. Dual-INPUT during the transition —
   // the legacy single `openingMedia` body normalizes into the same contract
@@ -234,7 +293,11 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
       tokenHash,
       allowedMusicThemes: WEDDING_MUSIC_THEMES,
     });
-    if (!fin.ok) return { status: fin.status, body: fin.body };
+    if (!fin.ok) {
+      // Presentation failed after a possible silent Event create — undo it.
+      await compensateEvent("presentation_failed");
+      return { status: fin.status, body: fin.body };
+    }
     presentation = fin.presentation;
   }
 
@@ -264,6 +327,10 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
     cooldownTier: 0,
     ...(occasion ? { occasion } : {}),
     ...(presentation ? { presentation } : {}),
+    ...(eventId ? { eventId, recipientLabel } : {}),
+    // Sender-only recoverable credential (KMS-sealed, context-bound to this
+    // record). The raw token itself is still NEVER written to Firestore.
+    ...(shareTokenSealed ? { shareTokenSealed } : {}),
   };
 
   // Doc id = tokenHash. The raw token is never written to Firestore.
@@ -275,12 +342,21 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
     for (const assetId of sealedAssetIds(record)) {
       await deleteSealedMedia({ store: media, tokenHash, assetId, reason: "create_failed" });
     }
+    await compensateEvent("record_write_failed");
     throw err;
   }
 
   return {
     status: 200,
-    body: { token, url: `${GIFT_PUBLIC_BASE_URL}/s/${token}`, retrievalKey, accessMode },
+    body: {
+      token,
+      url: `${GIFT_PUBLIC_BASE_URL}/s/${token}`,
+      retrievalKey,
+      accessMode,
+      // The composer keeps this to attach subsequent household invitations
+      // to the same silently-created Wedding Event.
+      ...(eventId ? { eventId } : {}),
+    },
   };
 }
 
@@ -355,6 +431,10 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
         redeemedAt,
         rsvpStatus: rec.rsvpStatus ?? null,
         rsvpAt: rec.rsvpAt ?? null,
+        // Household counts (4.5-A) — the recipient's OWN previous answer,
+        // echoed so 更改答复 can prefill. Never other households' data.
+        rsvpAdultCount: rec.rsvpAdultCount ?? null,
+        rsvpChildCount: rec.rsvpChildCount ?? null,
         accessMode,
         occasion: rec.occasion ?? null,
         // Role-aware presentation, minted only on successful access; each
@@ -404,6 +484,8 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
       // lets a reopened invitation show the answer already given.
       rsvpStatus: rec.rsvpStatus ?? null,
       rsvpAt: rec.rsvpAt ?? null,
+      rsvpAdultCount: rec.rsvpAdultCount ?? null,
+      rsvpChildCount: rec.rsvpChildCount ?? null,
       accessMode,
       // Structured Occasion facts (Wedding V1) — first-class data, returned
       // only after successful access. null for every gift sealed without one.
@@ -456,6 +538,18 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
     body?.status === "accepted" || body?.status === "declined" ? body.status : null;
   if (!token || !status) return { status: 400, body: { error: "invalid_request" } };
 
+  // RSVP counts contract (Phase 4.5-A backend layer; UI arrives in 4.5-B).
+  // Counts are validated wherever provided; declined always resolves to
+  // 0/0; legacy count-less accepts remain valid and never fabricate counts.
+  const counts = validateRsvpCounts(status, body);
+  if (!counts.ok) {
+    return { status: 400, body: { error: counts.error, field: counts.field } };
+  }
+  const countFields = counts.counts
+    ? { rsvpAdultCount: counts.counts.adultCount, rsvpChildCount: counts.counts.childCount }
+    : {};
+  const rsvpEcho = { ok: true, rsvpStatus: status, rsvpAt: now, ...countFields };
+
   const tokenHash = sha256Hex(token);
   const ref = db.collection(GIFT_COLLECTION).doc(tokenHash);
   const snap = await ref.get();
@@ -485,12 +579,19 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
     }
     // Valid key — clear any stale failure state so a legitimate guest who
     // mistyped earlier is never cooled down after proving the key.
-    await ref.update({ failedAttempts: 0, lockedUntil: null, cooldownTier: 0, rsvpStatus: status, rsvpAt: now });
-    return { status: 200, body: { ok: true, rsvpStatus: status, rsvpAt: now } };
+    await ref.update({
+      failedAttempts: 0,
+      lockedUntil: null,
+      cooldownTier: 0,
+      rsvpStatus: status,
+      rsvpAt: now,
+      ...countFields,
+    });
+    return { status: 200, body: rsvpEcho };
   }
 
-  await ref.update({ rsvpStatus: status, rsvpAt: now });
-  return { status: 200, body: { ok: true, rsvpStatus: status, rsvpAt: now } };
+  await ref.update({ rsvpStatus: status, rsvpAt: now, ...countFields });
+  return { status: 200, body: rsvpEcho };
 }
 
 /** POST /gift/revoke — sender-only. The only way a Gift becomes inaccessible. */
