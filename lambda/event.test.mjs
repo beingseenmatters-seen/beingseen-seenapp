@@ -490,3 +490,169 @@ test("legacy compatibility: standalone wedding + ordinary gift behave exactly as
   const plain = await createGift({ db, decoded: A, body: { message: "普通" } });
   assert.equal(plain.body.retrievalKey !== null, true); // heart_key default untouched
 });
+
+// --- 4.5-B: presentation reuse across Event invitations ----------------------
+function makeReuseMediaStore() {
+  const objects = new Map();
+  const store = {
+    _objects: objects,
+    failReuseCopy: false,
+    async putStaging({ uid, assetId, bytes, contentType, metadata }) {
+      const meta = Object.fromEntries(Object.entries(metadata || {}).map(([k, v]) => [k.toLowerCase(), v]));
+      objects.set(`staging/${uid}/${assetId}`, { bytes, contentType, metadata: meta });
+    },
+    async headStaging({ uid, assetId }) {
+      const o = objects.get(`staging/${uid}/${assetId}`);
+      return o ? { bytes: o.bytes.length, contentType: o.contentType, metadata: o.metadata } : null;
+    },
+    async copyToSealed({ uid, assetId, tokenHash }) {
+      const o = objects.get(`staging/${uid}/${assetId}`);
+      if (!o) throw new Error("missing source");
+      objects.set(`sealed/${tokenHash}/${assetId}`, o);
+    },
+    async copySealedToSealed({ srcTokenHash, assetId, destTokenHash }) {
+      if (store.failReuseCopy) throw new Error("injected reuse copy failure");
+      const o = objects.get(`sealed/${srcTokenHash}/${assetId}`);
+      if (!o) throw new Error("missing sealed source");
+      objects.set(`sealed/${destTokenHash}/${assetId}`, o);
+    },
+    async deleteStaging({ uid, assetId }) { objects.delete(`staging/${uid}/${assetId}`); },
+    async deleteSealed({ tokenHash, assetId }) { objects.delete(`sealed/${tokenHash}/${assetId}`); },
+    async presignSealedGet({ tokenHash, assetId }) {
+      return `https://media.example/sealed/${tokenHash}/${assetId}?sig=test`;
+    },
+  };
+  return store;
+}
+async function stagePhoto(media, uid) {
+  const bytes = Buffer.alloc(2048, 0x20);
+  bytes[0] = 0xff; bytes[1] = 0xd8; bytes[2] = 0xff;
+  const { uploadGiftMedia } = await import("./giftMedia.mjs");
+  const res = await uploadGiftMedia({ store: media, decoded: { uid }, body: { type: "photo", contentType: "image/jpeg", data: bytes.toString("base64") } });
+  if (res.status !== 200) throw new Error("stage photo failed");
+  return res.body.assetId;
+}
+async function stageVoice(media, uid) {
+  const bytes = Buffer.alloc(4096, 0x11);
+  bytes[4] = 0x66; bytes[5] = 0x74; bytes[6] = 0x79; bytes[7] = 0x70; // ftyp
+  const { uploadGiftMedia } = await import("./giftMedia.mjs");
+  const res = await uploadGiftMedia({ store: media, decoded: { uid }, body: { type: "audio", contentType: "audio/mp4", data: bytes.toString("base64"), durationMs: 4200 } });
+  if (res.status !== 200) throw new Error("stage voice failed");
+  return res.body.assetId;
+}
+const THEMES_ENV = () => { process.env.GIFT_MEDIA_DEV_THEMES = "1"; };
+
+test("4.5-B reuse: second household inherits photo+voice by fromGiftId (sealed→sealed, no staging)", async () => {
+  const db = makeFakeDb();
+  const media = makeReuseMediaStore();
+  const share = fakeShare();
+  const [photoId, voiceId] = [await stagePhoto(media, A.uid), await stageVoice(media, A.uid)];
+  const c1 = await createGift({
+    db, decoded: A, media, share,
+    body: eventCreateBody("张先生全家", { presentation: { photo: { assetId: photoId }, voice: { assetId: voiceId } } }),
+  });
+  assert.equal(c1.status, 200);
+  assert.ok(c1.body.giftId, "event create returns giftId");
+  const eventId = c1.body.eventId;
+  const stagingLeft = [...media._objects.keys()].filter((k) => k.startsWith("staging/"));
+  assert.equal(stagingLeft.length, 0); // first seal consumed stagings
+
+  const c2 = await createGift({
+    db, decoded: A, media, share,
+    body: eventCreateBody("李女士", {
+      eventCreate: undefined, eventId,
+      presentation: { photo: { fromGiftId: c1.body.giftId }, voice: { fromGiftId: c1.body.giftId } },
+    }),
+  });
+  assert.equal(c2.status, 200);
+  const recB = db._store.get(`${GIFT_COLLECTION}/${c2.body.giftId}`);
+  const recA = db._store.get(`${GIFT_COLLECTION}/${c1.body.giftId}`);
+  // fragments inherited verbatim from the source's validated seal
+  assert.deepEqual(recB.presentation.photo, recA.presentation.photo);
+  assert.deepEqual(recB.presentation.voice, recA.presentation.voice);
+  // both invitations own their own sealed objects
+  assert.ok(media._objects.has(`sealed/${c1.body.giftId}/${photoId}`));
+  assert.ok(media._objects.has(`sealed/${c2.body.giftId}/${photoId}`));
+  assert.ok(media._objects.has(`sealed/${c2.body.giftId}/${voiceId}`));
+});
+
+test("4.5-B reuse: revoking the source household never breaks the copied one", async () => {
+  const db = makeFakeDb();
+  const media = makeReuseMediaStore();
+  const share = fakeShare();
+  const photoId = await stagePhoto(media, A.uid);
+  const c1 = await createGift({ db, decoded: A, media, share, body: eventCreateBody("张先生全家", { presentation: { photo: { assetId: photoId } } }) });
+  const c2 = await createGift({ db, decoded: A, media, share, body: eventCreateBody("李女士", { eventCreate: undefined, eventId: c1.body.eventId, presentation: { photo: { fromGiftId: c1.body.giftId } } }) });
+  const { revokeGift } = await import("./gift.mjs");
+  const rv = await revokeGift({ db, decoded: A, media, body: { token: c1.body.token } });
+  assert.equal(rv.status, 200);
+  assert.equal(media._objects.has(`sealed/${c1.body.giftId}/${photoId}`), false); // A's copy gone
+  assert.equal(media._objects.has(`sealed/${c2.body.giftId}/${photoId}`), true);  // B untouched
+  const ret = await retrieveGift({ db, media, body: { token: c2.body.token } });
+  assert.equal(ret.status, 200);
+  assert.ok(JSON.stringify(ret.body).includes(`sealed/${c2.body.giftId}/${photoId}`)); // B still presigns its own copy
+});
+
+test("4.5-B reuse security: cross-sender 403; cross-event/revoked/missing-role/no-event/both-fields 400", async () => {
+  const db = makeFakeDb();
+  const media = makeReuseMediaStore();
+  const share = fakeShare();
+  const photoId = await stagePhoto(media, A.uid);
+  const mine = await createGift({ db, decoded: A, media, share, body: eventCreateBody("张先生全家", { presentation: { photo: { assetId: photoId } } }) });
+  const otherPhotoId = await stagePhoto(media, B.uid);
+  const theirs = await createGift({ db, decoded: B, media, share, body: eventCreateBody("别家", { presentation: { photo: { assetId: otherPhotoId } } }) });
+
+  // cross-sender: B's event trying to reuse A's gift
+  const crossSender = await createGift({ db, decoded: B, media, share, body: eventCreateBody("别家二", { eventCreate: undefined, eventId: theirs.body.eventId, presentation: { photo: { fromGiftId: mine.body.giftId } } }) });
+  assert.equal(crossSender.status, 403);
+  // cross-event: A's SECOND event reusing from the first event's gift
+  const secondEvent = await createGift({ db, decoded: A, media, share, body: eventCreateBody("另一场") });
+  const crossEvent = await createGift({ db, decoded: A, media, share, body: eventCreateBody("另一场二", { eventCreate: undefined, eventId: secondEvent.body.eventId, presentation: { photo: { fromGiftId: mine.body.giftId } } }) });
+  assert.equal(crossEvent.status, 400);
+  // missing role on source
+  const noVoice = await createGift({ db, decoded: A, media, share, body: eventCreateBody("三户", { eventCreate: undefined, eventId: mine.body.eventId, presentation: { voice: { fromGiftId: mine.body.giftId } } }) });
+  assert.equal(noVoice.status, 400);
+  // both assetId and fromGiftId
+  const both = await createGift({ db, decoded: A, media, share, body: eventCreateBody("四户", { eventCreate: undefined, eventId: mine.body.eventId, presentation: { photo: { assetId: "a", fromGiftId: mine.body.giftId } } }) });
+  assert.equal(both.status, 400);
+  // reuse outside any event
+  const noEvent = await createGift({ db, decoded: A, media, share, body: { message: "hi", occasion: FACTS, presentation: { photo: { fromGiftId: mine.body.giftId } } } });
+  assert.equal(noEvent.status, 400);
+  // revoked source
+  const { revokeGift } = await import("./gift.mjs");
+  await revokeGift({ db, decoded: A, media, body: { token: mine.body.token } });
+  const fromRevoked = await createGift({ db, decoded: A, media, share, body: eventCreateBody("五户", { eventCreate: undefined, eventId: mine.body.eventId, presentation: { photo: { fromGiftId: mine.body.giftId } } }) });
+  assert.equal(fromRevoked.status, 400);
+});
+
+test("4.5-B reuse atomicity: copy failure compensates and leaves source + event intact", async () => {
+  const db = makeFakeDb();
+  const media = makeReuseMediaStore();
+  const share = fakeShare();
+  const photoId = await stagePhoto(media, A.uid);
+  const c1 = await createGift({ db, decoded: A, media, share, body: eventCreateBody("张先生全家", { presentation: { photo: { assetId: photoId } } }) });
+  media.failReuseCopy = true;
+  const c2 = await createGift({ db, decoded: A, media, share, body: eventCreateBody("李女士", { eventCreate: undefined, eventId: c1.body.eventId, presentation: { photo: { fromGiftId: c1.body.giftId } } }) });
+  assert.equal(c2.status, 502);
+  assert.ok(media._objects.has(`sealed/${c1.body.giftId}/${photoId}`)); // source untouched
+  assert.equal(eventDocs(db).length, 1); // attached event never compensated
+  const sealedB = [...media._objects.keys()].filter((k) => k.startsWith("sealed/") && !k.includes(c1.body.giftId));
+  assert.equal(sealedB.length, 0); // nothing stranded for the failed invitation
+});
+
+test("4.5-B: rsvp isolation across household invitations (overwrite stays per-token)", async () => {
+  const db = makeFakeDb();
+  const share = fakeShare();
+  const c1 = await createGift({ db, decoded: A, share, body: eventCreateBody("张先生全家") });
+  const c2 = await createGift({ db, decoded: A, share, body: eventCreateBody("李女士", { eventCreate: undefined, eventId: c1.body.eventId }) });
+  await rsvpGift({ db, body: { token: c1.body.token, status: "accepted", adultCount: 2, childCount: 1 } });
+  await rsvpGift({ db, body: { token: c2.body.token, status: "declined" } });
+  const a = db._store.get(`${GIFT_COLLECTION}/${c1.body.giftId}`);
+  const b = db._store.get(`${GIFT_COLLECTION}/${c2.body.giftId}`);
+  assert.equal(a.rsvpStatus, "accepted");
+  assert.equal(a.rsvpAdultCount, 2);
+  assert.equal(b.rsvpStatus, "declined");
+  assert.equal(b.rsvpAdultCount, 0);
+  assert.equal(a.recipientLabel, "张先生全家");
+  assert.equal(b.recipientLabel, "李女士");
+});

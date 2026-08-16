@@ -286,12 +286,38 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
     if (!occasion) {
       return { status: 400, body: { error: "invalid_media", field: "occasion" } };
     }
+    // Presentation reuse across the SAME Event (4.5-B): 继续邀请 carries the
+    // Wedding photo/voice forward by product-level reference (fromGiftId) —
+    // never S3 keys, never cross-sender, never cross-event, never from a
+    // revoked source (its media objects are already best-effort deleted).
+    // The fragment (bytes/contentType/durationMs) is inherited verbatim from
+    // the source's own validated seal.
+    const resolveReuse =
+      eventId === null
+        ? null
+        : async (fromGiftId, role) => {
+            const field = `presentation.${role}`;
+            const invalid = { ok: false, status: 400, body: { error: "invalid_media", field } };
+            if (typeof fromGiftId !== "string" || !fromGiftId.trim()) return invalid;
+            const srcSnap = await db.collection(GIFT_COLLECTION).doc(fromGiftId.trim()).get();
+            if (!srcSnap.exists) return invalid;
+            const src = srcSnap.data();
+            if (src.senderUid !== decoded.uid) {
+              return { ok: false, status: 403, body: { error: "forbidden" } };
+            }
+            if (src.eventId !== eventId || src.revoked) return invalid;
+            const fragment = src.presentation?.[role];
+            if (!fragment?.assetId) return invalid;
+            return { ok: true, srcTokenHash: fromGiftId.trim(), fragment: { ...fragment } };
+          };
+
     const fin = await finalizePresentation({
       store: media,
       decoded,
       presentation: presentationInput,
       tokenHash,
       allowedMusicThemes: WEDDING_MUSIC_THEMES,
+      resolveReuse,
     });
     if (!fin.ok) {
       // Presentation failed after a possible silent Event create — undo it.
@@ -353,9 +379,11 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
       url: `${GIFT_PUBLIC_BASE_URL}/s/${token}`,
       retrievalKey,
       accessMode,
-      // The composer keeps this to attach subsequent household invitations
-      // to the same silently-created Wedding Event.
-      ...(eventId ? { eventId } : {}),
+      // The composer keeps these to attach subsequent household invitations
+      // to the same silently-created Wedding Event, and to carry the sealed
+      // presentation forward by reference (giftId = the sender-API record
+      // id; opaque, never a secret).
+      ...(eventId ? { eventId, giftId: tokenHash } : {}),
     },
   };
 }

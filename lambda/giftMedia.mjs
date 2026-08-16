@@ -341,12 +341,27 @@ async function validateStagedRole({ store, decoded, role, assetId }) {
  * sealed copies made so far while KEEPING every staging object — the sender
  * can retry the seal without re-uploading. No partial gift state can exist.
  *
+ * Role inputs (Phase 4.5-B): a private role arrives EITHER as a freshly
+ * staged upload `{ assetId }` OR as a reuse reference `{ fromGiftId }` —
+ * the same Wedding photo/voice carried to another household's Invitation by
+ * a server-side sealed→sealed copy (approved: small duplication in exchange
+ * for unchanged per-invitation ownership/revocation/lifecycle semantics).
+ * `resolveReuse(fromGiftId, role)` is supplied by the caller (gift.mjs owns
+ * the db + event-membership checks); absent resolver → reuse is rejected.
+ *
  * `allowedMusicThemes` is the occasion's server-side allowlist (empty until
  * genuinely rights-cleared assets exist — fake themes are never sealable).
  *
  * Returns { ok:true, presentation|null } or { ok:false, status, body }.
  */
-export async function finalizePresentation({ store, decoded, presentation, tokenHash, allowedMusicThemes = [] }) {
+export async function finalizePresentation({
+  store,
+  decoded,
+  presentation,
+  tokenHash,
+  allowedMusicThemes = [],
+  resolveReuse = null,
+}) {
   if (presentation === undefined || presentation === null) return { ok: true, presentation: null };
   if (typeof presentation !== "object" || Array.isArray(presentation)) {
     return { ok: false, status: 400, body: { error: "invalid_presentation", field: "presentation" } };
@@ -356,10 +371,20 @@ export async function finalizePresentation({ store, decoded, presentation, token
   for (const role of ["photo", "voice"]) {
     const entry = presentation[role];
     if (entry === undefined || entry === null) continue;
-    if (typeof entry !== "object" || typeof entry.assetId !== "string") {
-      return { ok: false, status: 400, body: { error: "invalid_media", field: `presentation.${role}` } };
+    const field = `presentation.${role}`;
+    if (typeof entry !== "object") {
+      return { ok: false, status: 400, body: { error: "invalid_media", field } };
     }
-    roles.push({ role, assetId: entry.assetId });
+    const hasAsset = typeof entry.assetId === "string";
+    const hasReuse = typeof entry.fromGiftId === "string";
+    if (hasAsset === hasReuse) {
+      // exactly one of assetId | fromGiftId — never both, never neither
+      return { ok: false, status: 400, body: { error: "invalid_media", field } };
+    }
+    if (hasReuse && !resolveReuse) {
+      return { ok: false, status: 400, body: { error: "invalid_media", field } };
+    }
+    roles.push(hasAsset ? { role, assetId: entry.assetId } : { role, fromGiftId: entry.fromGiftId });
   }
 
   let musicThemeId = null;
@@ -376,22 +401,48 @@ export async function finalizePresentation({ store, decoded, presentation, token
     return { ok: false, status: 503, body: { error: "media_unavailable" } };
   }
 
-  // Phase 1 — validate everything before touching sealed storage.
+  // Phase 1 — validate everything before touching sealed storage. Staged
+  // roles re-validate from the object; reused roles resolve through the
+  // caller's ownership/event checks and inherit the source's verified
+  // fragment (bytes/contentType/duration were validated at ITS seal).
   const fragments = {};
-  for (const { role, assetId } of roles) {
-    const res = await validateStagedRole({ store, decoded, role, assetId });
-    if (!res.ok) return res;
-    fragments[role] = res.fragment;
+  const plans = []; // { role, kind: 'staged'|'reuse', assetId, srcTokenHash? }
+  for (const r of roles) {
+    if (r.assetId) {
+      const res = await validateStagedRole({ store, decoded, role: r.role, assetId: r.assetId });
+      if (!res.ok) return res;
+      fragments[r.role] = res.fragment;
+      plans.push({ role: r.role, kind: "staged", assetId: r.assetId });
+    } else {
+      const res = await resolveReuse(r.fromGiftId, r.role);
+      if (!res.ok) return res;
+      fragments[r.role] = res.fragment;
+      plans.push({
+        role: r.role,
+        kind: "reuse",
+        assetId: res.fragment.assetId,
+        srcTokenHash: res.srcTokenHash,
+      });
+    }
   }
 
-  // Phase 2 — promote all roles; compensate on any failure (stagings kept).
+  // Phase 2 — promote all roles; compensate on any failure (stagings kept,
+  // source invitations' sealed objects are READ-only and never touched).
   const promoted = [];
-  for (const { role, assetId } of roles) {
+  for (const p of plans) {
     try {
-      await store.copyToSealed({ uid: decoded.uid, assetId, tokenHash });
-      promoted.push(assetId);
+      if (p.kind === "staged") {
+        await store.copyToSealed({ uid: decoded.uid, assetId: p.assetId, tokenHash });
+      } else {
+        await store.copySealedToSealed({
+          srcTokenHash: p.srcTokenHash,
+          assetId: p.assetId,
+          destTokenHash: tokenHash,
+        });
+      }
+      promoted.push(p.assetId);
     } catch (e) {
-      console.error(`[giftMedia] seal copy failed (${role}):`, e?.message);
+      console.error(`[giftMedia] seal copy failed (${p.role}/${p.kind}):`, e?.message);
       for (const done of promoted) {
         await deleteSealedMedia({ store, tokenHash, assetId: done, reason: "seal_compensation" });
       }
@@ -400,11 +451,14 @@ export async function finalizePresentation({ store, decoded, presentation, token
   }
 
   // Phase 3 — staging cleanup, best-effort only (lifecycle is the fallback).
-  for (const { role, assetId } of roles) {
+  // Reused roles have no staging: their source sealed objects live on,
+  // untouched, under the SOURCE invitation's own lifecycle.
+  for (const p of plans) {
+    if (p.kind !== "staged") continue;
     try {
-      await store.deleteStaging({ uid: decoded.uid, assetId });
+      await store.deleteStaging({ uid: decoded.uid, assetId: p.assetId });
     } catch (e) {
-      console.warn(`[giftMedia] staging delete failed (${role}; lifecycle will clean):`, e?.message);
+      console.warn(`[giftMedia] staging delete failed (${p.role}; lifecycle will clean):`, e?.message);
     }
   }
 
@@ -570,6 +624,21 @@ export function makeS3MediaStore({ bucket, region }) {
           Bucket: bucket,
           CopySource: `${bucket}/${encodeURIComponent(stagingKey(uid, assetId))}`,
           Key: sealedKey(tokenHash, assetId),
+          MetadataDirective: "COPY",
+        }),
+      );
+    },
+    // Phase 4.5-B — carry a Wedding photo/voice to another household's
+    // Invitation: sealed→sealed server-side copy. The source object is only
+    // READ; the destination gets its own object under its own tokenHash, so
+    // per-invitation revocation/lifecycle semantics stay exactly as they are.
+    async copySealedToSealed({ srcTokenHash, assetId, destTokenHash }) {
+      const [{ CopyObjectCommand }, client] = await Promise.all([import("@aws-sdk/client-s3"), getClient()]);
+      await client.send(
+        new CopyObjectCommand({
+          Bucket: bucket,
+          CopySource: `${bucket}/${encodeURIComponent(sealedKey(srcTokenHash, assetId))}`,
+          Key: sealedKey(destTokenHash, assetId),
           MetadataDirective: "COPY",
         }),
       );
