@@ -396,16 +396,32 @@ test("old gift without sealed credential is honestly unrecoverable (404)", async
   assert.equal(rc.body.error, "share_unrecoverable");
 });
 
-test("recipient responses never expose the sealed credential", async () => {
+test("recipient responses: label ONLY on success (V2); sealed credential never", async () => {
   const db = makeFakeDb();
   const c = await createGift({ db, decoded: A, body: eventCreateBody(), share: fakeShare() });
   const r = await retrieveGift({ db, body: { token: c.body.token } });
   assert.equal(r.status, 200);
   const s = JSON.stringify(r.body);
+  assert.equal(r.body.recipientLabel, "张先生全家"); // 致 张先生全家 — post-access only
   assert.equal(s.includes("shareTokenSealed"), false);
   assert.equal(s.includes("sealed:"), false);
-  assert.equal(s.includes("eventId"), false); // event linkage is sender-side data
-  assert.equal(s.includes("recipientLabel"), false); // 4.5-A: not yet recipient-facing
+  assert.equal(s.includes("eventId"), false); // event linkage stays sender-side
+
+  // heart_key invitation: probes / wrong keys / locks must NOT leak the label
+  const hk = await createGift({
+    db, decoded: A, share: fakeShare(),
+    body: eventCreateBody("李女士", { accessMode: "heart_key" }),
+  });
+  const probe = await retrieveGift({ db, body: { token: hk.body.token } });
+  assert.equal(probe.status, 401);
+  assert.equal(JSON.stringify(probe.body).includes("李女士"), false);
+  assert.equal(JSON.stringify(probe.body).includes("recipientLabel"), false);
+  const wrong = await retrieveGift({ db, body: { token: hk.body.token, key: "111112" } });
+  assert.equal(wrong.status, 401);
+  assert.equal(JSON.stringify(wrong.body).includes("李女士"), false);
+  const good = await retrieveGift({ db, body: { token: hk.body.token, key: hk.body.retrievalKey } });
+  assert.equal(good.status, 200);
+  assert.equal(good.body.recipientLabel, "李女士"); // visible only after unlock
 });
 
 // --- Sender Library / Event detail -------------------------------------------

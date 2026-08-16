@@ -43,8 +43,14 @@ export const GIFT_SCHEMA_VERSION = 1;
 
 const MESSAGE_MAX_LEN = 2000;
 const DEFAULT_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1 year
-const CREATE_CAP_PER_DAY = 20;
-const DAY_MS = 24 * 60 * 60 * 1000;
+// Development quota REMOVED (Founder, 4.5-B3 supplement): product usage
+// entitlement (future weekly free allowance + Credits) and security rate
+// limiting are separate concerns — a paid sender with sufficient Credits is
+// never blocked by an arbitrary daily ceiling, and a real Wedding may
+// legitimately create 100-300+ recipient-specific Invitations in one
+// session. Security protections (auth, Heart Key attempt cooldowns, request
+// validation, infrastructure-level abuse protection) are untouched. The
+// ≤20-guest distribute chunk is an internal API size, never a user quota.
 
 // Escalating temporary cooldowns. A cooldown is applied every LOCK_EVERY
 // cumulative failed attempts; the tier index selects the duration. Beyond the
@@ -146,18 +152,6 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
   const moderation = await moderateGiftMessage(message);
   if (!moderation.ok) {
     return { status: 422, body: { error: "moderation_blocked", detail: moderation.reason } };
-  }
-
-  // Per-uid daily creation cap.
-  const since = now - DAY_MS;
-  const recent = await db
-    .collection(GIFT_COLLECTION)
-    .where("senderUid", "==", decoded.uid)
-    .where("createdAt", ">=", since)
-    .get();
-  const recentCount = typeof recent.size === "number" ? recent.size : recent.docs?.length ?? 0;
-  if (recentCount >= CREATE_CAP_PER_DAY) {
-    return { status: 429, body: { error: "rate_limited" } };
   }
 
   // Structured Occasion (Wedding V1): optional, validated, immutable once
@@ -463,6 +457,10 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
         // echoed so 更改答复 can prefill. Never other households' data.
         rsvpAdultCount: rec.rsvpAdultCount ?? null,
         rsvpChildCount: rec.rsvpChildCount ?? null,
+        // 致 张先生全家 (Founder V2): the household label is presentation
+        // personalisation, revealed ONLY on successful access — never on
+        // probes, wrong keys, locks, or any error path.
+        recipientLabel: rec.recipientLabel ?? null,
         accessMode,
         occasion: rec.occasion ?? null,
         // Role-aware presentation, minted only on successful access; each
@@ -514,6 +512,7 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
       rsvpAt: rec.rsvpAt ?? null,
       rsvpAdultCount: rec.rsvpAdultCount ?? null,
       rsvpChildCount: rec.rsvpChildCount ?? null,
+      recipientLabel: rec.recipientLabel ?? null,
       accessMode,
       // Structured Occasion facts (Wedding V1) — first-class data, returned
       // only after successful access. null for every gift sealed without one.

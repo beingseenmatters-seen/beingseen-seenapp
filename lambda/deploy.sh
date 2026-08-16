@@ -68,6 +68,7 @@ zip -r "$PACKAGE" \
   index.mjs \
   gift.mjs \
   event.mjs \
+  distribute.mjs \
   shareCrypto.mjs \
   occasion.mjs \
   giftMedia.mjs \

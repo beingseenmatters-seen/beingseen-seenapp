@@ -230,13 +230,38 @@ export async function eventDetail({ db, decoded, body, giftCollection, now = Dat
   const ev = snap.data();
   if (ev.senderUid !== decoded.uid) return { status: 403, body: { error: "forbidden" } };
 
-  const invSnap = await db.collection(giftCollection).where("eventId", "==", eventId).get();
+  const [invSnap, guestSnap] = await Promise.all([
+    db.collection(giftCollection).where("eventId", "==", eventId).get(),
+    db.collection(GUEST_COLLECTION).where("eventId", "==", eventId).get(),
+  ]);
   const invitations = (invSnap.docs ?? [])
     .map((d) => ({ id: d.id, rec: d.data() }))
     // Defense in depth — an event's invitations are by construction the
     // owner's, but never rely on construction alone.
     .filter(({ rec }) => rec.senderUid === decoded.uid)
     .sort((a, b) => (a.rec.createdAt ?? 0) - (b.rec.createdAt ?? 0));
+  const invById = new Map(invitations.map(({ id, rec }) => [id, rec]));
+  // Guest rows (4.5-B3): phone ALWAYS masked — no full-value read exists in
+  // this phase. tier: unsent → pending → answered (per household).
+  const guests = (guestSnap.docs ?? [])
+    .map((d) => ({ id: d.id, g: d.data() }))
+    .filter(({ g }) => g.senderUid === decoded.uid)
+    .sort((a, b) => (a.g.createdAt ?? 0) - (b.g.createdAt ?? 0))
+    .map(({ id, g }) => {
+      const inv = g.invitationGiftId ? invById.get(g.invitationGiftId) : null;
+      return {
+        guestId: id,
+        label: g.label,
+        relationshipType: g.relationshipType,
+        phoneMasked: maskPhone(g.phone),
+        invitationGiftId: g.invitationGiftId ?? null,
+        tier: !g.invitationGiftId
+          ? "unsent"
+          : inv?.rsvpStatus
+            ? inv.rsvpStatus
+            : "pending",
+      };
+    });
 
   const aggregate = {
     adultTotal: 0,
@@ -271,7 +296,10 @@ export async function eventDetail({ db, decoded, body, giftCollection, now = Dat
         status: ev.status,
         createdAt: ev.createdAt,
         occasion: ev.occasion,
+        // Persisted relationship variants (V4) — sender-owned prose only.
+        variants: ev.variants ?? {},
       },
+      guests,
       invitations: invitations.map(({ id, rec }) => libraryRow(id, rec, now)),
       aggregate,
     },
@@ -316,4 +344,182 @@ export async function recoverShare({ db, decoded, body, giftCollection, shareCry
       ...(rec.recipientLabel ? { recipientLabel: rec.recipientLabel } : {}),
     },
   };
+}
+
+// --- Guest List (Phase 4.5-B3) ------------------------------------------------
+// One row per household/group: sender-authored 称呼 + relationship (the
+// occasion's audience vocabulary) + OPTIONAL phone (delivery data only —
+// never identity, never on the invitation record, never recipient-visible,
+// masked in every sender read; no full-value read exists in B3).
+// invitationGiftId is the idempotency anchor for batch distribution.
+import { WEDDING_AUDIENCES } from "./occasion.mjs";
+
+export const GUEST_COLLECTION = "eventGuests";
+export const GUEST_BATCH_MAX = 20;
+/** Sender-facing message cap (mirrors gift.mjs MESSAGE_MAX_LEN). */
+export const VARIANT_MESSAGE_MAX = 2000;
+
+export function generateGuestId() {
+  return crypto.randomBytes(16).toString("base64url");
+}
+
+/** 138****1234-style masking; short/odd values collapse to ****. */
+export function maskPhone(phone) {
+  const p = String(phone || "").trim();
+  if (!p) return null;
+  if (p.length < 7) return "****";
+  return `${p.slice(0, 3)}****${p.slice(-4)}`;
+}
+
+function normalizePhone(raw) {
+  if (raw === undefined || raw === null || raw === "") return { ok: true, phone: null };
+  if (typeof raw !== "string") return { ok: false };
+  const phone = raw.trim();
+  if (!phone) return { ok: true, phone: null };
+  // Lenient: digits, +, -, spaces; real per-channel validation belongs to the
+  // future delivery layer, not the guest list.
+  if (!/^[+\d][\d\s-]{4,24}$/.test(phone)) return { ok: false };
+  return { ok: true, phone };
+}
+
+async function loadOwnedEvent(db, decoded, eventId) {
+  if (typeof eventId !== "string" || !eventId.trim()) {
+    return { err: { status: 400, body: { error: "invalid_request" } } };
+  }
+  const snap = await db.collection(EVENT_COLLECTION).doc(eventId.trim()).get();
+  if (!snap.exists) return { err: { status: 404, body: { error: "event_not_found" } } };
+  const ev = snap.data();
+  if (ev.senderUid !== decoded.uid) return { err: { status: 403, body: { error: "forbidden" } } };
+  return { eventId: eventId.trim(), ev };
+}
+
+/**
+ * POST /sender/event/create — explicit (but UX-silent) Event creation for the
+ * Guest List path: guests and variants need an eventId BEFORE any invitation
+ * exists. Facts validated by the occasion validator at the gift layer's
+ * standard; the first distributed invitation snapshots them per contract.
+ */
+export async function createEvent({ db, decoded, body, validateOccasion, now = Date.now() }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  const res = validateOccasion(body?.occasion);
+  if (!res.ok) return { status: 400, body: { error: "invalid_occasion", field: res.field } };
+  const eventId = generateEventId();
+  await db.collection(EVENT_COLLECTION).doc(eventId).set({
+    schemaVersion: EVENT_SCHEMA_VERSION,
+    type: "wedding",
+    senderUid: decoded.uid,
+    occasion: res.occasion,
+    createdAt: now,
+    status: "active",
+  });
+  return { status: 200, body: { eventId } };
+}
+
+/**
+ * POST /sender/guest/upsert — add or edit a guest row. After its invitation
+ * exists, label/relationship are FROZEN (they are sealed into the
+ * invitation); only phone stays editable. `linkGiftId` lets the
+ * special-recipient path attach its individually-created invitation.
+ */
+export async function upsertGuest({ db, decoded, body, giftCollection, now = Date.now() }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  const owned = await loadOwnedEvent(db, decoded, body?.eventId);
+  if (owned.err) return owned.err;
+
+  const lab = normalizeRecipientLabel(body?.label);
+  if (!lab.ok) return { status: 400, body: { error: lab.error, field: lab.field } };
+  if (!WEDDING_AUDIENCES.includes(body?.relationshipType)) {
+    return { status: 400, body: { error: "invalid_relationship" } };
+  }
+  const ph = normalizePhone(body?.phone);
+  if (!ph.ok) return { status: 400, body: { error: "invalid_phone" } };
+
+  let linkGiftId = null;
+  if (body?.linkGiftId !== undefined && body?.linkGiftId !== null) {
+    if (typeof body.linkGiftId !== "string" || !body.linkGiftId.trim()) {
+      return { status: 400, body: { error: "invalid_request" } };
+    }
+    const gSnap = await db.collection(giftCollection).doc(body.linkGiftId.trim()).get();
+    if (!gSnap.exists) return { status: 404, body: { error: "not_found" } };
+    const g = gSnap.data();
+    if (g.senderUid !== decoded.uid) return { status: 403, body: { error: "forbidden" } };
+    if (g.eventId !== owned.eventId) return { status: 400, body: { error: "invalid_request" } };
+    linkGiftId = body.linkGiftId.trim();
+  }
+
+  const guestId = typeof body?.guestId === "string" && body.guestId.trim() ? body.guestId.trim() : null;
+  if (guestId) {
+    const snap = await db.collection(GUEST_COLLECTION).doc(guestId).get();
+    if (!snap.exists) return { status: 404, body: { error: "guest_not_found" } };
+    const g = snap.data();
+    if (g.senderUid !== decoded.uid || g.eventId !== owned.eventId) {
+      return { status: 403, body: { error: "forbidden" } };
+    }
+    if (g.invitationGiftId && (lab.label !== g.label || body.relationshipType !== g.relationshipType)) {
+      // Sealed identity/relationship can't drift behind an existing invitation.
+      return { status: 409, body: { error: "guest_sealed" } };
+    }
+    await db.collection(GUEST_COLLECTION).doc(guestId).update({
+      label: lab.label,
+      relationshipType: body.relationshipType,
+      phone: ph.phone,
+      ...(linkGiftId ? { invitationGiftId: linkGiftId } : {}),
+    });
+    return { status: 200, body: { guestId } };
+  }
+
+  const newId = generateGuestId();
+  await db.collection(GUEST_COLLECTION).doc(newId).set({
+    schemaVersion: 1,
+    eventId: owned.eventId,
+    senderUid: decoded.uid,
+    label: lab.label,
+    relationshipType: body.relationshipType,
+    phone: ph.phone,
+    createdAt: now,
+    invitationGiftId: linkGiftId,
+  });
+  return { status: 200, body: { guestId: newId } };
+}
+
+/** POST /sender/guest/remove — only rows without an invitation. */
+export async function removeGuest({ db, decoded, body }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  const guestId = typeof body?.guestId === "string" ? body.guestId.trim() : "";
+  if (!guestId) return { status: 400, body: { error: "invalid_request" } };
+  const snap = await db.collection(GUEST_COLLECTION).doc(guestId).get();
+  if (!snap.exists) return { status: 404, body: { error: "guest_not_found" } };
+  const g = snap.data();
+  if (g.senderUid !== decoded.uid) return { status: 403, body: { error: "forbidden" } };
+  if (g.invitationGiftId) return { status: 409, body: { error: "guest_sealed" } };
+  await db.collection(GUEST_COLLECTION).doc(guestId).delete();
+  return { status: 200, body: { ok: true } };
+}
+
+/**
+ * POST /sender/event/variant/save — persist the Event's approved expression
+ * for ONE relationship (V4: event-scoped so later guests of the same
+ * relationship reuse it with no new generation; the FUTURE charging point is
+ * exactly a variant's first successful save — no billing exists in B3, only
+ * this idempotent shape). Special per-recipient prose never lands here.
+ */
+export async function saveVariant({ db, decoded, body, now = Date.now() }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  const owned = await loadOwnedEvent(db, decoded, body?.eventId);
+  if (owned.err) return owned.err;
+  if (!WEDDING_AUDIENCES.includes(body?.relationshipType)) {
+    return { status: 400, body: { error: "invalid_relationship" } };
+  }
+  const message = typeof body?.message === "string" ? body.message.trim() : "";
+  if (!message || message.length > VARIANT_MESSAGE_MAX) {
+    return { status: 400, body: { error: "invalid_message" } };
+  }
+  const variants = { ...(owned.ev.variants || {}) };
+  const existed = Boolean(variants[body.relationshipType]);
+  variants[body.relationshipType] = {
+    message,
+    ...(existed ? { createdAt: variants[body.relationshipType].createdAt, updatedAt: now } : { createdAt: now }),
+  };
+  await db.collection(EVENT_COLLECTION).doc(owned.eventId).update({ variants });
+  return { status: 200, body: { relationshipType: body.relationshipType, existed } };
 }

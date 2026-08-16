@@ -42,7 +42,9 @@ import {
   toExtractResponsePayload,
 } from "./reflectModes.mjs";
 import { createGift, retrieveGift, revokeGift, rsvpGift, GIFT_COLLECTION } from "./gift.mjs";
-import { senderLibrary, eventDetail, recoverShare } from "./event.mjs";
+import { senderLibrary, eventDetail, recoverShare, createEvent, upsertGuest, removeGuest, saveVariant } from "./event.mjs";
+import { distributeInvitations } from "./distribute.mjs";
+import { validateWeddingOccasion } from "./occasion.mjs";
 import { makeKmsShareCrypto } from "./shareCrypto.mjs";
 import { runWeddingDraft } from "./occasion.mjs";
 import { uploadGiftMedia, makeS3MediaStore } from "./giftMedia.mjs";
@@ -1026,6 +1028,38 @@ export const handler = async (event) => {
       db: admin.firestore(),
       decoded,
       body,
+      giftCollection: GIFT_COLLECTION,
+    });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/event/create") {
+    const decoded = await verifyAuthToken(event);
+    const result = await createEvent({ db: admin.firestore(), decoded, body, validateOccasion: validateWeddingOccasion });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/guest/upsert") {
+    const decoded = await verifyAuthToken(event);
+    const result = await upsertGuest({ db: admin.firestore(), decoded, body, giftCollection: GIFT_COLLECTION });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/guest/remove") {
+    const decoded = await verifyAuthToken(event);
+    const result = await removeGuest({ db: admin.firestore(), decoded, body });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/event/variant/save") {
+    const decoded = await verifyAuthToken(event);
+    const result = await saveVariant({ db: admin.firestore(), decoded, body });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/event/distribute") {
+    const decoded = await verifyAuthToken(event);
+    const result = await distributeInvitations({
+      db: admin.firestore(),
+      decoded,
+      body,
+      media: giftMediaStore,
+      share: giftShareCrypto,
       giftCollection: GIFT_COLLECTION,
     });
     return httpResponse(result.status, result.body);

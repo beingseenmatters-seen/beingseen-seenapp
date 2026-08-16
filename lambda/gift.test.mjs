@@ -147,14 +147,15 @@ test("createGift rejects unauthenticated and empty message", async () => {
   assert.equal((await createGift({ db, decoded: AUTHOR, body: { message: "  " } })).status, 400);
 });
 
-test("createGift enforces the per-uid daily cap", async () => {
+test("createGift has NO daily ceiling (4.5-B3: entitlement is Credits' job, not a quota's)", async () => {
+  // A real Wedding legitimately creates 100+ recipient-specific Invitations
+  // in one session. The 21st/next-batch create must never 429 on a product
+  // quota; security protections (auth, key cooldowns) are separate concerns.
   const db = makeFakeDb();
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 25; i++) {
     const r = await createGift({ db, decoded: AUTHOR, body: { message: `m${i}` }, now: 5000 });
-    assert.equal(r.status, 200);
+    assert.equal(r.status, 200, `create #${i + 1} must succeed`);
   }
-  const capped = await createGift({ db, decoded: AUTHOR, body: { message: "one too many" }, now: 5000 });
-  assert.equal(capped.status, 429);
 });
 
 // --- retrieveGift ---------------------------------------------------------
