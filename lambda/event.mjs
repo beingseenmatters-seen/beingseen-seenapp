@@ -171,6 +171,7 @@ function libraryRow(id, rec, now) {
     ...(rec.eventId ? { eventId: rec.eventId } : {}),
     ...(rec.recipientLabel ? { recipientLabel: rec.recipientLabel } : {}),
     rsvp: rsvpOf(rec),
+    ...(rec.sharedDistribution === true ? { sharedDistribution: true } : {}),
     shareRecoverable: Boolean(rec.shareTokenSealed),
   };
 }
@@ -273,6 +274,10 @@ export async function eventDetail({ db, decoded, body, giftCollection, now = Dat
   };
   for (const { rec } of invitations) {
     if (rec.revoked) continue; // a withdrawn invitation carries no expectation
+    // §12: a shared link is not a household — its single overwritable RSVP
+    // never enters household attendance statistics (it stays visible on its
+    // own row; the aggregate speaks only for recipient-specific invitations).
+    if (rec.sharedDistribution === true) continue;
     if (rec.rsvpStatus === "accepted") {
       aggregate.acceptedGroups += 1;
       // Sum only counts that actually exist — never fabricate from legacy

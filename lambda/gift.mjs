@@ -348,6 +348,9 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
     ...(occasion ? { occasion } : {}),
     ...(presentation ? { presentation } : {}),
     ...(eventId ? { eventId, recipientLabel } : {}),
+    // §12 (4.5-C): a direct-share invitation is one LINK, not one household —
+    // its RSVP must never masquerade as household attendance statistics.
+    ...(eventId && body?.sharedDistribution === true ? { sharedDistribution: true } : {}),
     // Sender-only recoverable credential (KMS-sealed, context-bound to this
     // record). The raw token itself is still NEVER written to Firestore.
     ...(shareTokenSealed ? { shareTokenSealed } : {}),
@@ -461,6 +464,7 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
         // personalisation, revealed ONLY on successful access — never on
         // probes, wrong keys, locks, or any error path.
         recipientLabel: rec.recipientLabel ?? null,
+        sharedDistribution: rec.sharedDistribution === true,
         accessMode,
         occasion: rec.occasion ?? null,
         // Role-aware presentation, minted only on successful access; each
@@ -513,6 +517,7 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
       rsvpAdultCount: rec.rsvpAdultCount ?? null,
       rsvpChildCount: rec.rsvpChildCount ?? null,
       recipientLabel: rec.recipientLabel ?? null,
+      sharedDistribution: rec.sharedDistribution === true,
       accessMode,
       // Structured Occasion facts (Wedding V1) — first-class data, returned
       // only after successful access. null for every gift sealed without one.

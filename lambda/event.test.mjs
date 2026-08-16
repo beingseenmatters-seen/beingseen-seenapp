@@ -672,3 +672,26 @@ test("4.5-B: rsvp isolation across household invitations (overwrite stays per-to
   assert.equal(a.recipientLabel, "张先生全家");
   assert.equal(b.recipientLabel, "李女士");
 });
+
+test("4.5-C §12: shared-link invitation never enters household aggregate", async () => {
+  const db = makeFakeDb();
+  const share = fakeShare();
+  const c1 = await createGift({ db, decoded: A, share, body: eventCreateBody("张先生全家") });
+  const shared = await createGift({
+    db, decoded: A, share,
+    body: eventCreateBody("各位亲友", { eventCreate: undefined, eventId: c1.body.eventId, sharedDistribution: true }),
+  });
+  await rsvpGift({ db, body: { token: c1.body.token, status: "accepted", adultCount: 2, childCount: 1 } });
+  await rsvpGift({ db, body: { token: shared.body.token, status: "accepted", adultCount: 9, childCount: 9 } });
+  const det = await eventDetail({ db, decoded: A, body: { eventId: c1.body.eventId }, giftCollection: GIFT_COLLECTION });
+  assert.deepEqual(det.body.aggregate, {
+    adultTotal: 2, childTotal: 1, attendingTotal: 3,
+    acceptedGroups: 1, declinedGroups: 0, pendingGroups: 0,
+  }); // the shared link's 9/9 is invisible to household statistics
+  const row = det.body.invitations.find((i) => i.recipientLabel === "各位亲友");
+  assert.equal(row.sharedDistribution, true); // but the row itself stays honest
+  const ret = await retrieveGift({ db, body: { token: shared.body.token } });
+  assert.equal(ret.body.sharedDistribution, true); // recipient UI can adapt
+  const retH = await retrieveGift({ db, body: { token: c1.body.token } });
+  assert.equal(retH.body.sharedDistribution, false);
+});
