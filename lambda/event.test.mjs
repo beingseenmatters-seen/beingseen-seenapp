@@ -502,7 +502,14 @@ test("legacy compatibility: standalone wedding + ordinary gift behave exactly as
   const legacyRsvp = await rsvpGift({ db, body: { token: wedding.body.token, status: "accepted" } });
   assert.equal(legacyRsvp.status, 200);
   const rec = [...db._store.values()].find((v) => v.rsvpStatus === "accepted");
-  assert.equal("rsvpAdultCount" in rec, false); // never fabricated for legacy accepts
+  // The invariant is that a count is never FABRICATED for a legacy accept.
+  // An accept with no counts now writes an explicit null instead of omitting
+  // the field, so a stale count from a previous decline cannot survive the
+  // new answer (founder QA: "Attendance confirmed · 0 attending"). null and
+  // absent are equivalent to every consumer — all four read sites test
+  // `typeof === "number"` or coalesce with `?? null`.
+  assert.equal(typeof rec.rsvpAdultCount === "number", false);
+  assert.equal(typeof rec.rsvpChildCount === "number", false);
   const plain = await createGift({ db, decoded: A, body: { message: "普通" } });
   assert.equal(plain.body.retrievalKey !== null, true); // heart_key default untouched
 });
@@ -704,4 +711,41 @@ test("4.5-D: library rows expose presentation role FLAGS only (no urls/assetIds)
   assert.deepEqual(row.presentationRoles, { photo: false, voice: false, musicThemeId: "wedding_warm_piano_v1" });
   assert.equal(JSON.stringify(row).includes("assetId"), false);
   assert.equal(JSON.stringify(row).includes("url"), false);
+});
+
+
+// --- Founder QA: sender sees the household's dietary note -------------------
+
+test("dietary note reaches the sender's Event management surface only", async () => {
+  const db = makeFakeDb();
+  const created = await createGift({
+    db, decoded: A, share: fakeShare(),
+    body: { message: "邀请", occasion: FACTS, eventCreate: true, recipientLabel: "The Smith Family", accessMode: "direct" },
+  });
+  assert.equal(created.status, 200);
+  const eventId = created.body.eventId;
+  await rsvpGift({ db, body: { token: created.body.token, status: "accepted", adultCount: 3, childCount: 0, dietaryRequirements: "Vegetarian, nut allergy" } });
+
+  const detail = await eventDetail({ db, decoded: A, body: { eventId }, giftCollection: GIFT_COLLECTION });
+  assert.equal(detail.status, 200);
+  const row = detail.body.invitations.find((i) => i.recipientLabel === "The Smith Family");
+  assert.equal(row.rsvp.status, "accepted");
+  assert.equal(row.rsvp.adultCount, 3);
+  assert.equal(row.rsvp.dietaryRequirements, "Vegetarian, nut allergy");
+  assert.equal(detail.body.aggregate.attendingTotal, 3);
+
+  // The household sees its OWN note back (they must be able to edit it)…
+  const opened = await retrieveGift({ db, body: { token: created.body.token } });
+  assert.equal(opened.status, 200);
+  assert.equal(opened.body.rsvpDietary, "Vegetarian, nut allergy");
+
+  // …but a SHARED link never exposes one household's note to everyone.
+  const shared = await createGift({
+    db, decoded: A, share: fakeShare(),
+    body: { message: "邀请", occasion: FACTS, eventId, recipientLabel: "Direct share",
+            sharedDistribution: true, accessMode: "direct" },
+  });
+  await rsvpGift({ db, body: { token: shared.body.token, status: "accepted", adultCount: 1, childCount: 0, dietaryRequirements: "Vegan" } });
+  const openedShared = await retrieveGift({ db, body: { token: shared.body.token } });
+  assert.equal(openedShared.body.rsvpDietary, null);
 });

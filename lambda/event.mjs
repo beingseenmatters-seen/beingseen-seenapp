@@ -27,6 +27,15 @@ export const EVENT_SCHEMA_VERSION = 1;
 export const RECIPIENT_LABEL_MAX = 40;
 /** Wedding V1 per-household RSVP caps (Founder: 20, not 50). */
 export const RSVP_COUNT_MAX = 20;
+/**
+ * Optional free-text dietary note on an RSVP (Western Wedding V1).
+ *
+ * Deliberately ONE free-text field: no meal selection, no per-person
+ * assignment, no dietary taxonomy, no catering engine. It belongs to the
+ * RSVP RESPONSE — never to Invitation facts, never to generated prose, and
+ * never to a public/general share surface.
+ */
+export const RSVP_DIETARY_MAX = 200;
 /** Library page size — a personal sender library, not an admin console. */
 export const LIBRARY_LIMIT = 200;
 
@@ -52,6 +61,25 @@ export function normalizeRecipientLabel(raw) {
  *   Legacy calls without counts stay valid: accepted stores no count fields
  *   (never fabricated), declined stores the resolved zeros.
  */
+/**
+ * Optional dietary note. Accepted responses may carry one; a DECLINE never
+ * does (nobody is attending, so the question is not asked and any earlier
+ * note is cleared). Absent → null, which explicitly CLEARS a previous value
+ * rather than leaving it stale.
+ */
+export function validateRsvpDietary(status, body) {
+  const raw = body?.dietaryRequirements;
+  if (raw === undefined || raw === null || raw === "") return { ok: true, dietary: null };
+  if (status === "declined") return { ok: false, error: "invalid_rsvp_dietary", field: "declined" };
+  if (typeof raw !== "string") return { ok: false, error: "invalid_rsvp_dietary", field: "type" };
+  const dietary = raw.trim();
+  if (!dietary) return { ok: true, dietary: null };
+  if (dietary.length > RSVP_DIETARY_MAX) {
+    return { ok: false, error: "invalid_rsvp_dietary", field: "length" };
+  }
+  return { ok: true, dietary };
+}
+
 export function validateRsvpCounts(status, body) {
   const rawAdult = body?.adultCount;
   const rawChild = body?.childCount;
@@ -142,6 +170,9 @@ function rsvpOf(rec) {
     status: rec.rsvpStatus,
     ...(typeof rec.rsvpAdultCount === "number" ? { adultCount: rec.rsvpAdultCount } : {}),
     ...(typeof rec.rsvpChildCount === "number" ? { childCount: rec.rsvpChildCount } : {}),
+    // Sender-only: the household's dietary note travels with their response
+    // so it appears in Event management. It is never on a share surface.
+    ...(rec.rsvpDietary ? { dietaryRequirements: rec.rsvpDietary } : {}),
     respondedAt: rec.rsvpAt ?? null,
   };
 }

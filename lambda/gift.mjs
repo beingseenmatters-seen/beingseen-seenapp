@@ -25,6 +25,7 @@ import { validateWeddingOccasion, WEDDING_MUSIC_THEMES } from "./occasion.mjs";
 import {
   normalizeRecipientLabel,
   validateRsvpCounts,
+  validateRsvpDietary,
   ensureEvent,
   deleteCreatedEvent,
 } from "./event.mjs";
@@ -473,6 +474,9 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
         // echoed so 更改答复 can prefill. Never other households' data.
         rsvpAdultCount: rec.rsvpAdultCount ?? null,
         rsvpChildCount: rec.rsvpChildCount ?? null,
+        // The household's own answer, echoed so they can edit it. Never on a
+        // shared link — that audience is not one household.
+        rsvpDietary: rec.sharedDistribution === true ? null : (rec.rsvpDietary ?? null),
         // 致 张先生全家 (Founder V2): the household label is presentation
         // personalisation, revealed ONLY on successful access — never on
         // probes, wrong keys, locks, or any error path.
@@ -532,6 +536,7 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
       rsvpAt: rec.rsvpAt ?? null,
       rsvpAdultCount: rec.rsvpAdultCount ?? null,
       rsvpChildCount: rec.rsvpChildCount ?? null,
+      rsvpDietary: rec.sharedDistribution === true ? null : (rec.rsvpDietary ?? null),
       recipientLabel: rec.recipientLabel ?? null,
       sharedDistribution: rec.sharedDistribution === true,
       accessMode,
@@ -594,10 +599,30 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
   if (!counts.ok) {
     return { status: 400, body: { error: counts.error, field: counts.field } };
   }
+  // Counts are written on EVERY response, including when none were supplied.
+  //
+  // Previously an accept without counts wrote no count fields at all, which
+  // left whatever the record already had. A guest who declined (stored 0/0)
+  // and then accepted therefore ended up "Attendance confirmed · 0 attending"
+  // — found in founder physical QA. An answer must never inherit the arithmetic
+  // of the answer it replaced, so absent counts explicitly CLEAR to null.
   const countFields = counts.counts
     ? { rsvpAdultCount: counts.counts.adultCount, rsvpChildCount: counts.counts.childCount }
-    : {};
-  const rsvpEcho = { ok: true, rsvpStatus: status, rsvpAt: now, ...countFields };
+    : { rsvpAdultCount: null, rsvpChildCount: null };
+
+  // Dietary note travels with the SAME response — an update, never a second
+  // record. Absent clears it, so removing a note actually removes it.
+  const dietary = validateRsvpDietary(status, body);
+  if (!dietary.ok) return { status: 400, body: { error: dietary.error, field: dietary.field } };
+  const dietaryFields = { rsvpDietary: dietary.dietary };
+
+  const rsvpEcho = {
+    ok: true,
+    rsvpStatus: status,
+    rsvpAt: now,
+    ...(counts.counts ? countFields : {}),
+    ...(dietary.dietary ? { dietaryRequirements: dietary.dietary } : {}),
+  };
 
   const tokenHash = sha256Hex(token);
   const ref = db.collection(GIFT_COLLECTION).doc(tokenHash);
@@ -640,11 +665,12 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
       rsvpStatus: status,
       rsvpAt: now,
       ...countFields,
+      ...dietaryFields,
     });
     return { status: 200, body: rsvpEcho };
   }
 
-  await ref.update({ rsvpStatus: status, rsvpAt: now, ...countFields });
+  await ref.update({ rsvpStatus: status, rsvpAt: now, ...countFields, ...dietaryFields });
   return { status: 200, body: rsvpEcho };
 }
 

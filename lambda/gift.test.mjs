@@ -1158,3 +1158,82 @@ test("presentation: revoke attempts deletion of EVERY private role asset (new an
   const after = await retrieveGift({ db, media, body: { token: g2.body.token }, now: 3000 });
   assert.equal(after.status, 410);
 });
+
+
+// --- Founder QA: RSVP must never confirm a stale count ----------------------
+
+test("accept after decline never inherits the decline's zero counts", async () => {
+  const db = makeFakeDb();
+  const g = await createGift({ db, decoded: AUTHOR, body: { message: "hi", occasion: weddingOccasion(), accessMode: "direct" } });
+  const token = g.body.token;
+
+  // Decline stores an explicit 0/0.
+  await rsvpGift({ db, body: { token, status: "declined" } });
+  let rec = [...db._store.values()].find((v) => v.rsvpStatus === "declined");
+  assert.equal(rec.rsvpAdultCount, 0);
+
+  // Accepting WITHOUT counts must clear them, not inherit 0/0 — otherwise the
+  // guest sees "Attendance confirmed · 0 attending" (founder physical QA).
+  const acc = await rsvpGift({ db, body: { token, status: "accepted" } });
+  assert.equal(acc.status, 200);
+  rec = [...db._store.values()].find((v) => v.rsvpStatus === "accepted");
+  assert.equal(typeof rec.rsvpAdultCount === "number", false);
+  assert.equal(typeof rec.rsvpChildCount === "number", false);
+
+  // And accepting WITH counts stores exactly those.
+  await rsvpGift({ db, body: { token, status: "accepted", adultCount: 3, childCount: 0 } });
+  rec = [...db._store.values()].find((v) => v.rsvpStatus === "accepted");
+  assert.equal(rec.rsvpAdultCount, 3);
+  assert.equal(rec.rsvpChildCount, 0);
+});
+
+test("dietary note round-trips, updates in place, and is cleared by removal", async () => {
+  const db = makeFakeDb();
+  const g = await createGift({ db, decoded: AUTHOR, body: { message: "hi", occasion: weddingOccasion(), accessMode: "direct" } });
+  const token = g.body.token;
+
+  const a = await rsvpGift({ db, body: { token, status: "accepted", adultCount: 3, childCount: 0, dietaryRequirements: "  Vegetarian, nut allergy  " } });
+  assert.equal(a.status, 200);
+  assert.equal(a.body.dietaryRequirements, "Vegetarian, nut allergy");   // trimmed
+  let rec = [...db._store.values()].find((v) => v.rsvpStatus === "accepted");
+  assert.equal(rec.rsvpDietary, "Vegetarian, nut allergy");
+
+  // An update replaces the note on the SAME response — never a second record.
+  const before = [...db._store.values()].filter((v) => v.rsvpStatus).length;
+  await rsvpGift({ db, body: { token, status: "accepted", adultCount: 2, childCount: 0, dietaryRequirements: "Gluten-free" } });
+  rec = [...db._store.values()].find((v) => v.rsvpStatus === "accepted");
+  assert.equal(rec.rsvpDietary, "Gluten-free");
+  assert.equal(rec.rsvpAdultCount, 2);
+  assert.equal([...db._store.values()].filter((v) => v.rsvpStatus).length, before);
+
+  // Removing the note actually removes it.
+  await rsvpGift({ db, body: { token, status: "accepted", adultCount: 2, childCount: 0 } });
+  rec = [...db._store.values()].find((v) => v.rsvpStatus === "accepted");
+  assert.equal(rec.rsvpDietary, null);
+});
+
+test("dietary note is refused on a decline and bounded in length/type", async () => {
+  const db = makeFakeDb();
+  const g = await createGift({ db, decoded: AUTHOR, body: { message: "hi", occasion: weddingOccasion(), accessMode: "direct" } });
+  const token = g.body.token;
+
+  // Nobody is attending, so the question is never asked.
+  const dec = await rsvpGift({ db, body: { token, status: "declined", dietaryRequirements: "Vegetarian" } });
+  assert.equal(dec.status, 400);
+  assert.equal(dec.body.error, "invalid_rsvp_dietary");
+
+  const long = await rsvpGift({ db, body: { token, status: "accepted", dietaryRequirements: "x".repeat(201) } });
+  assert.equal(long.status, 400);
+  assert.equal(long.body.field, "length");
+
+  const bad = await rsvpGift({ db, body: { token, status: "accepted", dietaryRequirements: { note: "x" } } });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.field, "type");
+
+  // A plain decline still stores the resolved zeros and clears any note.
+  const ok = await rsvpGift({ db, body: { token, status: "declined" } });
+  assert.equal(ok.status, 200);
+  const rec = [...db._store.values()].find((v) => v.rsvpStatus === "declined");
+  assert.equal(rec.rsvpAdultCount, 0);
+  assert.equal(rec.rsvpDietary, null);
+});
