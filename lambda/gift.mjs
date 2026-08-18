@@ -28,6 +28,7 @@ import {
   ensureEvent,
   deleteCreatedEvent,
 } from "./event.mjs";
+import { onsiteRetrieveExtras } from "./onsite.mjs";
 import {
   finalizePresentation,
   mintPresentation,
@@ -300,7 +301,19 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
               return { ok: false, status: 403, body: { error: "forbidden" } };
             }
             if (src.eventId !== eventId || src.revoked) return invalid;
-            const fragment = src.presentation?.[role];
+            // Photo Story whole-set reuse: role 'photos' inherits the
+            // source's ORDERED story (new array or legacy single photo).
+            if (role === "photos") {
+              const frags =
+                src.presentation?.photos ??
+                (src.presentation?.photo ? [src.presentation.photo] : []);
+              if (frags.length === 0 || frags.some((f) => !f?.assetId)) return invalid;
+              return { ok: true, srcTokenHash: fromGiftId.trim(), fragments: frags.map((f) => ({ ...f })) };
+            }
+            const fragment =
+              role === "photo"
+                ? (src.presentation?.photo ?? src.presentation?.photos?.[0])
+                : src.presentation?.[role];
             if (!fragment?.assetId) return invalid;
             return { ok: true, srcTokenHash: fromGiftId.trim(), fragment: { ...fragment } };
           };
@@ -467,6 +480,9 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
         sharedDistribution: rec.sharedDistribution === true,
         accessMode,
         occasion: rec.occasion ?? null,
+        // Wedding Day (WD-1): the shared on_site record additionally carries
+        // its guest-safe draw window; every other gift spreads nothing.
+        ...(await onsiteRetrieveExtras({ db, rec, now })),
         // Role-aware presentation, minted only on successful access; each
         // role degrades independently and never blocks the invitation. The
         // legacy openingMedia shape is SYNTHESIZED from the photo role so
@@ -522,6 +538,7 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
       // Structured Occasion facts (Wedding V1) — first-class data, returned
       // only after successful access. null for every gift sealed without one.
       occasion: rec.occasion ?? null,
+      ...(await onsiteRetrieveExtras({ db, rec, now })),
       // Minted only AFTER the Heart Key verified above — private roles are
       // structurally unobtainable before unlock (photo AND voice).
       ...(await presentationResponse({ store: media, rec, tokenHash })),
@@ -592,6 +609,11 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
   if (rec.expiresAt && now > rec.expiresAt) return { status: 410, body: { error: "expired" } };
   if (rec.lockedUntil && now < rec.lockedUntil) {
     return { status: 423, body: { error: "locked", lockedUntil: rec.lockedUntil } };
+  }
+  // The shared Wedding Day record is NOT an invitation — it must never
+  // acquire an RSVP state (household statistics stay invitation-derived).
+  if (rec.contextRole === "on_site") {
+    return { status: 409, body: { error: "rsvp_not_applicable" } };
   }
 
   // Same access policy as retrieve: direct gifts RSVP on token possession

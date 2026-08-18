@@ -175,6 +175,9 @@ export async function uploadGiftMedia({ store, decoded, body, now = Date.now() }
  * Deliberately NOT a generic media[] — role semantics are the product model.
  */
 export const PRESENTATION_VERSION = 1;
+/** Photo Story V1 (Founder): 0–5 photos. Five is the product ceiling — more
+ * would turn a memory into an album editor, which Gift.Seen is not. */
+export const PHOTO_STORY_MAX = 5;
 
 /** Which staged upload type each presentation role must carry. */
 const ROLE_EXPECTED_TYPE = { photo: "photo", voice: "audio" };
@@ -206,9 +209,15 @@ export function adaptLegacyOpeningMedia(om) {
   return null;
 }
 
-/** Canonical read: new field first, legacy adapted second. */
+/** Canonical read: new field first, legacy adapted second. The returned
+ * object always exposes `photos` as an ordered array (Photo Story V1) —
+ * single-photo and legacy records normalize to a one-item story, so every
+ * downstream reader speaks ONE shape. */
 export function readPresentation(rec) {
-  return rec?.presentation ?? adaptLegacyOpeningMedia(rec?.openingMedia) ?? null;
+  const p = rec?.presentation ?? adaptLegacyOpeningMedia(rec?.openingMedia) ?? null;
+  if (!p) return null;
+  const photos = Array.isArray(p.photos) && p.photos.length > 0 ? p.photos : p.photo ? [p.photo] : [];
+  return { ...p, photos };
 }
 
 // --- Sealing ---------------------------------------------------------------------
@@ -289,8 +298,8 @@ export async function finalizeOpeningMedia({ store, decoded, openingMedia, token
  * re-validation from the object, never client claims; role/type mismatch
  * (audio in photo role, photo in voice role) is rejected.
  */
-async function validateStagedRole({ store, decoded, role, assetId }) {
-  const field = `presentation.${role}`;
+async function validateStagedRole({ store, decoded, role, assetId, fieldLabel = null }) {
+  const field = fieldLabel ?? `presentation.${role}`;
   if (!ASSET_ID_RE.test(assetId || "")) {
     return { ok: false, status: 400, body: { error: "invalid_media", field } };
   }
@@ -387,6 +396,38 @@ export async function finalizePresentation({
     roles.push(hasAsset ? { role, assetId: entry.assetId } : { role, fromGiftId: entry.fromGiftId });
   }
 
+  // Photo Story V1: `photos` — ordered array of 1–PHOTO_STORY_MAX staged
+  // entries, OR `{fromGiftId}` = reuse the source's WHOLE story in order.
+  // Mutually exclusive with the legacy single `photo` input.
+  let photosStaged = null; // string[] assetIds, in order
+  let photosReuse = null; // fromGiftId
+  const photosInput = presentation.photos;
+  if (photosInput !== undefined && photosInput !== null) {
+    if (presentation.photo !== undefined && presentation.photo !== null) {
+      return { ok: false, status: 400, body: { error: "invalid_presentation", field: "photos" } };
+    }
+    if (Array.isArray(photosInput)) {
+      if (photosInput.length < 1 || photosInput.length > PHOTO_STORY_MAX) {
+        return { ok: false, status: 400, body: { error: "invalid_presentation", field: "photos" } };
+      }
+      photosStaged = [];
+      for (let i = 0; i < photosInput.length; i += 1) {
+        const entry = photosInput[i];
+        if (!entry || typeof entry !== "object" || typeof entry.assetId !== "string") {
+          return { ok: false, status: 400, body: { error: "invalid_media", field: `presentation.photos[${i}]` } };
+        }
+        photosStaged.push(entry.assetId);
+      }
+    } else if (typeof photosInput === "object" && typeof photosInput.fromGiftId === "string") {
+      if (!resolveReuse) {
+        return { ok: false, status: 400, body: { error: "invalid_media", field: "presentation.photos" } };
+      }
+      photosReuse = photosInput.fromGiftId;
+    } else {
+      return { ok: false, status: 400, body: { error: "invalid_presentation", field: "photos" } };
+    }
+  }
+
   let musicThemeId = null;
   if (presentation.musicThemeId !== undefined && presentation.musicThemeId !== null && presentation.musicThemeId !== "") {
     if (typeof presentation.musicThemeId !== "string" || !allowedMusicThemes.includes(presentation.musicThemeId)) {
@@ -395,9 +436,10 @@ export async function finalizePresentation({
     musicThemeId = presentation.musicThemeId;
   }
 
-  if (roles.length === 0 && !musicThemeId) return { ok: true, presentation: null };
+  const wantsPhotos = photosStaged !== null || photosReuse !== null;
+  if (roles.length === 0 && !wantsPhotos && !musicThemeId) return { ok: true, presentation: null };
 
-  if (roles.length > 0 && !store) {
+  if ((roles.length > 0 || wantsPhotos) && !store) {
     return { ok: false, status: 503, body: { error: "media_unavailable" } };
   }
 
@@ -423,6 +465,31 @@ export async function finalizePresentation({
         assetId: res.fragment.assetId,
         srcTokenHash: res.srcTokenHash,
       });
+    }
+  }
+
+  // Photo Story fragments — each photo validates/promotes independently but
+  // the SEAL stays all-or-nothing (one promote failure compensates all).
+  const photoStory = [];
+  if (photosStaged) {
+    for (let i = 0; i < photosStaged.length; i += 1) {
+      const res = await validateStagedRole({
+        store,
+        decoded,
+        role: "photo",
+        assetId: photosStaged[i],
+        fieldLabel: `presentation.photos[${i}]`,
+      });
+      if (!res.ok) return res;
+      photoStory.push(res.fragment);
+      plans.push({ role: `photos[${i}]`, kind: "staged", assetId: photosStaged[i] });
+    }
+  } else if (photosReuse) {
+    const res = await resolveReuse(photosReuse, "photos");
+    if (!res.ok) return res;
+    for (const frag of res.fragments) {
+      photoStory.push({ ...frag });
+      plans.push({ role: "photos", kind: "reuse", assetId: frag.assetId, srcTokenHash: res.srcTokenHash });
     }
   }
 
@@ -466,7 +533,14 @@ export async function finalizePresentation({
     ok: true,
     presentation: {
       v: PRESENTATION_VERSION,
-      ...(fragments.photo ? { photo: fragments.photo } : {}),
+      // Photo Story writes the ordered array PLUS a first-photo mirror in
+      // the legacy `photo` field — every old reader (cached bundles,
+      // openingMedia synthesis) keeps working with zero migration.
+      ...(photoStory.length > 0
+        ? { photos: photoStory, photo: photoStory[0] }
+        : fragments.photo
+          ? { photo: fragments.photo }
+          : {}),
       ...(fragments.voice ? { voice: fragments.voice } : {}),
       ...(musicThemeId ? { musicThemeId } : {}),
     },
@@ -477,7 +551,11 @@ export async function finalizePresentation({
 export function sealedAssetIds(rec) {
   const p = readPresentation(rec);
   if (!p) return [];
-  return [p.photo?.assetId, p.voice?.assetId].filter(Boolean);
+  return [
+    ...new Set(
+      [...(p.photos ?? []).map((x) => x?.assetId), p.photo?.assetId, p.voice?.assetId].filter(Boolean),
+    ),
+  ];
 }
 
 /**
@@ -491,17 +569,27 @@ export async function mintPresentation({ store, rec, tokenHash }) {
   const p = readPresentation(rec);
   if (!p) return null;
   const out = {};
-  if (p.photo?.assetId && store) {
-    try {
-      const url = await store.presignSealedGet({
-        tokenHash,
-        assetId: p.photo.assetId,
-        contentType: p.photo.contentType,
-        ttlSeconds: MEDIA_URL_TTL_SECONDS,
-      });
-      out.photo = { url, contentType: p.photo.contentType };
-    } catch (e) {
-      console.warn("[giftMedia] photo presign failed — role degrades:", e?.message);
+  // Photo Story: mint each photo independently — one failure skips THAT
+  // photo only (§13); the first minted photo doubles as the legacy field.
+  if ((p.photos?.length ?? 0) > 0 && store) {
+    const minted = [];
+    for (const frag of p.photos) {
+      if (!frag?.assetId) continue;
+      try {
+        const url = await store.presignSealedGet({
+          tokenHash,
+          assetId: frag.assetId,
+          contentType: frag.contentType,
+          ttlSeconds: MEDIA_URL_TTL_SECONDS,
+        });
+        minted.push({ url, contentType: frag.contentType });
+      } catch (e) {
+        console.warn("[giftMedia] photo presign failed — photo skipped:", e?.message);
+      }
+    }
+    if (minted.length > 0) {
+      out.photos = minted;
+      out.photo = minted[0];
     }
   }
   if (p.voice?.assetId && store) {

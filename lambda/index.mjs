@@ -41,8 +41,20 @@ import {
   parseExtractionContent,
   toExtractResponsePayload,
 } from "./reflectModes.mjs";
-import { createGift, retrieveGift, revokeGift, rsvpGift, GIFT_COLLECTION } from "./gift.mjs";
+import { createGift, retrieveGift, revokeGift, rsvpGift, GIFT_COLLECTION, GIFT_PUBLIC_BASE_URL } from "./gift.mjs";
 import { senderLibrary, eventDetail, recoverShare, createEvent, upsertGuest, removeGuest, saveVariant } from "./event.mjs";
+import {
+  createOnsite,
+  onsiteDetail,
+  listGuestbook,
+  configureDraw,
+  openDraw,
+  lockDraw,
+  submitBlessing,
+  claimLuckyCode,
+  listEntrants,
+  drawWinner,
+} from "./onsite.mjs";
 import { distributeInvitations } from "./distribute.mjs";
 import { validateWeddingOccasion } from "./occasion.mjs";
 import { makeKmsShareCrypto } from "./shareCrypto.mjs";
@@ -997,6 +1009,25 @@ export const handler = async (event) => {
     const result = await rsvpGift({ db: admin.firestore(), body });
     return httpResponse(result.status, result.body);
   }
+  // ---- Wedding Day on-site (WD-1) — guest side: app-key only. The shared
+  // on_site token is the capability; these must never inherit sender auth
+  // semantics (Founder AA-9) and never list other guests' data.
+  if (path === "/gift/onsite/blessing") {
+    const result = await submitBlessing({
+      db: admin.firestore(),
+      body,
+      giftCollection: GIFT_COLLECTION,
+    });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/gift/onsite/lucky/claim") {
+    const result = await claimLuckyCode({
+      db: admin.firestore(),
+      body,
+      giftCollection: GIFT_COLLECTION,
+    });
+    return httpResponse(result.status, result.body);
+  }
   if (path === "/gift/revoke") {
     const decoded = await verifyAuthToken(event);
     const result = await revokeGift({ db: admin.firestore(), decoded, body, media: giftMediaStore });
@@ -1062,6 +1093,60 @@ export const handler = async (event) => {
       share: giftShareCrypto,
       giftCollection: GIFT_COLLECTION,
     });
+    return httpResponse(result.status, result.body);
+  }
+  // ---- Wedding Day on-site (WD-1) — sender side: authenticated owner only.
+  if (path === "/sender/onsite/create") {
+    const decoded = await verifyAuthToken(event);
+    const result = await createOnsite({
+      db: admin.firestore(),
+      decoded,
+      body,
+      share: giftShareCrypto,
+      media: giftMediaStore,
+      giftCollection: GIFT_COLLECTION,
+      publicBaseUrl: GIFT_PUBLIC_BASE_URL,
+    });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/onsite/detail") {
+    const decoded = await verifyAuthToken(event);
+    const result = await onsiteDetail({
+      db: admin.firestore(),
+      decoded,
+      body,
+      giftCollection: GIFT_COLLECTION,
+    });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/onsite/guestbook") {
+    const decoded = await verifyAuthToken(event);
+    const result = await listGuestbook({ db: admin.firestore(), decoded, body });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/onsite/draw/configure") {
+    const decoded = await verifyAuthToken(event);
+    const result = await configureDraw({ db: admin.firestore(), decoded, body });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/onsite/draw/open") {
+    const decoded = await verifyAuthToken(event);
+    const result = await openDraw({ db: admin.firestore(), decoded, body });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/onsite/draw/entrants") {
+    const decoded = await verifyAuthToken(event);
+    const result = await listEntrants({ db: admin.firestore(), decoded, body });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/onsite/draw/winner") {
+    const decoded = await verifyAuthToken(event);
+    const result = await drawWinner({ db: admin.firestore(), decoded, body });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/onsite/draw/lock") {
+    const decoded = await verifyAuthToken(event);
+    const result = await lockDraw({ db: admin.firestore(), decoded, body });
     return httpResponse(result.status, result.body);
   }
   if (path === "/sender/gift/share") {

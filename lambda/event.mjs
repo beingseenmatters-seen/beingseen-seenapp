@@ -203,6 +203,9 @@ export async function senderLibrary({ db, decoded, giftCollection, now = Date.no
   ]);
 
   const gifts = (giftSnap.docs ?? [])
+    // The Wedding Day on_site record is Event plumbing, not a sent 心意 —
+    // it never appears as a library row (WD-1).
+    .filter((d) => d.data().contextRole !== "on_site")
     .map((d) => libraryRow(d.id, d.data(), now))
     .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
     .slice(0, LIBRARY_LIMIT);
@@ -251,6 +254,9 @@ export async function eventDetail({ db, decoded, body, giftCollection, now = Dat
     // Defense in depth — an event's invitations are by construction the
     // owner's, but never rely on construction alone.
     .filter(({ rec }) => rec.senderUid === decoded.uid)
+    // The shared on_site record is not an invitation: it must never render
+    // as a household row nor count as a pending group (WD-1).
+    .filter(({ rec }) => rec.contextRole !== "on_site")
     .sort((a, b) => (a.rec.createdAt ?? 0) - (b.rec.createdAt ?? 0));
   const invById = new Map(invitations.map(({ id, rec }) => [id, rec]));
   // Guest rows (4.5-B3): phone ALWAYS masked — no full-value read exists in

@@ -75,6 +75,7 @@ export async function distributeInvitations({
     const rec = s.data();
     if (rec.senderUid !== decoded.uid || rec.eventId !== eventId || rec.revoked) return null;
     return {
+      photos: (rec.presentation?.photos?.length ?? 0) > 0,
       photo: Boolean(rec.presentation?.photo?.assetId),
       voice: Boolean(rec.presentation?.voice?.assetId),
       musicThemeId: rec.presentation?.musicThemeId ?? null,
@@ -136,11 +137,18 @@ export async function distributeInvitations({
     // from the staged assets (first row of the first chunk).
     const pres = {};
     if (sourceRoles) {
-      if (sourceRoles.photo) pres.photo = { fromGiftId: sourceGiftId };
+      // Photo Story V1: multi-photo sources carry the WHOLE ordered story
+      // to every household; single/legacy sources keep the photo role.
+      if (sourceRoles.photos) pres.photos = { fromGiftId: sourceGiftId };
+      else if (sourceRoles.photo) pres.photo = { fromGiftId: sourceGiftId };
       if (sourceRoles.voice) pres.voice = { fromGiftId: sourceGiftId };
       if (sourceRoles.musicThemeId) pres.musicThemeId = sourceRoles.musicThemeId;
     } else if (staged) {
-      if (staged.photo?.assetId) pres.photo = { assetId: staged.photo.assetId };
+      if (Array.isArray(staged.photos) && staged.photos.length > 0) {
+        pres.photos = staged.photos
+          .filter((p) => p && typeof p.assetId === "string")
+          .map((p) => ({ assetId: p.assetId }));
+      } else if (staged.photo?.assetId) pres.photo = { assetId: staged.photo.assetId };
       if (staged.voice?.assetId) pres.voice = { assetId: staged.voice.assetId };
       if (musicThemeId) pres.musicThemeId = musicThemeId;
     } else if (musicThemeId) {
