@@ -162,6 +162,11 @@ function libraryRow(id, rec, now) {
       ? {
           occasion: {
             type: rec.occasion.type,
+            // Cultural identity travels with every sender-facing row: the
+            // library, share-again and QR regeneration must resolve the REAL
+            // Occasion rather than assuming Chinese Wedding. Absent → chinese
+            // (exact for every record sealed before Western Wedding).
+            culture: rec.occasion.culture ?? "chinese",
             couple: rec.occasion.couple,
             date: rec.occasion.date,
             venueName: rec.occasion.venue?.displayName ?? null,
@@ -219,6 +224,7 @@ export async function senderLibrary({ db, decoded, giftCollection, now = Date.no
         status: ev.status,
         createdAt: ev.createdAt,
         occasion: {
+          culture: ev.occasion?.culture ?? "chinese",
           couple: ev.occasion?.couple,
           date: ev.occasion?.date,
           venueName: ev.occasion?.venue?.displayName ?? null,

@@ -22,6 +22,22 @@
 export const OCCASION_TYPE_WEDDING = "wedding";
 export const OCCASION_VERSION = 1;
 
+/**
+ * Cultural contract of a Wedding Occasion (Western Wedding V1).
+ *
+ * Chinese Wedding and Western Wedding are two distinct cultural Occasions
+ * over ONE shared Wedding infrastructure — they share `type: "wedding"`,
+ * the Event model, distribution, RSVP and media. `culture` is what makes
+ * them distinguishable in SEALED truth, so the recipient experience never
+ * has to infer culture from a `?p=` hint or from the reader's UI language.
+ *
+ * ABSENT culture === "chinese". Every record sealed before this field
+ * existed is a Chinese Wedding, so the default is exact, not a guess, and
+ * no migration is required.
+ */
+export const WEDDING_CULTURES = ["chinese", "western"];
+export const DEFAULT_WEDDING_CULTURE = "chinese";
+
 /** Stable internal audience values — UI labels come later, never stored. */
 export const WEDDING_AUDIENCES = [
   "relatives",
@@ -79,6 +95,7 @@ const LIMITS = {
   address: 160,
   inviter: 40,
   personalContext: 200,
+  dressCode: 40,
 };
 
 // --- Facts validation -------------------------------------------------------
@@ -167,6 +184,30 @@ export function validateWeddingFacts(raw) {
     return { ok: false, field: "audienceType" };
   }
 
+  // Culture: optional and additive. Absent → "chinese" (every pre-Western
+  // record). An unknown value is REJECTED, never silently defaulted.
+  let culture = DEFAULT_WEDDING_CULTURE;
+  if (raw.culture !== undefined && raw.culture !== null && raw.culture !== "") {
+    if (!WEDDING_CULTURES.includes(raw.culture)) return { ok: false, field: "culture" };
+    culture = raw.culture;
+  }
+
+  // Western V1 optional facts. Both are STRUCTURED product truth (never
+  // parsed out of prose) and both are display/context only — rsvpDeadline
+  // carries NO server-side enforcement in this milestone.
+  let rsvpDeadline = null;
+  if (raw.rsvpDeadline !== undefined && raw.rsvpDeadline !== null && raw.rsvpDeadline !== "") {
+    if (!isValidIsoDate(raw.rsvpDeadline)) return { ok: false, field: "rsvpDeadline" };
+    if (raw.rsvpDeadline > raw.date) return { ok: false, field: "rsvpDeadline" };
+    rsvpDeadline = raw.rsvpDeadline;
+  }
+
+  let dressCode = null;
+  if (raw.dressCode !== undefined && raw.dressCode !== null && raw.dressCode !== "") {
+    dressCode = cleanString(raw.dressCode, LIMITS.dressCode);
+    if (!dressCode) return { ok: false, field: "dressCode" };
+  }
+
   return {
     ok: true,
     facts: {
@@ -176,6 +217,9 @@ export function validateWeddingFacts(raw) {
       venue: { displayName, formattedAddress, latitude, longitude },
       inviter,
       audienceType: raw.audienceType,
+      culture,
+      rsvpDeadline,
+      dressCode,
     },
   };
 }
@@ -200,10 +244,45 @@ export function validateWeddingOccasion(raw) {
 
 // --- Prompt building --------------------------------------------------------
 
-/** "2026-10-01" → "2026年10月1日" (no zero padding — natural Chinese). */
-export function formatWeddingDate(date) {
+const EN_MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/**
+ * Canonical rendering of a wedding date for the generation language.
+ *   zh → "2026年10月1日" (no zero padding — natural Chinese)
+ *   en → "October 1, 2026"
+ * Defaults to zh so every pre-Western call site is unchanged.
+ */
+export function formatWeddingDate(date, language = "zh") {
   const [y, m, d] = date.split("-").map(Number);
+  if (language === "en") return `${EN_MONTHS[m - 1]} ${d}, ${y}`;
   return `${y}年${m}月${d}日`;
+}
+
+/**
+ * Renderings of the date that COUNT as the fact having survived generation.
+ *
+ * The principle is unchanged (facts validate prose; prose never creates
+ * facts) — only the surface form is locale-appropriate. Chinese has exactly
+ * one natural written form. English has two in common use, and refusing a
+ * correct British rendering would be a validation bug, not rigour. Anything
+ * outside this set still fails the gate.
+ */
+export function weddingDateVariants(date, language = "zh") {
+  const [y, m, d] = date.split("-").map(Number);
+  if (language === "en") {
+    const month = EN_MONTHS[m - 1];
+    return [`${month} ${d}, ${y}`, `${month} ${d} ${y}`, `${d} ${month} ${y}`];
+  }
+  return [`${y}年${m}月${d}日`];
+}
+
+/** Generation language for a facts group: explicit wins, else culture decides. */
+export function weddingLanguageFor(facts, requested) {
+  if (requested === "en" || requested === "zh") return requested;
+  return facts?.culture === "western" ? "en" : "zh";
 }
 
 const AUDIENCE_GUIDANCE = {
@@ -241,12 +320,143 @@ export function anglesForAttempt(attempt) {
   return [0, 1, 2].map((i) => COMPOSITION_ANGLES[(offset + i) % n]);
 }
 
+// --- Western Wedding (English) vocabulary -----------------------------------
+// Written for Western wedding practice, NOT translated from the Chinese
+// tables above: the registers differ (English invitations lean on restraint
+// and formula — "request the pleasure of your company" — where the Chinese
+// leans on warmth and relationship).
+
+const EN_AUDIENCE_GUIDANCE = {
+  relatives: "Family — affectionate and unguarded, the way you'd write to people who already know your whole story.",
+  elders: "Older family members — respectful and a little more formal, genuinely honouring them without becoming stiff.",
+  friends: "Friends — warm, natural, the tone of telling someone you care about a piece of real news.",
+  close_friends: "Closest friends — personal and specific, room for shared history; formality can relax here.",
+  colleagues: "Colleagues — warm but composed, friendly without presuming intimacy.",
+  clients_vip: "Clients and honoured guests — formal, gracious and precise; courteous, never fawning.",
+};
+
+const EN_TONE_GUIDANCE = {
+  sincere: "Sincere — plain, honest, every sentence meaning exactly what it says.",
+  warm: "Warm — affectionate and human, generous without gushing.",
+  joyful: "Joyful — bright and glad, the happiness the news actually carries.",
+  literary: "Literary — considered and spare, comfortable with white space.",
+  poetic: "Poetic — image-led and restrained; still natural modern English, never florid.",
+  lighthearted: "Lighthearted — easy and a little playful, while staying gracious.",
+};
+
+// Six angles, rotated by `attempt` exactly like the Chinese set, so
+// "regenerate" explores genuinely new ground instead of re-rolling.
+const EN_COMPOSITION_ANGLES = [
+  "a warm, direct invitation — simply and gladly say that they are marrying, and ask this person to be there",
+  "lead with the relationship — begin from what this person has meant to the couple",
+  "the formal register — restrained and traditional (\"request the pleasure of your company\"), dignified without being cold",
+  "lead with the gladness of sharing the news with someone who matters",
+  "lead with gratitude — thank them for their presence in the couple's life so far",
+  "the shortest of the three — still a complete invitation with an opening and a close, never a bare notice",
+];
+
+export function enAnglesForAttempt(attempt) {
+  const n = EN_COMPOSITION_ANGLES.length;
+  const offset = ((Math.trunc(attempt) % n) + n) % n;
+  return [0, 1, 2].map((i) => EN_COMPOSITION_ANGLES[(offset + i) % n]);
+}
+
 /**
- * Build the Wedding generation prompt (Chinese; Wedding V1 is zh-first).
- * Returns { system, user } — unlike the legacy path, untrusted sender input
- * (personalContext) sits in the user message, not the system role.
+ * Build the Western Wedding generation prompt (English).
+ *
+ * Same architecture as the Chinese builder — untrusted sender input
+ * (personalContext) sits in the user message, never the system role — and
+ * the same hard rule: invent expression, never facts.
  */
-export function buildWeddingDraftPrompt({ facts, tone, personalContext, attempt = 0 }) {
+function buildEnglishWeddingPrompt({ facts, tone, personalContext, attempt = 0 }) {
+  const dateDisplay = formatWeddingDate(facts.date, "en");
+  const angles = enAnglesForAttempt(attempt);
+  const toneKey = WEDDING_TONES.includes(tone) ? tone : "sincere";
+
+  const system = [
+    "You are writing the body of a Western wedding invitation — a complete invitation that could be sent as it stands, not a greeting-card line and not a short well-wish.",
+    "",
+    "[FACT RULES — HIGHEST PRIORITY]",
+    `These must appear in every draft, exactly as written: both partners' names, the date \"${dateDisplay}\", and the venue \"${facts.venue.displayName}\". The time must also appear naturally in the text.`,
+    "Write the date exactly as given above. Write the time either as a natural clock time (\"4:00 in the afternoon\", \"4 pm\") or in plain 24-hour form — never mix the two conventions in one phrase.",
+    "Invent NO fact that was not supplied: no street address, no room or hall name, no ceremony or dinner schedule, no dress code, no parents' or family members' names or roles, no religious or cultural rites, no RSVP deadline, no catering, parking, travel, accommodation or gift information. You may invent feeling and phrasing. You may not invent facts.",
+    "",
+    "[LANGUAGE]",
+    "Contemporary, natural English with real warmth. Avoid wedding cliché and inflated abstractions — \"magical\", \"perfect\", \"special day\", \"journey of love\", \"tie the knot\", \"happily ever after\". Between all three drafts, words like \"joy\", \"beautiful\" and \"precious\" may appear at most once in total. Do not imitate Victorian pastiche, and do not translate another language's cadence. Restraint reads as sincerity.",
+    "Useful invitation formulas, to draw on rather than to copy mechanically: \"invite you to celebrate their wedding\", \"invite you to join them in celebrating their marriage\", \"request the pleasure of your company\", \"together with their families\".",
+    "",
+    "[OPENINGS]",
+    "The three openings must be entirely different from one another, and they must not all begin with a salutation (\"Dear friends,\" and the like). At least two should open with a feeling, a scene, or the news itself. A salutation is optional, never a required format.",
+    "",
+    "[STRUCTURE]",
+    `Each draft is a complete invitation: a fitting opening, a clear statement of who is marrying, an unmistakable invitation, warmth appropriate to this relationship, the date, the time, the place, a closing thought, and a natural sign-off from \"${facts.inviter}\". No fixed paragraph count and no template voice — completeness matters more than symmetry.`,
+    "Even the briefest of the three must remain a real invitation with an opening, feeling and close. It must never collapse into a notice or a calendar entry.",
+    "",
+    "[DIFFERENCE]",
+    "The three must genuinely differ in emotional structure and angle of approach (following the assigned lines below) — not paraphrases of one another, and not distinguished merely by length.",
+    "",
+    "[OUTPUT FORMAT]",
+    'Output strictly one JSON object: {"drafts":["first","second","third"]}, and nothing else. Use \\n for line breaks inside a draft.',
+  ].join("\n");
+
+  const factsLines = [
+    "[WEDDING FACTS]",
+    `Couple: ${facts.couple.partner1} and ${facts.couple.partner2}`,
+    `Date: ${dateDisplay} (must appear exactly)`,
+    `Time: ${facts.time.start}${facts.time.end ? `–${facts.time.end}` : ""}`,
+    `Venue: ${facts.venue.displayName} (name must appear exactly)`,
+  ];
+  if (facts.venue.formattedAddress) {
+    factsLines.push(`Address: ${facts.venue.formattedAddress} (may be woven in, or left out)`);
+  }
+  factsLines.push(`Sign-off: ${facts.inviter}`);
+  if (facts.dressCode) {
+    factsLines.push(`Dress code: ${facts.dressCode} (shown separately to the guest — do NOT state it in the prose)`);
+  }
+  if (facts.rsvpDeadline) {
+    factsLines.push(
+      `RSVP by: ${formatWeddingDate(facts.rsvpDeadline, "en")} (shown separately to the guest — do NOT state it in the prose)`,
+    );
+  }
+
+  const user = [
+    ...factsLines,
+    "",
+    `[GUEST] ${EN_AUDIENCE_GUIDANCE[facts.audienceType]}`,
+    `[TONE] ${EN_TONE_GUIDANCE[toneKey]}`,
+    ...(personalContext
+      ? ["", `[FROM THE SENDER] (to help you feel this relationship — weave it in, never quote it verbatim): "${personalContext}"`]
+      : []),
+    "",
+    "[THE THREE LINES]",
+    `First: ${angles[0]}`,
+    `Second: ${angles[1]}`,
+    `Third: ${angles[2]}`,
+  ].join("\n");
+
+  return { system, user };
+}
+
+/**
+ * Build the Wedding generation prompt for the resolved language.
+ *
+ * Chinese Wedding and Western Wedding are two cultural Occasions over one
+ * Wedding infrastructure, so they share this entry point, the orchestrator,
+ * the fact gate and the retry policy — only the prompt corpus differs.
+ * Returns { system, user }; untrusted sender input (personalContext) always
+ * sits in the user message, never the system role.
+ */
+export function buildWeddingDraftPrompt({ facts, tone, personalContext, attempt = 0, language }) {
+  const lang = weddingLanguageFor(facts, language);
+  if (lang === "en") return buildEnglishWeddingPrompt({ facts, tone, personalContext, attempt });
+  return buildChineseWeddingPrompt({ facts, tone, personalContext, attempt });
+}
+
+/**
+ * Build the Chinese Wedding generation prompt (Wedding V1 is zh-first).
+ * Unchanged from the shipped Chinese Wedding implementation.
+ */
+function buildChineseWeddingPrompt({ facts, tone, personalContext, attempt = 0 }) {
   const dateDisplay = formatWeddingDate(facts.date);
   const angles = anglesForAttempt(attempt);
   const toneKey = WEDDING_TONES.includes(tone) ? tone : "sincere";
@@ -314,13 +524,14 @@ export function buildWeddingDraftPrompt({ facts, tone, personalContext, attempt 
  * (Time is expected in prose but rendered independently by the factual UI
  * later, so it is not part of the hard gate.)
  */
-export function validateWeddingDraft(text, facts) {
+export function validateWeddingDraft(text, facts, language) {
   const t = typeof text === "string" ? text : "";
   if (!t.trim()) return false;
+  const lang = weddingLanguageFor(facts, language);
   return (
     t.includes(facts.couple.partner1) &&
     t.includes(facts.couple.partner2) &&
-    t.includes(formatWeddingDate(facts.date)) &&
+    weddingDateVariants(facts.date, lang).some((v) => t.includes(v)) &&
     t.includes(facts.venue.displayName)
   );
 }
@@ -348,7 +559,7 @@ const MIN_VALID_DRAFTS = 2;
  *
  * Contract:
  *   body = {
- *     language?: "zh",                       // V1 is Chinese-first; "en" → 400
+ *     language?: "zh" | "en",                // absent → sealed culture decides
  *     occasion: {
  *       type: "wedding", version: 1,
  *       facts: { couple, date, time, venue, inviter, audienceType },
@@ -371,7 +582,18 @@ export async function runWeddingDraft({ decoded, body, callModel, log = console 
   if (typeof body?.situation === "string" && body.situation.trim()) {
     return { status: 400, body: { error: "invalid_request" } };
   }
-  if (body?.language === "en") {
+  // P0.1 — English generation is a supported server contract (Western
+  // Wedding V1). An unrecognised language is still rejected; only the blanket
+  // "en" refusal is gone. Absent language resolves from the sealed culture,
+  // so a Chinese Wedding with no language field behaves exactly as before.
+  const requestedLanguage = body?.language;
+  if (
+    requestedLanguage !== undefined &&
+    requestedLanguage !== null &&
+    requestedLanguage !== "" &&
+    requestedLanguage !== "zh" &&
+    requestedLanguage !== "en"
+  ) {
     return { status: 400, body: { error: "occasion_language_unsupported" } };
   }
 
@@ -405,6 +627,12 @@ export async function runWeddingDraft({ decoded, body, callModel, log = console 
       ? Math.max(0, Math.trunc(occ.attempt))
       : 0;
 
+  // Generation language: an explicit request wins, else the sealed culture
+  // decides (western → en, chinese → zh). The SAME resolved language drives
+  // the prompt AND the fact gate, so prose can never be validated against a
+  // date rendering it was never asked to produce (P0.2).
+  const language = weddingLanguageFor(facts, requestedLanguage);
+
   // Generate → validate facts survived → retry once with fresh angles → fail loudly.
   const seen = new Set();
   const valid = [];
@@ -412,7 +640,7 @@ export async function runWeddingDraft({ decoded, body, callModel, log = console 
     let content;
     try {
       content = await callModel({
-        ...buildWeddingDraftPrompt({ facts, tone, personalContext, attempt: attempt + round }),
+        ...buildWeddingDraftPrompt({ facts, tone, personalContext, attempt: attempt + round, language }),
         maxTokens: WEDDING_DRAFT_MAX_TOKENS,
         temperature: WEDDING_DRAFT_TEMPERATURE,
         jsonObject: true,
@@ -426,7 +654,7 @@ export async function runWeddingDraft({ decoded, body, callModel, log = console 
     for (const d of drafts) {
       if (seen.has(d)) continue;
       seen.add(d);
-      if (validateWeddingDraft(d, facts)) valid.push(d);
+      if (validateWeddingDraft(d, facts, language)) valid.push(d);
       else dropped += 1;
     }
     if (dropped > 0) log.warn?.(`[Occasion] wedding drafts dropped by fact validation: ${dropped} (round ${round + 1})`);

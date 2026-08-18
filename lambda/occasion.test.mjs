@@ -10,6 +10,8 @@ import {
   anglesForAttempt,
   buildWeddingDraftPrompt,
   validateWeddingDraft,
+  weddingDateVariants,
+  weddingLanguageFor,
   runWeddingDraft,
 } from "./occasion.mjs";
 
@@ -29,6 +31,31 @@ function validFacts(overrides = {}) {
 
 function validDraft() {
   return "有些喜悦，值得与重要的人一起分享。\n2026年10月1日，冯志俊与吴姗姗将在临平温德姆大酒店举行婚礼，诚挚邀请您见证。\n姚科奇全家 敬邀";
+}
+
+/** Western Wedding facts — same shape, different cultural contract. */
+function westernFacts(overrides = {}) {
+  return {
+    couple: { partner1: "Emma", partner2: "James" },
+    date: "2026-10-01",
+    time: { start: "16:00" },
+    venue: { displayName: "Hedsor House" },
+    inviter: "Emma and James",
+    audienceType: "friends",
+    culture: "western",
+    ...overrides,
+  };
+}
+
+const EN_TAIL = "\nEmma and James";
+function enDraft() {
+  return `We are getting married.\nOn October 1, 2026 at Hedsor House, Emma and James will marry, and we would love you there.${EN_TAIL}`;
+}
+function enDraft2() {
+  return `You have been part of our story for a long time.\nEmma and James invite you to celebrate their wedding on October 1, 2026 at Hedsor House.${EN_TAIL}`;
+}
+function enDraft3() {
+  return `Emma and James request the pleasure of your company at Hedsor House on 1 October 2026, at four in the afternoon.${EN_TAIL}`;
 }
 
 const AUTHOR = { uid: "author-1" };
@@ -57,6 +84,12 @@ test("validateWeddingFacts accepts minimal required facts and normalizes optiona
     venue: { displayName: "临平温德姆大酒店", formattedAddress: null, latitude: null, longitude: null },
     inviter: "姚科奇全家",
     audienceType: "elders",
+    // Western Wedding V1 additive optionals — same "absent → null" convention
+    // as the fields above; culture defaults to the exact truth for every
+    // record sealed before the field existed.
+    culture: "chinese",
+    rsvpDeadline: null,
+    dressCode: null,
   });
 });
 
@@ -205,11 +238,31 @@ test("runWeddingDraft requires a verified sender (401 without decoded uid)", asy
   }
 });
 
-test("runWeddingDraft rejects English (V1 is Chinese-first) and mixed situation+occasion", async () => {
-  const en = await runWeddingDraft({ decoded: AUTHOR, body: { ...weddingBody(), language: "en" }, callModel: async () => "", log: SILENT });
-  assert.equal(en.status, 400);
-  assert.equal(en.body.error, "occasion_language_unsupported");
+test("runWeddingDraft ACCEPTS English (Western Wedding V1) but still rejects unknown languages", async () => {
+  // P0.1: the blanket "en" refusal is gone — English is a supported contract.
+  const en = await runWeddingDraft({
+    decoded: AUTHOR,
+    body: { ...weddingBody({ facts: westernFacts() }), language: "en" },
+    callModel: async () => JSON.stringify({ drafts: [enDraft(), enDraft2(), enDraft3()] }),
+    log: SILENT,
+  });
+  assert.equal(en.status, 200);
+  assert.equal(en.body.drafts.length, 3);
 
+  // An unrecognised language is still refused — validation was narrowed, not weakened.
+  for (const language of ["fr", "zh-TW", 42, {}]) {
+    const bad = await runWeddingDraft({
+      decoded: AUTHOR,
+      body: { ...weddingBody(), language },
+      callModel: async () => { throw new Error("must not be called"); },
+      log: SILENT,
+    });
+    assert.equal(bad.status, 400, `expected 400 for language ${JSON.stringify(language)}`);
+    assert.equal(bad.body.error, "occasion_language_unsupported");
+  }
+});
+
+test("runWeddingDraft rejects mixed situation+occasion", async () => {
   const mixed = await runWeddingDraft({
     decoded: AUTHOR,
     body: { ...weddingBody(), situation: "帮我写点什么" },
@@ -341,4 +394,144 @@ test("runWeddingDraft 换一批: attempt shifts the requested angles", async () 
   await make(0);
   await make(1);
   assert.notEqual(prompts[0], prompts[1]);
+});
+
+
+// --- Western Wedding V1 (cultural contract over shared Wedding infra) --------
+
+test("culture: absent → chinese, western accepted, unknown rejected", () => {
+  // Absent is EXACT, not a guess: every record sealed before this field
+  // existed is a Chinese Wedding.
+  assert.equal(validateWeddingFacts(validFacts()).facts.culture, "chinese");
+  assert.equal(validateWeddingFacts(westernFacts()).facts.culture, "western");
+  assert.equal(validateWeddingFacts(validFacts({ culture: "" })).facts.culture, "chinese");
+
+  const bad = validateWeddingFacts(validFacts({ culture: "japanese" }));
+  assert.equal(bad.ok, false);
+  assert.equal(bad.field, "culture");
+});
+
+test("culture survives sealing into the occasion record", () => {
+  const res = validateWeddingOccasion({ type: "wedding", version: 1, ...westernFacts() });
+  assert.equal(res.ok, true);
+  assert.equal(res.occasion.culture, "western");
+  assert.equal(res.occasion.type, "wedding"); // Western Wedding is STILL type wedding
+});
+
+test("rsvpDeadline: optional, ISO-valid, and never after the wedding itself", () => {
+  assert.equal(validateWeddingFacts(westernFacts()).facts.rsvpDeadline, null);
+  assert.equal(
+    validateWeddingFacts(westernFacts({ rsvpDeadline: "2026-09-01" })).facts.rsvpDeadline,
+    "2026-09-01",
+  );
+  // Same day is allowed (late but coherent); after the wedding is not.
+  assert.equal(validateWeddingFacts(westernFacts({ rsvpDeadline: "2026-10-01" })).ok, true);
+  for (const bad of ["2026-10-02", "not-a-date", "2026-13-01", "2026-02-30"]) {
+    const res = validateWeddingFacts(westernFacts({ rsvpDeadline: bad }));
+    assert.equal(res.ok, false, `expected rejection for ${bad}`);
+    assert.equal(res.field, "rsvpDeadline");
+  }
+});
+
+test("dressCode: optional, trimmed, capped at 40", () => {
+  assert.equal(validateWeddingFacts(westernFacts()).facts.dressCode, null);
+  assert.equal(validateWeddingFacts(westernFacts({ dressCode: "  Cocktail  " })).facts.dressCode, "Cocktail");
+  const long = validateWeddingFacts(westernFacts({ dressCode: "x".repeat(41) }));
+  assert.equal(long.ok, false);
+  assert.equal(long.field, "dressCode");
+});
+
+test("formatWeddingDate renders the locale-appropriate form", () => {
+  assert.equal(formatWeddingDate("2026-10-01"), "2026年10月1日");        // default unchanged
+  assert.equal(formatWeddingDate("2026-10-01", "zh"), "2026年10月1日");
+  assert.equal(formatWeddingDate("2026-10-01", "en"), "October 1, 2026");
+  assert.equal(formatWeddingDate("2027-01-15", "en"), "January 15, 2027");
+});
+
+test("weddingDateVariants accepts natural US and UK renderings, nothing else", () => {
+  const en = weddingDateVariants("2026-10-01", "en");
+  assert.ok(en.includes("October 1, 2026"));
+  assert.ok(en.includes("1 October 2026"));
+  assert.deepEqual(weddingDateVariants("2026-10-01", "zh"), ["2026年10月1日"]);
+});
+
+test("weddingLanguageFor: explicit wins, else culture decides", () => {
+  assert.equal(weddingLanguageFor(westernFacts()), "en");
+  assert.equal(weddingLanguageFor(validFacts()), "zh");
+  assert.equal(weddingLanguageFor(westernFacts(), "zh"), "zh");
+  assert.equal(weddingLanguageFor(validFacts(), "en"), "en");
+});
+
+test("validateWeddingDraft gates English prose on English facts (P0.2)", () => {
+  const facts = validateWeddingFacts(westernFacts()).facts;
+  assert.equal(validateWeddingDraft(enDraft(), facts), true);
+  assert.equal(validateWeddingDraft(enDraft3(), facts), true); // UK date form
+
+  // The PRINCIPLE is intact: drop a fact and the draft is refused.
+  assert.equal(validateWeddingDraft(enDraft().replaceAll("Emma", "my partner"), facts), false);
+  assert.equal(validateWeddingDraft(enDraft().replaceAll("Hedsor House", "the venue"), facts), false);
+  assert.equal(validateWeddingDraft(enDraft().replaceAll("October 1, 2026", "next autumn"), facts), false);
+
+  // A Chinese-rendered date does NOT satisfy an English wedding.
+  assert.equal(
+    validateWeddingDraft(enDraft().replaceAll("October 1, 2026", "2026年10月1日"), facts),
+    false,
+  );
+});
+
+test("validateWeddingDraft still gates Chinese prose on Chinese facts (unchanged)", () => {
+  const facts = validateWeddingFacts(validFacts()).facts;
+  assert.equal(validateWeddingDraft(validDraft(), facts), true);
+  assert.equal(validateWeddingDraft(validDraft().replace("2026年10月1日", "October 1, 2026"), facts), false);
+});
+
+test("Western prompt is English, carries the facts, and is NOT the Chinese corpus", () => {
+  const facts = validateWeddingFacts(westernFacts({ dressCode: "Cocktail", rsvpDeadline: "2026-09-01" })).facts;
+  const { system, user } = buildWeddingDraftPrompt({ facts, tone: "warm", personalContext: "we met at university", language: "en" });
+
+  assert.ok(system.includes("October 1, 2026"));
+  assert.ok(system.includes("Hedsor House"));
+  assert.ok(user.includes("Emma"));
+  assert.ok(user.includes("James"));
+  assert.ok(user.includes("we met at university"));
+  // Structured extras are passed as CONTEXT but must not be written into prose.
+  assert.ok(user.includes("Cocktail"));
+  assert.ok(user.includes("do NOT state it in the prose"));
+  // No Chinese ceremonial corpus leaked into the Western prompt.
+  assert.equal(/[\u4e00-\u9fff]/.test(system), false);
+  assert.equal(/[\u4e00-\u9fff]/.test(user), false);
+});
+
+test("Chinese prompt is unchanged by the Western addition", () => {
+  const facts = validateWeddingFacts(validFacts()).facts;
+  const { system, user } = buildWeddingDraftPrompt({ facts, tone: "sincere" });
+  assert.ok(system.includes("2026年10月1日"));
+  assert.ok(user.includes("【婚礼事实】"));
+  assert.equal(system.includes("[FACT RULES"), false);
+});
+
+test("Western Wedding generates in English with no explicit language field", async () => {
+  const res = await runWeddingDraft({
+    decoded: AUTHOR,
+    body: { occasion: { type: "wedding", version: 1, facts: westernFacts() } },
+    callModel: async ({ system }) => {
+      // Culture alone must have selected the English corpus.
+      assert.ok(system.includes("[FACT RULES"));
+      return JSON.stringify({ drafts: [enDraft(), enDraft2(), enDraft3()] });
+    },
+    log: SILENT,
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.drafts.length, 3);
+});
+
+test("Western generation fails loudly when English drafts drop a fact", async () => {
+  const res = await runWeddingDraft({
+    decoded: AUTHOR,
+    body: { occasion: { type: "wedding", version: 1, facts: westernFacts() } },
+    callModel: async () => JSON.stringify({ drafts: ["A lovely day awaits. Do come."] }),
+    log: SILENT,
+  });
+  assert.equal(res.status, 502);
+  assert.equal(res.body.error, "wedding_draft_failed");
 });
