@@ -306,7 +306,7 @@ export async function senderLibrary({ db, decoded, giftCollection, now = Date.no
  * aggregate (single authority: the invitation records themselves).
  * Revoked invitations stay listed (flagged) but never count toward totals.
  */
-export async function eventDetail({ db, decoded, body, giftCollection, now = Date.now() }) {
+export async function eventDetail({ db, decoded, body, giftCollection, sharedResponses = null, now = Date.now() }) {
   if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
   const eventId = typeof body?.eventId === "string" ? body.eventId.trim() : "";
   if (!eventId) return { status: 400, body: { error: "invalid_request" } };
@@ -380,6 +380,17 @@ export async function eventDetail({ db, decoded, body, giftCollection, now = Dat
   }
   aggregate.attendingTotal = aggregate.adultTotal + aggregate.childTotal;
 
+  // Shared-link replies live in their OWN bucket. A direct-share link is one
+  // record forwarded to many people, so each scanner answers on their own
+  // response (sharedRsvp.mjs) — real attendance from a forwarded link, still
+  // never counted as household statistics (§12 above).
+  const sharedGiftIds = new Set(
+    invitations.filter(({ rec }) => rec.sharedDistribution === true && !rec.revoked).map(({ id }) => id),
+  );
+  const shared = sharedResponses
+    ? await sharedResponses({ db, eventId, sharedGiftIds })
+    : { responses: [], aggregate: { replies: 0, attendingTotal: 0, accepted: 0, declined: 0 } };
+
   return {
     status: 200,
     body: {
@@ -393,6 +404,8 @@ export async function eventDetail({ db, decoded, body, giftCollection, now = Dat
         variants: ev.variants ?? {},
       },
       guests,
+      sharedResponses: shared.responses,
+      sharedAggregate: shared.aggregate,
       invitations: invitations.map(({ id, rec }) => libraryRow(id, rec, now)),
       aggregate,
     },

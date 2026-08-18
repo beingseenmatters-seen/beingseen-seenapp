@@ -71,6 +71,7 @@ zip -r "$PACKAGE" \
   onsite.mjs \
   distribute.mjs \
   shareCrypto.mjs \
+  sharedRsvp.mjs \
   occasion.mjs \
   giftMedia.mjs \
   authHandoff.mjs \
@@ -82,6 +83,7 @@ zip -r "$PACKAGE" \
   package.json \
   node_modules/ \
   -x "*.test.mjs" \
+  -x "*.DS_Store" \
   > /dev/null
 
 echo "5. Packaged runtime modules:"

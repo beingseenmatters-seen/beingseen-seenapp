@@ -58,6 +58,7 @@ import {
 import { distributeInvitations } from "./distribute.mjs";
 import { validateWeddingOccasion } from "./occasion.mjs";
 import { makeKmsShareCrypto } from "./shareCrypto.mjs";
+import { submitSharedRsvp, mySharedRsvp, sharedResponsesForEvent } from "./sharedRsvp.mjs";
 import { runWeddingDraft } from "./occasion.mjs";
 import { uploadGiftMedia, makeS3MediaStore } from "./giftMedia.mjs";
 
@@ -1009,6 +1010,23 @@ export const handler = async (event) => {
     const result = await rsvpGift({ db: admin.firestore(), body });
     return httpResponse(result.status, result.body);
   }
+  // ---- Shared-link RSVP — guest side: app-key only, no account. A direct
+  // share is one record forwarded to many, so each SCANNER answers on their
+  // own response. Capability is possession of the shared invitation token;
+  // identity is an anonymous client-held participantToken (server keeps only
+  // its hash). These never touch a managed household's RSVP.
+  if (path === "/gift/rsvp/shared") {
+    const result = await submitSharedRsvp({
+      db: admin.firestore(), body, giftCollection: GIFT_COLLECTION,
+    });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/gift/rsvp/shared/mine") {
+    const result = await mySharedRsvp({
+      db: admin.firestore(), body, giftCollection: GIFT_COLLECTION,
+    });
+    return httpResponse(result.status, result.body);
+  }
   // ---- Wedding Day on-site (WD-1) — guest side: app-key only. The shared
   // on_site token is the capability; these must never inherit sender auth
   // semantics (Founder AA-9) and never list other guests' data.
@@ -1060,6 +1078,7 @@ export const handler = async (event) => {
       decoded,
       body,
       giftCollection: GIFT_COLLECTION,
+      sharedResponses: sharedResponsesForEvent,
     });
     return httpResponse(result.status, result.body);
   }
