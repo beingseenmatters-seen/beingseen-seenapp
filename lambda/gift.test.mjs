@@ -1206,8 +1206,14 @@ test("dietary note round-trips, updates in place, and is cleared by removal", as
   assert.equal(rec.rsvpAdultCount, 2);
   assert.equal([...db._store.values()].filter((v) => v.rsvpStatus).length, before);
 
-  // Removing the note actually removes it.
+  // ABSENT MEANS UNCHANGED (founder rule): an RSVP edit must not erase a note
+  // the guest never touched.
   await rsvpGift({ db, body: { token, status: "accepted", adultCount: 2, childCount: 0 } });
+  rec = [...db._store.values()].find((v) => v.rsvpStatus === "accepted");
+  assert.equal(rec.rsvpDietary, "Gluten-free");
+
+  // An explicit empty string is what clears it.
+  await rsvpGift({ db, body: { token, status: "accepted", adultCount: 2, childCount: 0, dietaryRequirements: "" } });
   rec = [...db._store.values()].find((v) => v.rsvpStatus === "accepted");
   assert.equal(rec.rsvpDietary, null);
 });
@@ -1230,10 +1236,105 @@ test("dietary note is refused on a decline and bounded in length/type", async ()
   assert.equal(bad.status, 400);
   assert.equal(bad.body.field, "type");
 
-  // A plain decline still stores the resolved zeros and clears any note.
+  // A plain decline stores the resolved zeros and PRESERVES an existing note
+  // (founder rule: changing an RSVP never erases dietary information).
+  await rsvpGift({ db, body: { token, status: "accepted", adultCount: 2, childCount: 0, dietaryRequirements: "Vegan" } });
   const ok = await rsvpGift({ db, body: { token, status: "declined" } });
   assert.equal(ok.status, 200);
   const rec = [...db._store.values()].find((v) => v.rsvpStatus === "declined");
   assert.equal(rec.rsvpAdultCount, 0);
-  assert.equal(rec.rsvpDietary, null);
+  assert.equal(rec.rsvpDietary, "Vegan");
+});
+
+
+// --- RSVP DIRECT REPLY: a message, not a second Gift ------------------------
+
+test("recipient message saves onto the SAME response — no second Gift", async () => {
+  const db = makeFakeDb();
+  const before = db._store.size;
+  const g = await createGift({ db, decoded: AUTHOR, body: { message: "hi", occasion: weddingOccasion(), accessMode: "direct" } });
+  const token = g.body.token;
+  const afterCreate = db._store.size;
+
+  await rsvpGift({ db, body: { token, status: "accepted", adultCount: 3, childCount: 0 } });
+  const r = await rsvpGift({ db, body: { token, recipientMessage: "  Looking forward to celebrating with you!  " } });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.recipientMessage, "Looking forward to celebrating with you!");   // trimmed
+
+  // THE FROZEN RULE: no new record of any kind was created for the message.
+  assert.equal(db._store.size, afterCreate);
+  assert.ok(afterCreate > before);
+
+  const rec = [...db._store.values()].find((v) => v.rsvpStatus === "accepted");
+  assert.equal(rec.rsvpMessage, "Looking forward to celebrating with you!");
+  assert.equal(typeof rec.rsvpMessageAt, "number");
+  // …and it minted no delivery apparatus of its own.
+  assert.equal("token" in r.body, false);
+  assert.equal("url" in r.body, false);
+  assert.equal("retrievalKey" in r.body, false);
+  assert.equal("accessMode" in r.body, false);
+});
+
+test("editing the message never moves attendance, status or aggregates", async () => {
+  const db = makeFakeDb();
+  const g = await createGift({ db, decoded: AUTHOR, body: { message: "hi", occasion: weddingOccasion(), accessMode: "direct" } });
+  const token = g.body.token;
+  await rsvpGift({ db, body: { token, status: "accepted", adultCount: 3, childCount: 0, dietaryRequirements: "Peanut" } });
+
+  await rsvpGift({ db, body: { token, recipientMessage: "First words" } });
+  await rsvpGift({ db, body: { token, recipientMessage: "Edited words" } });
+  const rec = [...db._store.values()].find((v) => v.rsvpStatus === "accepted");
+  assert.equal(rec.rsvpMessage, "Edited words");        // replaced, never duplicated
+  assert.equal(rec.rsvpStatus, "accepted");
+  assert.equal(rec.rsvpAdultCount, 3);                  // untouched
+  assert.equal(rec.rsvpChildCount, 0);
+  assert.equal(rec.rsvpDietary, "Peanut");
+});
+
+test("changing the RSVP preserves the message and the dietary note", async () => {
+  const db = makeFakeDb();
+  const g = await createGift({ db, decoded: AUTHOR, body: { message: "hi", occasion: weddingOccasion(), accessMode: "direct" } });
+  const token = g.body.token;
+  await rsvpGift({ db, body: { token, status: "accepted", adultCount: 2, childCount: 0, dietaryRequirements: "Peanut", recipientMessage: "See you there" } });
+
+  await rsvpGift({ db, body: { token, status: "declined" } });
+  let rec = [...db._store.values()].find((v) => v.rsvpStatus === "declined");
+  assert.equal(rec.rsvpMessage, "See you there");
+  assert.equal(rec.rsvpDietary, "Peanut");
+
+  await rsvpGift({ db, body: { token, status: "accepted", adultCount: 4, childCount: 0 } });
+  rec = [...db._store.values()].find((v) => v.rsvpStatus === "accepted");
+  assert.equal(rec.rsvpMessage, "See you there");
+  assert.equal(rec.rsvpAdultCount, 4);
+});
+
+test("a declined recipient may still leave a message; bounds are server-side", async () => {
+  const db = makeFakeDb();
+  const g = await createGift({ db, decoded: AUTHOR, body: { message: "hi", occasion: weddingOccasion(), accessMode: "direct" } });
+  const token = g.body.token;
+  const dec = await rsvpGift({ db, body: { token, status: "declined", recipientMessage: "So sorry to miss it" } });
+  assert.equal(dec.status, 200);
+  const rec = [...db._store.values()].find((v) => v.rsvpStatus === "declined");
+  assert.equal(rec.rsvpMessage, "So sorry to miss it");
+  assert.equal(rec.rsvpAdultCount, 0);
+
+  const long = await rsvpGift({ db, body: { token, recipientMessage: "x".repeat(2001) } });
+  assert.equal(long.status, 400);
+  assert.equal(long.body.error, "invalid_rsvp_message");
+  const bad = await rsvpGift({ db, body: { token, recipientMessage: { t: 1 } } });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.field, "type");
+  // Neither bad write disturbed the stored message.
+  assert.equal([...db._store.values()].find((v) => v.rsvpStatus).rsvpMessage, "So sorry to miss it");
+});
+
+test("a message needs a real token — isolation holds", async () => {
+  const db = makeFakeDb();
+  const a = await createGift({ db, decoded: AUTHOR, body: { message: "a", occasion: weddingOccasion(), accessMode: "direct" } });
+  const b = await createGift({ db, decoded: AUTHOR, body: { message: "b", occasion: weddingOccasion(), accessMode: "direct" } });
+  await rsvpGift({ db, body: { token: a.body.token, status: "accepted", adultCount: 1, childCount: 0, recipientMessage: "from A" } });
+
+  assert.equal((await rsvpGift({ db, body: { token: "not-a-token", recipientMessage: "x" } })).status, 404);
+  const bRec = await retrieveGift({ db, body: { token: b.body.token } });
+  assert.equal(bRec.body.rsvpMessage ?? null, null);     // B never saw A's words
 });

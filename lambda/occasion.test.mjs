@@ -99,6 +99,7 @@ test("validateWeddingFacts accepts minimal required facts and normalizes optiona
     culture: "chinese",
     rsvpDeadline: null,
     dressCode: null,
+    registryUrl: null,
   });
 });
 
@@ -669,4 +670,61 @@ test("the stored fact is never rewritten by display formatting", () => {
   const res = validateWeddingFacts(westernFacts({ time: { start: "13:00", end: "17:30" } }));
   assert.equal(res.facts.time.start, "13:00");   // canonical, untouched
   assert.equal(res.facts.time.end, "17:30");
+});
+
+
+// --- Gift Registry link (Western only, https only) --------------------------
+
+test("registryUrl: optional, https-only, Western-only, and never executable", () => {
+  // Absent → null; a Western Wedding with a valid https link seals it verbatim.
+  assert.equal(validateWeddingFacts(westernFacts()).facts.registryUrl, null);
+  assert.equal(
+    validateWeddingFacts(westernFacts({ registryUrl: "  https://registry.example.com/emma-james  " })).facts.registryUrl,
+    "https://registry.example.com/emma-james",
+  );
+
+  // Executable and unsafe schemes are refused — an invitation is a trusted
+  // surface. Plain http is refused too: never downgrade a guest.
+  for (const bad of [
+    "javascript:alert(1)",
+    "data:text/html;base64,PHNjcmlwdD4=",
+    "vbscript:msgbox(1)",
+    "http://registry.example.com",
+    "file:///etc/passwd",
+    "registry.example.com",          // no scheme
+    "https://",                      // no host
+    "https://localhost",             // no dot — not an external registry
+    "not a url at all",
+    "https://" + "x".repeat(300),    // over length
+  ]) {
+    const res = validateWeddingFacts(westernFacts({ registryUrl: bad }));
+    assert.equal(res.ok, false, `expected rejection for ${bad}`);
+    assert.equal(res.field, "registryUrl");
+  }
+});
+
+test("registryUrl is a WESTERN cultural decision — Chinese Wedding cannot gain it", () => {
+  const cn = validateWeddingFacts(validFacts({ registryUrl: "https://registry.example.com/x" }));
+  assert.equal(cn.ok, false);
+  assert.equal(cn.field, "registryUrl");
+  // A Chinese Wedding without one is completely unaffected.
+  assert.equal(validateWeddingFacts(validFacts()).facts.registryUrl, null);
+});
+
+test("registryUrl survives sealing and is Event-level, not recipient-specific", () => {
+  const sealed = validateWeddingOccasion({
+    type: "wedding", version: 2, ...westernFacts({ registryUrl: "https://registry.example.com/emma-james" }),
+  });
+  assert.equal(sealed.ok, true);
+  assert.equal(sealed.occasion.registryUrl, "https://registry.example.com/emma-james");
+  // Nothing recipient-scoped rides along with it.
+  assert.equal("recipientLabel" in sealed.occasion, false);
+});
+
+test("legacy Wedding records without registryUrl are unchanged", () => {
+  const legacy = validateWeddingOccasion({ type: "wedding", version: 1, ...validFacts() });
+  assert.equal(legacy.ok, true);
+  assert.equal(legacy.occasion.registryUrl, null);
+  assert.equal(legacy.occasion.version, 1);
+  assert.equal(legacy.occasion.culture, "chinese");
 });

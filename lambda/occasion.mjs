@@ -122,7 +122,44 @@ const LIMITS = {
   inviter: 40,
   personalContext: 200,
   dressCode: 40,
+  registryUrl: 300,
 };
+
+/**
+ * External Wedding gift registry link (Western Wedding V1).
+ *
+ * Gift.Seen stores and presents a URL. It does NOT host registries, track
+ * purchases, hold inventory, take payment or integrate with any provider —
+ * the external registry remains authoritative. This is one optional string,
+ * deliberately not a Registry model or collection.
+ *
+ * https ONLY: an invitation is a trusted surface, so a link that could carry
+ * script or inline payload (javascript:, data:, vbscript:) is refused, and so
+ * is plaintext http — a guest tapping through from a wedding invitation should
+ * not be downgraded.
+ */
+export function validateRegistryUrl(raw, culture) {
+  if (raw === undefined || raw === null || raw === "") return { ok: true, registryUrl: null };
+  if (typeof raw !== "string") return { ok: false, field: "registryUrl" };
+  const value = raw.trim();
+  if (!value) return { ok: true, registryUrl: null };
+  if (value.length > LIMITS.registryUrl) return { ok: false, field: "registryUrl" };
+
+  // Registry is a WESTERN cultural product decision. A Chinese Wedding is not
+  // given one merely because both cultures seal type "wedding"; if the Chinese
+  // experience ever wants a gift convention, that is its own decision.
+  if (culture !== "western") return { ok: false, field: "registryUrl" };
+
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return { ok: false, field: "registryUrl" };
+  }
+  if (parsed.protocol !== "https:") return { ok: false, field: "registryUrl" };
+  if (!parsed.hostname || !parsed.hostname.includes(".")) return { ok: false, field: "registryUrl" };
+  return { ok: true, registryUrl: parsed.toString() };
+}
 
 /**
  * The version/culture invariant — the single place the fail-closed rule lives.
@@ -263,6 +300,9 @@ export function validateWeddingFacts(raw) {
     if (!dressCode) return { ok: false, field: "dressCode" };
   }
 
+  const reg = validateRegistryUrl(raw.registryUrl, culture);
+  if (!reg.ok) return { ok: false, field: reg.field };
+
   return {
     ok: true,
     facts: {
@@ -275,6 +315,7 @@ export function validateWeddingFacts(raw) {
       culture,
       rsvpDeadline,
       dressCode,
+      registryUrl: reg.registryUrl,
     },
   };
 }

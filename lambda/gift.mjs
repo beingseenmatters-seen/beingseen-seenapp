@@ -26,6 +26,7 @@ import {
   normalizeRecipientLabel,
   validateRsvpCounts,
   validateRsvpDietary,
+  validateRsvpMessage,
   ensureEvent,
   deleteCreatedEvent,
 } from "./event.mjs";
@@ -477,6 +478,7 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
         // The household's own answer, echoed so they can edit it. Never on a
         // shared link — that audience is not one household.
         rsvpDietary: rec.sharedDistribution === true ? null : (rec.rsvpDietary ?? null),
+      rsvpMessage: rec.sharedDistribution === true ? null : (rec.rsvpMessage ?? null),
         // 致 张先生全家 (Founder V2): the household label is presentation
         // personalisation, revealed ONLY on successful access — never on
         // probes, wrong keys, locks, or any error path.
@@ -537,6 +539,7 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
       rsvpAdultCount: rec.rsvpAdultCount ?? null,
       rsvpChildCount: rec.rsvpChildCount ?? null,
       rsvpDietary: rec.sharedDistribution === true ? null : (rec.rsvpDietary ?? null),
+      rsvpMessage: rec.sharedDistribution === true ? null : (rec.rsvpMessage ?? null),
       recipientLabel: rec.recipientLabel ?? null,
       sharedDistribution: rec.sharedDistribution === true,
       accessMode,
@@ -590,7 +593,16 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
   const key = normalizeKey(body?.key);
   const status =
     body?.status === "accepted" || body?.status === "declined" ? body.status : null;
-  if (!token || !status) return { status: 400, body: { error: "invalid_request" } };
+
+  // The recipient's message is a DIRECT reply to this Invitation — never a
+  // second Gift. It may arrive on its own, with no status, when the guest
+  // has already answered and is only adding or editing their words. Writing
+  // no status/count fields in that case is what structurally guarantees the
+  // frozen rule: editing a message cannot move attendance or aggregates.
+  const messageOnly = !status && body?.recipientMessage !== undefined;
+  if (!token || (!status && !messageOnly)) {
+    return { status: 400, body: { error: "invalid_request" } };
+  }
 
   // RSVP counts contract (Phase 4.5-A backend layer; UI arrives in 4.5-B).
   // Counts are validated wherever provided; declined always resolves to
@@ -611,17 +623,39 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
     : { rsvpAdultCount: null, rsvpChildCount: null };
 
   // Dietary note travels with the SAME response — an update, never a second
-  // record. Absent clears it, so removing a note actually removes it.
+  // record. ABSENT MEANS UNCHANGED (founder rule): changing an RSVP must not
+  // erase a note the guest never touched, and a decline preserves it too. An
+  // explicit empty string is what clears it.
+  const dietaryProvided = body?.dietaryRequirements !== undefined;
   const dietary = validateRsvpDietary(status, body);
   if (!dietary.ok) return { status: 400, body: { error: dietary.error, field: dietary.field } };
-  const dietaryFields = { rsvpDietary: dietary.dietary };
+  const dietaryFields = dietaryProvided ? { rsvpDietary: dietary.dietary } : {};
+
+  // Message: absent = unchanged (survives an RSVP change), "" = cleared, text
+  // = replaced. One field, so an edit can never duplicate.
+  const msg = validateRsvpMessage(body);
+  if (!msg.ok) return { status: 400, body: { error: msg.error, field: msg.field } };
+  const messageFields =
+    msg.message === undefined
+      ? {}
+      : msg.message === null
+        ? { rsvpMessage: null, rsvpMessageAt: null }
+        : { rsvpMessage: msg.message, rsvpMessageAt: now };
+
+  // The RSVP half is written ONLY when a status was supplied. On a
+  // message-only edit these keys are absent, so attendance, status and every
+  // Event aggregate are untouched by construction rather than by care.
+  const answerFields = status
+    ? { rsvpStatus: status, rsvpAt: now, ...countFields }
+    : {};
+  const responseFields = { ...answerFields, ...dietaryFields, ...messageFields };
 
   const rsvpEcho = {
     ok: true,
-    rsvpStatus: status,
-    rsvpAt: now,
-    ...(counts.counts ? countFields : {}),
+    ...(status ? { rsvpStatus: status, rsvpAt: now } : {}),
+    ...(status && counts.counts ? countFields : {}),
     ...(dietary.dietary ? { dietaryRequirements: dietary.dietary } : {}),
+    ...(msg.message ? { recipientMessage: msg.message } : {}),
   };
 
   const tokenHash = sha256Hex(token);
@@ -662,15 +696,12 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
       failedAttempts: 0,
       lockedUntil: null,
       cooldownTier: 0,
-      rsvpStatus: status,
-      rsvpAt: now,
-      ...countFields,
-      ...dietaryFields,
+      ...responseFields,
     });
     return { status: 200, body: rsvpEcho };
   }
 
-  await ref.update({ rsvpStatus: status, rsvpAt: now, ...countFields, ...dietaryFields });
+  await ref.update(responseFields);
   return { status: 200, body: rsvpEcho };
 }
 

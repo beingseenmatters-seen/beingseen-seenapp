@@ -36,6 +36,18 @@ export const RSVP_COUNT_MAX = 20;
  * never to a public/general share surface.
  */
 export const RSVP_DIETARY_MAX = 200;
+
+/**
+ * The recipient's optional message back to the couple (Western Wedding V1).
+ *
+ * FROZEN RULE: a guest leaving a few words is REPLYING TO THE INVITATION —
+ * they are not creating a Gift. The message lives on this household's existing
+ * response record. There is no second Gift lifecycle: no seal, no access mode,
+ * no new token, no QR, no Sender Library entry of its own.
+ *
+ * Reuse Expression. Do not reuse Sealing.
+ */
+export const RSVP_MESSAGE_MAX = 2000;
 /** Library page size — a personal sender library, not an admin console. */
 export const LIBRARY_LIMIT = 200;
 
@@ -78,6 +90,24 @@ export function validateRsvpDietary(status, body) {
     return { ok: false, error: "invalid_rsvp_dietary", field: "length" };
   }
   return { ok: true, dietary };
+}
+
+/**
+ * The recipient's message. Allowed on BOTH accept and decline — someone who
+ * cannot come may still want to say something. Absent means "unchanged": a
+ * message survives a later RSVP change, and is only replaced when the
+ * recipient actually edits it. An explicit empty string clears it.
+ */
+export function validateRsvpMessage(body) {
+  const raw = body?.recipientMessage;
+  if (raw === undefined || raw === null) return { ok: true, message: undefined };  // unchanged
+  if (typeof raw !== "string") return { ok: false, error: "invalid_rsvp_message", field: "type" };
+  const message = raw.trim();
+  if (!message) return { ok: true, message: null };                                 // cleared
+  if (message.length > RSVP_MESSAGE_MAX) {
+    return { ok: false, error: "invalid_rsvp_message", field: "length" };
+  }
+  return { ok: true, message };
 }
 
 export function validateRsvpCounts(status, body) {
@@ -173,6 +203,10 @@ function rsvpOf(rec) {
     // Sender-only: the household's dietary note travels with their response
     // so it appears in Event management. It is never on a share surface.
     ...(rec.rsvpDietary ? { dietaryRequirements: rec.rsvpDietary } : {}),
+    // The household's words back to the couple — read on the Event Dashboard
+    // directly under this recipient. Never a separate Library item.
+    ...(rec.rsvpMessage ? { recipientMessage: rec.rsvpMessage } : {}),
+    ...(rec.rsvpMessageAt ? { messageAt: rec.rsvpMessageAt } : {}),
     respondedAt: rec.rsvpAt ?? null,
   };
 }
