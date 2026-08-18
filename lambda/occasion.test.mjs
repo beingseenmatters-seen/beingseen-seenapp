@@ -12,6 +12,7 @@ import {
   validateWeddingDraft,
   weddingDateVariants,
   weddingLanguageFor,
+  formatWeddingTime,
   validateOccasionVersionCulture,
   OCCASION_VERSION,
   OCCASION_VERSION_CULTURAL,
@@ -631,4 +632,41 @@ test("generation refuses a Western Occasion declared on v1", async () => {
   assert.equal(res.status, 400);
   assert.equal(res.body.error, "invalid_occasion");
   assert.equal(res.body.field, "version");
+});
+
+
+// --- Western time localisation ----------------------------------------------
+
+test("formatWeddingTime renders a Western clock for English, unchanged for Chinese", () => {
+  assert.equal(formatWeddingTime("13:00"), "13:00");             // default unchanged
+  assert.equal(formatWeddingTime("13:00", "zh"), "13:00");
+  assert.equal(formatWeddingTime("13:00", "en"), "1:00 PM");
+  assert.equal(formatWeddingTime("16:00", "en"), "4:00 PM");
+  assert.equal(formatWeddingTime("09:30", "en"), "9:30 AM");
+  assert.equal(formatWeddingTime("00:15", "en"), "12:15 AM");    // midnight hour
+  assert.equal(formatWeddingTime("12:00", "en"), "12:00 PM");    // noon
+  assert.equal(formatWeddingTime("23:45", "en"), "11:45 PM");
+  assert.equal(formatWeddingTime("nonsense", "en"), "nonsense"); // never invents
+});
+
+test("the English prompt shows a Western clock and forbids 24-hour prose", () => {
+  const facts = validateWeddingFacts(westernFacts({ time: { start: "13:00", end: "17:30" } })).facts;
+  const { system, user } = buildWeddingDraftPrompt({ facts, tone: "warm", language: "en" });
+  assert.ok(user.includes("1:00 PM"), "start time in Western clock");
+  assert.ok(user.includes("5:30 PM"), "end time in Western clock");
+  assert.equal(user.includes("13:00"), false, "raw 24-hour must not reach the model");
+  assert.ok(system.includes("NEVER use 24-hour form"));
+});
+
+test("the Chinese prompt keeps 24-hour time exactly as before", () => {
+  const facts = validateWeddingFacts(validFacts({ time: { start: "17:00", end: "20:00" } })).facts;
+  const { user } = buildWeddingDraftPrompt({ facts, tone: "sincere" });
+  assert.ok(user.includes("17:00"));
+  assert.equal(user.includes("5:00 PM"), false);
+});
+
+test("the stored fact is never rewritten by display formatting", () => {
+  const res = validateWeddingFacts(westernFacts({ time: { start: "13:00", end: "17:30" } }));
+  assert.equal(res.facts.time.start, "13:00");   // canonical, untouched
+  assert.equal(res.facts.time.end, "17:30");
 });

@@ -322,6 +322,21 @@ export function formatWeddingDate(date, language = "zh") {
 }
 
 /**
+ * Canonical 'HH:mm' → the written clock the generation language expects.
+ *   zh → "17:00"      (unchanged; the Chinese corpus already handles this)
+ *   en → "5:00 PM"
+ * STORAGE IS UNTOUCHED — the sealed fact stays canonical 24-hour.
+ */
+export function formatWeddingTime(time, language = "zh") {
+  if (language !== "en") return time;
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(time));
+  if (!m) return time;
+  const h24 = Number(m[1]);
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${m[2]} ${h24 < 12 ? "AM" : "PM"}`;
+}
+
+/**
  * Renderings of the date that COUNT as the fact having survived generation.
  *
  * The principle is unchanged (facts validate prose; prose never creates
@@ -438,7 +453,7 @@ function buildEnglishWeddingPrompt({ facts, tone, personalContext, attempt = 0 }
     "",
     "[FACT RULES — HIGHEST PRIORITY]",
     `These must appear in every draft, exactly as written: both partners' names, the date \"${dateDisplay}\", and the venue \"${facts.venue.displayName}\". The time must also appear naturally in the text.`,
-    "Write the date exactly as given above. Write the time either as a natural clock time (\"4:00 in the afternoon\", \"4 pm\") or in plain 24-hour form — never mix the two conventions in one phrase.",
+    "Write the date exactly as given above. Write the time the way a printed Western invitation does — \"4:00 PM\", \"4 pm\", \"four in the afternoon\", \"half past four\". NEVER use 24-hour form: \"16:00\" is wrong here, and never mix conventions in one phrase (\"4:00 PM in the afternoon\").",
     "Invent NO fact that was not supplied: no street address, no room or hall name, no ceremony or dinner schedule, no dress code, no parents' or family members' names or roles, no religious or cultural rites, no RSVP deadline, no catering, parking, travel, accommodation or gift information. You may invent feeling and phrasing. You may not invent facts.",
     "",
     "[LANGUAGE]",
@@ -463,7 +478,7 @@ function buildEnglishWeddingPrompt({ facts, tone, personalContext, attempt = 0 }
     "[WEDDING FACTS]",
     `Couple: ${facts.couple.partner1} and ${facts.couple.partner2}`,
     `Date: ${dateDisplay} (must appear exactly)`,
-    `Time: ${facts.time.start}${facts.time.end ? `–${facts.time.end}` : ""}`,
+    `Time: ${formatWeddingTime(facts.time.start, "en")}${facts.time.end ? ` – ${formatWeddingTime(facts.time.end, "en")}` : ""}`,
     `Venue: ${facts.venue.displayName} (name must appear exactly)`,
   ];
   if (facts.venue.formattedAddress) {
