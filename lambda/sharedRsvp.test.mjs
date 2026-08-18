@@ -6,15 +6,29 @@
  * be locked out by the first scanner's answer.
  */
 import { test } from "node:test";
+import crypto from "node:crypto";
 import assert from "node:assert/strict";
 import { createGift, GIFT_COLLECTION } from "./gift.mjs";
 import { eventDetail } from "./event.mjs";
+import { rsvpGift, retrieveGift } from "./gift.mjs";
 import {
   submitSharedRsvp,
-  mySharedRsvp,
+  readSharedResponse,
   sharedResponsesForEvent,
   SHARED_RSVP_COLLECTION,
 } from "./sharedRsvp.mjs";
+
+// The feature rides on the EXISTING routes, so `mine` is a read helper rather
+// than an endpoint: /gift/retrieve surfaces it when a scanner presents their id.
+const sha256Hex = (x) => crypto.createHash("sha256").update(String(x)).digest("hex");
+const mySharedRsvp = async ({ db, giftCollection, body }) => {
+  const pt = body?.participantToken ?? "";
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(pt)) return { status: 400, body: { error: "invalid_participant" } };
+  const response = await readSharedResponse({
+    db, tokenHash: sha256Hex(body.token), participantToken: pt,
+  });
+  return { status: 200, body: { ok: true, response } };
+};
 
 const A = { uid: "author-1" };
 const FACTS = {
@@ -220,4 +234,62 @@ test("a revoked shared invitation accepts no further replies", async () => {
   const res = await submitSharedRsvp({ db, giftCollection: GIFT_COLLECTION,
     body: { token: inv.token, status: "accepted", adultCount: 1, childCount: 0 } });
   assert.equal(res.status, 410);
+});
+
+
+// --- The feature rides on the EXISTING routes (no API Gateway change) -------
+
+test("/gift/rsvp delegates a shared link to the per-scanner response", async () => {
+  const db = makeFakeDb();
+  const inv = await sharedInvitation(db);
+
+  // Exactly what the client sends to the ordinary RSVP door.
+  const a = await rsvpGift({ db, body: { token: inv.token, key: "", status: "accepted", adultCount: 3, childCount: 0 } });
+  assert.equal(a.status, 200);
+  assert.ok(a.body.participantToken, "a first-time scanner is minted an identity");
+  assert.equal(a.body.response.adultCount, 3);
+
+  // A second scanner through the SAME door keeps their own answer.
+  const b = await rsvpGift({ db, body: { token: inv.token, key: "", status: "accepted", adultCount: 1, childCount: 0 } });
+  assert.notEqual(b.body.participantToken, a.body.participantToken);
+  assert.equal([...db._store.keys()].filter((k) => k.startsWith(SHARED_RSVP_COLLECTION)).length, 2);
+
+  // The invitation record itself never acquired an RSVP.
+  const rec = [...db._store.entries()].find(([k]) => k.startsWith(`${GIFT_COLLECTION}/`))[1];
+  assert.equal(rec.rsvpStatus ?? null, null);
+});
+
+test("/gift/retrieve returns THIS scanner's own answer, and only theirs", async () => {
+  const db = makeFakeDb();
+  const inv = await sharedInvitation(db);
+  const a = await rsvpGift({ db, body: { token: inv.token, key: "", status: "accepted", adultCount: 4, childCount: 0 } });
+  const pt = a.body.participantToken;
+
+  const mine = await retrieveGift({ db, body: { token: inv.token, participantToken: pt } });
+  assert.equal(mine.status, 200);
+  assert.equal(mine.body.sharedResponse.adultCount, 4);
+
+  // Someone else's device, and a device with no identity yet, see nothing.
+  const other = await retrieveGift({ db, body: { token: inv.token, participantToken: "y".repeat(24) } });
+  assert.equal(other.body.sharedResponse, null);
+  const fresh = await retrieveGift({ db, body: { token: inv.token } });
+  assert.equal(fresh.body.sharedResponse, null);
+});
+
+test("a MANAGED household still answers on its own record, untouched", async () => {
+  const db = makeFakeDb();
+  const managed = await createGift({
+    db, decoded: A, share: fakeShare(),
+    body: { message: "Join us", occasion: FACTS, eventCreate: true,
+            recipientLabel: "The Smith Family", accessMode: "direct" },
+  });
+  const r = await rsvpGift({ db, body: { token: managed.body.token, key: "", status: "accepted", adultCount: 2, childCount: 1 } });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.rsvpAdultCount, 2);
+  assert.equal(r.body.participantToken, undefined, "no scanner identity for a household");
+  assert.equal([...db._store.keys()].filter((k) => k.startsWith(SHARED_RSVP_COLLECTION)).length, 0);
+
+  const opened = await retrieveGift({ db, body: { token: managed.body.token } });
+  assert.equal(opened.body.rsvpAdultCount, 2);
+  assert.equal(opened.body.sharedResponse, null);
 });

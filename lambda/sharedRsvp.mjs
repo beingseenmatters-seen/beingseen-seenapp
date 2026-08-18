@@ -41,7 +41,7 @@ export function mintParticipantToken() {
  * Resolve the shared invitation this response belongs to. Answers 404 for
  * anything that is not an open shared invitation, without leaking which.
  */
-async function sharedInvitationByToken({ db, giftCollection, token, now }) {
+export async function sharedInvitationByToken({ db, giftCollection, token, now }) {
   if (!token) return { res: { status: 400, body: { error: "invalid_request" } } };
   const tokenHash = sha256Hex(token);
   const snap = await db.collection(giftCollection).doc(tokenHash).get();
@@ -78,7 +78,18 @@ export async function submitSharedRsvp({ db, body, giftCollection, now = Date.no
   const token = typeof body?.token === "string" ? body.token.trim() : "";
   const found = await sharedInvitationByToken({ db, giftCollection, token, now });
   if (found.res) return found.res;
-  const { rec, tokenHash } = found;
+  return submitSharedRsvpForRecord({ db, body, rec: found.rec, tokenHash: found.tokenHash, now });
+}
+
+/**
+ * The same logic, entered from an ALREADY-RESOLVED record.
+ *
+ * /gift/rsvp delegates here when the invitation is a shared link, so the whole
+ * feature rides on the existing route. Deliberate: API Gateway is configured
+ * per-route, so a new path would need an infrastructure change — and one door
+ * for "answer this invitation" is the better contract anyway.
+ */
+export async function submitSharedRsvpForRecord({ db, body, rec, tokenHash, now = Date.now() }) {
 
   let participantToken =
     typeof body?.participantToken === "string" ? body.participantToken.trim() : "";
@@ -144,22 +155,14 @@ export async function submitSharedRsvp({ db, body, giftCollection, now = Date.no
 }
 
 /** POST /gift/rsvp/shared/mine — this scanner's own response, for a re-scan. */
-export async function mySharedRsvp({ db, body, giftCollection, now = Date.now() }) {
-  const token = typeof body?.token === "string" ? body.token.trim() : "";
-  const found = await sharedInvitationByToken({ db, giftCollection, token, now });
-  if (found.res) return found.res;
-  const { tokenHash } = found;
-
-  const participantToken =
-    typeof body?.participantToken === "string" ? body.participantToken.trim() : "";
-  if (!PARTICIPANT_RE.test(participantToken)) {
-    return { status: 400, body: { error: "invalid_participant" } };
-  }
-  const ref = db
+export async function readSharedResponse({ db, tokenHash, participantToken }) {
+  const pt = typeof participantToken === "string" ? participantToken.trim() : "";
+  if (!PARTICIPANT_RE.test(pt)) return null;
+  const snap = await db
     .collection(SHARED_RSVP_COLLECTION)
-    .doc(`${tokenHash}_${sha256Hex(participantToken)}`);
-  const snap = await ref.get();
-  return { status: 200, body: { ok: true, response: snap.exists ? shape(snap.data()) : null } };
+    .doc(`${tokenHash}_${sha256Hex(pt)}`)
+    .get();
+  return snap.exists ? shape(snap.data()) : null;
 }
 
 /**

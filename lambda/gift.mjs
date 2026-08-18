@@ -22,6 +22,7 @@
 
 import crypto from "node:crypto";
 import { validateWeddingOccasion, WEDDING_MUSIC_THEMES } from "./occasion.mjs";
+import { submitSharedRsvpForRecord, readSharedResponse } from "./sharedRsvp.mjs";
 import {
   normalizeRecipientLabel,
   validateRsvpCounts,
@@ -479,6 +480,7 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
         // shared link — that audience is not one household.
         rsvpDietary: rec.sharedDistribution === true ? null : (rec.rsvpDietary ?? null),
       rsvpMessage: rec.sharedDistribution === true ? null : (rec.rsvpMessage ?? null),
+      sharedResponse: await sharedResponseFor(db, rec, tokenHash, body),
         // 致 张先生全家 (Founder V2): the household label is presentation
         // personalisation, revealed ONLY on successful access — never on
         // probes, wrong keys, locks, or any error path.
@@ -540,6 +542,7 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
       rsvpChildCount: rec.rsvpChildCount ?? null,
       rsvpDietary: rec.sharedDistribution === true ? null : (rec.rsvpDietary ?? null),
       rsvpMessage: rec.sharedDistribution === true ? null : (rec.rsvpMessage ?? null),
+      sharedResponse: await sharedResponseFor(db, rec, tokenHash, body),
       recipientLabel: rec.recipientLabel ?? null,
       sharedDistribution: rec.sharedDistribution === true,
       accessMode,
@@ -588,6 +591,12 @@ async function presentationResponse({ store, rec, tokenHash }) {
  * themselves out by answering again); responding again replaces the answer,
  * and rsvpAt always reflects the latest response.
  */
+/** The scanner's own shared response, or null for a managed invitation. */
+async function sharedResponseFor(db, rec, tokenHash, body) {
+  if (rec.sharedDistribution !== true) return null;
+  return readSharedResponse({ db, tokenHash, participantToken: body?.participantToken });
+}
+
 export async function rsvpGift({ db, body, now = Date.now() }) {
   const token = typeof body?.token === "string" ? body.token.trim() : "";
   const key = normalizeKey(body?.key);
@@ -673,6 +682,14 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
   // acquire an RSVP state (household statistics stay invitation-derived).
   if (rec.contextRole === "on_site") {
     return { status: 409, body: { error: "rsvp_not_applicable" } };
+  }
+
+  // A direct-share link is ONE record forwarded to many people, so its answer
+  // cannot live here: the first scanner would answer for everyone. Delegate to
+  // the per-scanner response instead. Same door, different owner — which also
+  // means no new API Gateway route is needed for the feature.
+  if (rec.sharedDistribution === true) {
+    return submitSharedRsvpForRecord({ db, body, rec, tokenHash, now });
   }
 
   // Same access policy as retrieve: direct gifts RSVP on token possession
