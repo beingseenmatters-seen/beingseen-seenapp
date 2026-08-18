@@ -451,7 +451,14 @@ test("occasion: malformed wedding data is rejected clearly, never silently dropp
   const db = makeFakeDb();
   const cases = [
     [weddingOccasion({ type: "birthday" }), "type"],
-    [weddingOccasion({ version: 2 }), "version"],
+    // v2 is the CULTURAL contract version: still refused here, because it
+    // must declare a culture. An unsupported version is refused as before.
+    [weddingOccasion({ version: 2 }), "culture"],
+    [weddingOccasion({ version: 9 }), "version"],
+    // The deployment-order invariant, enforced at the seal door: a Western
+    // culture on v1 must never be accepted (an older backend would have
+    // silently dropped it and sealed a Chinese Wedding).
+    [weddingOccasion({ version: 1, culture: "western" }), "version"],
     [weddingOccasion({ date: "2026-13-01" }), "date"],
     [weddingOccasion({ couple: { partner1: "只有一位" } }), "couple.partner2"],
     [weddingOccasion({ venue: { displayName: "" } }), "venue.displayName"],

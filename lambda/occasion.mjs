@@ -20,7 +20,33 @@
 // --- Contract constants -----------------------------------------------------
 
 export const OCCASION_TYPE_WEDDING = "wedding";
+
+/**
+ * Occasion contract versions.
+ *
+ * v1 — the original Wedding contract. Carries no explicit culture; absent
+ *      culture means Chinese, which is exact for every record sealed before
+ *      Western Wedding existed.
+ * v2 — the CULTURAL contract: culture is declared explicitly.
+ *
+ * DEPLOYMENT-ORDER PROTECTION (Founder §6). A backend that predates Western
+ * Wedding does not reject unknown fields — it accepts a Western payload and
+ * silently DROPS `culture`, sealing an immutable record that then renders as
+ * a Chinese Wedding. Sealed records are product truth, so that downgrade is
+ * unrecoverable.
+ *
+ * The fix uses the version gate the contract already had: a Western Occasion
+ * declares v2, and every pre-Western backend rejects v2 outright
+ * (`invalid_occasion`, field "version"). Western therefore FAILS CLOSED
+ * against an unsupporting backend instead of silently becoming Chinese.
+ *
+ * Chinese Wedding deliberately stays on v1 — it is the live product, and
+ * keeping it on the version every deployed backend already accepts means a
+ * frontend/backend ordering mistake can never break it either.
+ */
 export const OCCASION_VERSION = 1;
+export const OCCASION_VERSION_CULTURAL = 2;
+export const SUPPORTED_OCCASION_VERSIONS = [OCCASION_VERSION, OCCASION_VERSION_CULTURAL];
 
 /**
  * Cultural contract of a Wedding Occasion (Western Wedding V1).
@@ -97,6 +123,35 @@ const LIMITS = {
   personalContext: 200,
   dressCode: 40,
 };
+
+/**
+ * The version/culture invariant — the single place the fail-closed rule lives.
+ *
+ *   v1 + (absent | "chinese")  → ok   (legacy and Chinese Wedding)
+ *   v1 + "western"             → REJECT: a Western Occasion must declare v2,
+ *                                so it can never be sealed by a reader that
+ *                                would ignore its culture.
+ *   v2 + a known culture       → ok
+ *   v2 + absent culture        → REJECT: v2 exists precisely to declare one.
+ *   anything else              → REJECT.
+ *
+ * Returns { ok: true } or { ok: false, field }.
+ */
+export function validateOccasionVersionCulture(version, culture) {
+  if (!SUPPORTED_OCCASION_VERSIONS.includes(version)) return { ok: false, field: "version" };
+  const declared = culture !== undefined && culture !== null && culture !== "";
+  if (declared && !WEDDING_CULTURES.includes(culture)) return { ok: false, field: "culture" };
+
+  if (version === OCCASION_VERSION) {
+    // Never allow a non-default culture to ride on the version that older
+    // backends accept — that is exactly the silent-downgrade path.
+    if (declared && culture !== DEFAULT_WEDDING_CULTURE) return { ok: false, field: "version" };
+    return { ok: true };
+  }
+  // v2 must say what it is.
+  if (!declared) return { ok: false, field: "culture" };
+  return { ok: true };
+}
 
 // --- Facts validation -------------------------------------------------------
 
@@ -232,13 +287,18 @@ export function validateWeddingFacts(raw) {
 export function validateWeddingOccasion(raw) {
   if (!raw || typeof raw !== "object") return { ok: false, field: "occasion" };
   if (raw.type !== OCCASION_TYPE_WEDDING) return { ok: false, field: "type" };
-  if (raw.version !== OCCASION_VERSION) return { ok: false, field: "version" };
+  // Fail-closed version/culture gate BEFORE anything is normalized, so a
+  // Western Occasion can never be accepted by a contract that would ignore
+  // its culture.
+  const vc = validateOccasionVersionCulture(raw.version, raw.culture);
+  if (!vc.ok) return { ok: false, field: vc.field };
   const { type: _t, version: _v, ...facts } = raw;
   const res = validateWeddingFacts(facts);
   if (!res.ok) return res;
+  // The sealed record keeps the version it declared — v1 stays v1 forever.
   return {
     ok: true,
-    occasion: { type: OCCASION_TYPE_WEDDING, version: OCCASION_VERSION, ...res.facts },
+    occasion: { type: OCCASION_TYPE_WEDDING, version: raw.version, ...res.facts },
   };
 }
 
@@ -600,7 +660,10 @@ export async function runWeddingDraft({ decoded, body, callModel, log = console 
   const occ = body?.occasion;
   if (!occ || typeof occ !== "object") return { status: 400, body: { error: "invalid_occasion", field: "occasion" } };
   if (occ.type !== OCCASION_TYPE_WEDDING) return { status: 400, body: { error: "invalid_occasion", field: "type" } };
-  if (occ.version !== OCCASION_VERSION) return { status: 400, body: { error: "invalid_occasion", field: "version" } };
+  // Same fail-closed gate as the seal path: generation must refuse a Western
+  // Occasion on a contract version that cannot carry culture.
+  const vc = validateOccasionVersionCulture(occ.version, occ.facts?.culture);
+  if (!vc.ok) return { status: 400, body: { error: "invalid_occasion", field: vc.field } };
 
   const factsRes = validateWeddingFacts(occ.facts);
   if (!factsRes.ok) return { status: 400, body: { error: "invalid_occasion", field: factsRes.field } };

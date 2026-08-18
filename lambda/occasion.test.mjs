@@ -12,6 +12,9 @@ import {
   validateWeddingDraft,
   weddingDateVariants,
   weddingLanguageFor,
+  validateOccasionVersionCulture,
+  OCCASION_VERSION,
+  OCCASION_VERSION_CULTURAL,
   runWeddingDraft,
 } from "./occasion.mjs";
 
@@ -34,6 +37,11 @@ function validDraft() {
 }
 
 /** Western Wedding facts — same shape, different cultural contract. */
+/** Western Occasions declare the CULTURAL contract version (see §6). */
+function westernOccasion(extra = {}) {
+  return { type: "wedding", version: 2, facts: westernFacts(), ...extra };
+}
+
 function westernFacts(overrides = {}) {
   return {
     couple: { partner1: "Emma", partner2: "James" },
@@ -163,7 +171,12 @@ test("validateWeddingOccasion rejects unknown type and wrong version", () => {
   assert.deepEqual(validateWeddingOccasion({ type: "birthday", version: 1, ...validFacts() }), {
     ok: false, field: "type",
   });
+  // v2 is a supported contract version, but it exists to DECLARE a culture:
+  // v2 without one is refused.
   assert.deepEqual(validateWeddingOccasion({ type: "wedding", version: 2, ...validFacts() }), {
+    ok: false, field: "culture",
+  });
+  assert.deepEqual(validateWeddingOccasion({ type: "wedding", version: 9, ...validFacts() }), {
     ok: false, field: "version",
   });
   assert.deepEqual(validateWeddingOccasion("wedding"), { ok: false, field: "occasion" });
@@ -242,7 +255,7 @@ test("runWeddingDraft ACCEPTS English (Western Wedding V1) but still rejects unk
   // P0.1: the blanket "en" refusal is gone — English is a supported contract.
   const en = await runWeddingDraft({
     decoded: AUTHOR,
-    body: { ...weddingBody({ facts: westernFacts() }), language: "en" },
+    body: { occasion: westernOccasion(), language: "en" },
     callModel: async () => JSON.stringify({ drafts: [enDraft(), enDraft2(), enDraft3()] }),
     log: SILENT,
   });
@@ -412,7 +425,7 @@ test("culture: absent → chinese, western accepted, unknown rejected", () => {
 });
 
 test("culture survives sealing into the occasion record", () => {
-  const res = validateWeddingOccasion({ type: "wedding", version: 1, ...westernFacts() });
+  const res = validateWeddingOccasion({ type: "wedding", version: 2, ...westernFacts() });
   assert.equal(res.ok, true);
   assert.equal(res.occasion.culture, "western");
   assert.equal(res.occasion.type, "wedding"); // Western Wedding is STILL type wedding
@@ -513,7 +526,7 @@ test("Chinese prompt is unchanged by the Western addition", () => {
 test("Western Wedding generates in English with no explicit language field", async () => {
   const res = await runWeddingDraft({
     decoded: AUTHOR,
-    body: { occasion: { type: "wedding", version: 1, facts: westernFacts() } },
+    body: { occasion: westernOccasion() },
     callModel: async ({ system }) => {
       // Culture alone must have selected the English corpus.
       assert.ok(system.includes("[FACT RULES"));
@@ -528,10 +541,94 @@ test("Western Wedding generates in English with no explicit language field", asy
 test("Western generation fails loudly when English drafts drop a fact", async () => {
   const res = await runWeddingDraft({
     decoded: AUTHOR,
-    body: { occasion: { type: "wedding", version: 1, facts: westernFacts() } },
+    body: { occasion: westernOccasion() },
     callModel: async () => JSON.stringify({ drafts: ["A lovely day awaits. Do come."] }),
     log: SILENT,
   });
   assert.equal(res.status, 502);
   assert.equal(res.body.error, "wedding_draft_failed");
+});
+
+
+// --- Deployment-order protection (§6) ---------------------------------------
+
+/**
+ * THE INVARIANT: an unsupported/undeclared Occasion culture must fail closed,
+ * never silently downgrade to Chinese.
+ *
+ * Why this exists: a backend that predates Western Wedding does not reject
+ * unknown fields. Handed a Western payload it accepts it and DROPS `culture`,
+ * sealing an immutable record that renders as a Chinese Wedding. Declaring
+ * Western on contract v2 makes every such backend refuse it outright.
+ */
+test("INVARIANT: culture western on v1 is refused — never silently Chinese", () => {
+  // The exact payload shape an old backend would have silently downgraded.
+  const res = validateWeddingOccasion({ type: "wedding", version: 1, ...westernFacts() });
+  assert.equal(res.ok, false);
+  assert.equal(res.field, "version");
+
+  // And on the generation path too.
+  assert.equal(
+    validateOccasionVersionCulture(OCCASION_VERSION, "western").ok,
+    false,
+  );
+});
+
+test("INVARIANT: v2 must declare a culture; unknown cultures are refused", () => {
+  assert.equal(validateOccasionVersionCulture(OCCASION_VERSION_CULTURAL, undefined).field, "culture");
+  assert.equal(validateOccasionVersionCulture(OCCASION_VERSION_CULTURAL, "").field, "culture");
+  assert.equal(validateOccasionVersionCulture(OCCASION_VERSION_CULTURAL, "japanese").field, "culture");
+  assert.equal(validateOccasionVersionCulture(OCCASION_VERSION_CULTURAL, "western").ok, true);
+  assert.equal(validateOccasionVersionCulture(OCCASION_VERSION_CULTURAL, "chinese").ok, true);
+});
+
+test("BACKWARD COMPATIBILITY: legacy v1 with no culture is still valid Chinese", () => {
+  const res = validateWeddingOccasion({ type: "wedding", version: 1, ...validFacts() });
+  assert.equal(res.ok, true);
+  assert.equal(res.occasion.version, 1);
+  assert.equal(res.occasion.culture, "chinese");     // resolved, not invented
+  // An explicit "chinese" on v1 is also fine — it says what v1 already meant.
+  const explicit = validateWeddingOccasion({ type: "wedding", version: 1, ...validFacts({ culture: "chinese" }) });
+  assert.equal(explicit.ok, true);
+  assert.equal(explicit.occasion.version, 1);
+});
+
+test("a sealed Occasion keeps the contract version it declared", () => {
+  const west = validateWeddingOccasion({ type: "wedding", version: 2, ...westernFacts() });
+  assert.equal(west.ok, true);
+  assert.equal(west.occasion.version, 2);
+  assert.equal(west.occasion.culture, "western");
+
+  const cn = validateWeddingOccasion({ type: "wedding", version: 1, ...validFacts() });
+  assert.equal(cn.occasion.version, 1);             // v1 records stay v1 forever
+});
+
+test("unsupported contract versions are refused on both paths", async () => {
+  for (const v of [0, 3, 9, "2", null, undefined]) {
+    assert.equal(
+      validateWeddingOccasion({ type: "wedding", version: v, ...validFacts() }).field,
+      "version",
+      `expected version rejection for ${JSON.stringify(v)}`,
+    );
+  }
+  const draft = await runWeddingDraft({
+    decoded: AUTHOR,
+    body: { occasion: { type: "wedding", version: 3, facts: westernFacts() } },
+    callModel: async () => { throw new Error("must not be called"); },
+    log: SILENT,
+  });
+  assert.equal(draft.status, 400);
+  assert.equal(draft.body.field, "version");
+});
+
+test("generation refuses a Western Occasion declared on v1", async () => {
+  const res = await runWeddingDraft({
+    decoded: AUTHOR,
+    body: { occasion: { type: "wedding", version: 1, facts: westernFacts() }, language: "en" },
+    callModel: async () => { throw new Error("must not be called"); },
+    log: SILENT,
+  });
+  assert.equal(res.status, 400);
+  assert.equal(res.body.error, "invalid_occasion");
+  assert.equal(res.body.field, "version");
 });
