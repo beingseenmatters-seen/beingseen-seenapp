@@ -172,7 +172,10 @@ export async function readSharedResponse({ db, tokenHash, participantToken }) {
  */
 export async function sharedResponsesForEvent({ db, eventId, sharedGiftIds }) {
   if (!eventId || !sharedGiftIds || sharedGiftIds.size === 0) {
-    return { responses: [], aggregate: { replies: 0, attendingTotal: 0, accepted: 0, declined: 0 } };
+    return {
+      responses: [],
+      aggregate: { replies: 0, adultTotal: 0, childTotal: 0, attendingTotal: 0, accepted: 0, declined: 0 },
+    };
   }
   const snap = await db.collection(SHARED_RSVP_COLLECTION).where("eventId", "==", eventId).get();
   const responses = (snap.docs ?? [])
@@ -185,11 +188,13 @@ export async function sharedResponsesForEvent({ db, eventId, sharedGiftIds }) {
       acc.replies += 1;
       if (r.status === "accepted") {
         acc.accepted += 1;
+        acc.adultTotal += r.adultCount ?? 0;
+        acc.childTotal += r.childCount ?? 0;
         acc.attendingTotal += (r.adultCount ?? 0) + (r.childCount ?? 0);
       } else if (r.status === "declined") acc.declined += 1;
       return acc;
     },
-    { replies: 0, attendingTotal: 0, accepted: 0, declined: 0 },
+    { replies: 0, adultTotal: 0, childTotal: 0, attendingTotal: 0, accepted: 0, declined: 0 },
   );
   return { responses, aggregate };
 }

@@ -186,7 +186,7 @@ test("MANAGED household invitations are refused here — they answer on their ow
   assert.equal(unknown.status, 404);
 });
 
-test("shared replies reach the host, counted SEPARATELY from households (§12)", async () => {
+test("Event attendance COMBINES channels; sources stay separately visible", async () => {
   const db = makeFakeDb();
   const shared = await sharedInvitation(db);
   const eventId = shared.eventId;
@@ -214,14 +214,23 @@ test("shared replies reach the host, counted SEPARATELY from households (§12)",
   });
   assert.equal(detail.status, 200);
 
-  // Household statistics speak only for households — unchanged by §12.
-  assert.equal(detail.body.aggregate.attendingTotal, 3);
+  // FOUNDER RULE (2026-08-19): the Event's expected attendance includes both
+  // channels — 3 managed (2 adults + 1 child) + 5 shared (3 + 2 adults) = 8.
+  assert.equal(detail.body.aggregate.attendingTotal, 8);
+  assert.equal(detail.body.aggregate.adultTotal, 7);
+  assert.equal(detail.body.aggregate.childTotal, 1);
+
+  // The sources are never merged: the managed breakdown and household group
+  // counts still speak only for households (§12 lives on one level down)…
+  assert.deepEqual(detail.body.aggregate.managed, { adultTotal: 2, childTotal: 1, attendingTotal: 3 });
   assert.equal(detail.body.aggregate.acceptedGroups, 1);
 
-  // Shared replies are real, and live in their own bucket.
+  // …and shared replies keep their own bucket, now with the adult/child split.
   assert.equal(detail.body.sharedAggregate.replies, 3);
   assert.equal(detail.body.sharedAggregate.accepted, 2);
   assert.equal(detail.body.sharedAggregate.declined, 1);
+  assert.equal(detail.body.sharedAggregate.adultTotal, 5);
+  assert.equal(detail.body.sharedAggregate.childTotal, 0);
   assert.equal(detail.body.sharedAggregate.attendingTotal, 5);
   assert.equal(detail.body.sharedResponses.length, 3);
 });
@@ -376,4 +385,66 @@ test("shared retrieve never surfaces legacy record-level RSVP fields", async () 
   const m = await retrieveGift({ db, body: { token: managed.body.token } });
   assert.equal(m.body.rsvpStatus, "accepted");
   assert.equal(m.body.rsvpAdultCount, 2);
+});
+
+
+test("combined totals track every lifecycle move without double-counting", async () => {
+  const db = makeFakeDb();
+  const shared = await sharedInvitation(db);
+  const eventId = shared.eventId;
+  const managed = await createGift({
+    db, decoded: A, share: fakeShare(),
+    body: { message: "hi", occasion: FACTS, eventId, recipientLabel: "The Smith Family", accessMode: "direct" },
+  });
+  const detail = async () => {
+    const d = await eventDetail({ db, decoded: A, body: { eventId },
+      giftCollection: GIFT_COLLECTION, sharedResponses: sharedResponsesForEvent });
+    return d.body.aggregate;
+  };
+
+  // Managed-only.
+  await rsvpGift({ db, body: { token: managed.body.token, key: "", status: "accepted", adultCount: 2, childCount: 1 } });
+  let a = await detail();
+  assert.deepEqual([a.attendingTotal, a.adultTotal, a.childTotal], [3, 2, 1]);
+  assert.equal(a.managed.attendingTotal, 3);
+
+  // + shared scanner → combined.
+  const sc = await rsvpGift({ db, body: { token: shared.token, key: "", status: "accepted", adultCount: 4, childCount: 0 } });
+  const pt = sc.body.participantToken;
+  a = await detail();
+  assert.deepEqual([a.attendingTotal, a.adultTotal, a.childTotal], [7, 6, 1]);
+  assert.equal(a.managed.attendingTotal, 3);
+
+  // Scanner UPDATES (4 → 2): adjust, never accumulate.
+  await rsvpGift({ db, body: { token: shared.token, key: "", participantToken: pt, status: "accepted", adultCount: 2, childCount: 0 } });
+  a = await detail();
+  assert.equal(a.attendingTotal, 5);
+
+  // Managed household updates (3 → 4): adjust, never accumulate.
+  await rsvpGift({ db, body: { token: managed.body.token, key: "", status: "accepted", adultCount: 4, childCount: 0 } });
+  a = await detail();
+  assert.deepEqual([a.attendingTotal, a.managed.attendingTotal], [6, 4]);
+
+  // Scanner declines: their contribution leaves the total.
+  await rsvpGift({ db, body: { token: shared.token, key: "", participantToken: pt, status: "declined" } });
+  a = await detail();
+  assert.equal(a.attendingTotal, 4);
+  assert.equal(a.managed.attendingTotal, 4);
+
+  // Managed declines too: expectation drops to zero.
+  await rsvpGift({ db, body: { token: managed.body.token, key: "", status: "declined" } });
+  a = await detail();
+  assert.equal(a.attendingTotal, 0);
+
+  // Re-accept both, then revoke the SHARED invitation: its responses leave
+  // the combined total while the household stands.
+  await rsvpGift({ db, body: { token: managed.body.token, key: "", status: "accepted", adultCount: 2, childCount: 0 } });
+  await rsvpGift({ db, body: { token: shared.token, key: "", participantToken: pt, status: "accepted", adultCount: 3, childCount: 0 } });
+  a = await detail();
+  assert.equal(a.attendingTotal, 5);
+  const { revokeGift } = await import("./gift.mjs");
+  await revokeGift({ db, decoded: A, body: { token: shared.token } });
+  a = await detail();
+  assert.equal(a.attendingTotal, 2);
+  assert.equal(a.managed.attendingTotal, 2);
 });

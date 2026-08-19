@@ -481,6 +481,9 @@ test("event detail: owner-scoped, invitations listed, aggregate derived (never s
     acceptedGroups: 2,
     declinedGroups: 1,
     pendingGroups: 1, // 赵家 — 钱家 is revoked and counts nowhere
+    // Event totals now COMBINE channels; with no shared replies the
+    // managed breakdown mirrors the totals.
+    managed: { adultTotal: 3, childTotal: 1, attendingTotal: 4 },
   });
   const evDoc = db._store.get(`${EVENT_COLLECTION}/${eventId}`);
   assert.equal("aggregate" in evDoc, false); // single authority: derived only
@@ -694,6 +697,9 @@ test("4.5-C §12: shared-link invitation never enters household aggregate", asyn
   assert.deepEqual(det.body.aggregate, {
     adultTotal: 2, childTotal: 1, attendingTotal: 3,
     acceptedGroups: 1, declinedGroups: 0, pendingGroups: 0,
+    // Event totals now COMBINE channels; with no shared replies the
+    // managed breakdown mirrors the totals.
+    managed: { adultTotal: 2, childTotal: 1, attendingTotal: 3 },
   }); // the shared link's 9/9 is invisible to household statistics
   const row = det.body.invitations.find((i) => i.recipientLabel === "各位亲友");
   assert.equal(row.sharedDistribution, true); // but the row itself stays honest

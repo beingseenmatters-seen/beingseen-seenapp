@@ -389,7 +389,34 @@ export async function eventDetail({ db, decoded, body, giftCollection, sharedRes
   );
   const shared = sharedResponses
     ? await sharedResponses({ db, eventId, sharedGiftIds })
-    : { responses: [], aggregate: { replies: 0, attendingTotal: 0, accepted: 0, declined: 0 } };
+    : {
+        responses: [],
+        aggregate: { replies: 0, adultTotal: 0, childTotal: 0, attendingTotal: 0, accepted: 0, declined: 0 },
+      };
+
+  // EVENT attendance combines BOTH channels (founder rule, 2026-08-19): the
+  // couple's expected headcount includes self-reported shared-link replies.
+  // The SOURCES are never merged — managed households keep their own
+  // breakdown and group counts, shared replies keep theirs, and §12 keeps its
+  // meaning one level down: a shared reply is still never a household
+  // statistic. Only the Event-level total adds them. Derived on read, never
+  // stored, exactly like every other aggregate here.
+  const combined = {
+    adultTotal: aggregate.adultTotal + shared.aggregate.adultTotal,
+    childTotal: aggregate.childTotal + shared.aggregate.childTotal,
+    attendingTotal: aggregate.attendingTotal + shared.aggregate.attendingTotal,
+    // Group counts remain HOUSEHOLD statistics — shared links have "replies"
+    // in their own aggregate instead.
+    acceptedGroups: aggregate.acceptedGroups,
+    declinedGroups: aggregate.declinedGroups,
+    pendingGroups: aggregate.pendingGroups,
+    // The managed-only breakdown, for the dashboard's source split.
+    managed: {
+      adultTotal: aggregate.adultTotal,
+      childTotal: aggregate.childTotal,
+      attendingTotal: aggregate.attendingTotal,
+    },
+  };
 
   return {
     status: 200,
@@ -407,7 +434,7 @@ export async function eventDetail({ db, decoded, body, giftCollection, sharedRes
       sharedResponses: shared.responses,
       sharedAggregate: shared.aggregate,
       invitations: invitations.map(({ id, rec }) => libraryRow(id, rec, now)),
-      aggregate,
+      aggregate: combined,
     },
   };
 }
