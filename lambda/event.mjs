@@ -21,6 +21,7 @@
  * response ever includes key material or sealed share credentials.
  */
 import crypto from "node:crypto";
+import { audiencesForEventType } from "./occasion.mjs";
 
 export const EVENT_COLLECTION = "events";
 export const EVENT_SCHEMA_VERSION = 1;
@@ -158,7 +159,9 @@ export async function ensureEvent({ db, decoded, body, occasion, now = Date.now(
     const eventId = generateEventId();
     await db.collection(EVENT_COLLECTION).doc(eventId).set({
       schemaVersion: EVENT_SCHEMA_VERSION,
-      type: "wedding",
+      // Derived from the SEALED occasion, never a literal: a Birthday Event
+      // must never be stored as a Wedding (original audit P1-1, closed here).
+      type: occasion.type,
       senderUid: decoded.uid,
       occasion,
       createdAt: now,
@@ -175,7 +178,9 @@ export async function ensureEvent({ db, decoded, body, occasion, now = Date.now(
   if (ev.senderUid !== decoded.uid) {
     return { ok: false, res: { status: 403, body: { error: "forbidden" } } };
   }
-  if (ev.type !== "wedding" || ev.status !== "active") {
+  // Cross-type attachment is refused outright: a birthday invitation can
+  // never ride on a wedding Event, or vice versa.
+  if (ev.type !== occasion.type || ev.status !== "active") {
     return { ok: false, res: { status: 400, body: { error: "invalid_event", field: "status" } } };
   }
   return { ok: true, eventId: attachId, created: false };
@@ -233,6 +238,8 @@ function libraryRow(id, rec, now) {
             // (exact for every record sealed before Western Wedding).
             culture: rec.occasion.culture ?? "chinese",
             couple: rec.occasion.couple,
+            birthdayPersonName: rec.occasion.birthdayPersonName ?? null,
+            eventTitle: rec.occasion.eventTitle ?? null,
             date: rec.occasion.date,
             venueName: rec.occasion.venue?.displayName ?? null,
           },
@@ -291,6 +298,8 @@ export async function senderLibrary({ db, decoded, giftCollection, now = Date.no
         occasion: {
           culture: ev.occasion?.culture ?? "chinese",
           couple: ev.occasion?.couple,
+          birthdayPersonName: ev.occasion?.birthdayPersonName ?? null,
+          eventTitle: ev.occasion?.eventTitle ?? null,
           date: ev.occasion?.date,
           venueName: ev.occasion?.venue?.displayName ?? null,
         },
@@ -539,7 +548,7 @@ export async function createEvent({ db, decoded, body, validateOccasion, now = D
   const eventId = generateEventId();
   await db.collection(EVENT_COLLECTION).doc(eventId).set({
     schemaVersion: EVENT_SCHEMA_VERSION,
-    type: "wedding",
+    type: res.occasion.type,
     senderUid: decoded.uid,
     occasion: res.occasion,
     createdAt: now,
@@ -561,7 +570,7 @@ export async function upsertGuest({ db, decoded, body, giftCollection, now = Dat
 
   const lab = normalizeRecipientLabel(body?.label);
   if (!lab.ok) return { status: 400, body: { error: lab.error, field: lab.field } };
-  if (!WEDDING_AUDIENCES.includes(body?.relationshipType)) {
+  if (!audiencesForEventType(owned.ev.type).includes(body?.relationshipType)) {
     return { status: 400, body: { error: "invalid_relationship" } };
   }
   const ph = normalizePhone(body?.phone);
@@ -640,7 +649,7 @@ export async function saveVariant({ db, decoded, body, now = Date.now() }) {
   if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
   const owned = await loadOwnedEvent(db, decoded, body?.eventId);
   if (owned.err) return owned.err;
-  if (!WEDDING_AUDIENCES.includes(body?.relationshipType)) {
+  if (!audiencesForEventType(owned.ev.type).includes(body?.relationshipType)) {
     return { status: 400, body: { error: "invalid_relationship" } };
   }
   const message = typeof body?.message === "string" ? body.message.trim() : "";

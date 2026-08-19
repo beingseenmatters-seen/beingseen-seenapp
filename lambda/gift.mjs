@@ -21,7 +21,7 @@
  */
 
 import crypto from "node:crypto";
-import { validateWeddingOccasion, WEDDING_MUSIC_THEMES } from "./occasion.mjs";
+import { validateOccasion, WEDDING_MUSIC_THEMES } from "./occasion.mjs";
 import { submitSharedRsvpForRecord, readSharedResponse } from "./sharedRsvp.mjs";
 import {
   normalizeRecipientLabel,
@@ -166,7 +166,7 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
   // never silently dropped.
   let occasion = null;
   if (body?.occasion !== undefined && body?.occasion !== null) {
-    const res = validateWeddingOccasion(body.occasion);
+    const res = validateOccasion(body.occasion);
     if (!res.ok) {
       return { status: 400, body: { error: "invalid_occasion", field: res.field } };
     }

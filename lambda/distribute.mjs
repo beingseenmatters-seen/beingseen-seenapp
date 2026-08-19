@@ -22,6 +22,7 @@
  */
 import { createGift } from "./gift.mjs";
 import { EVENT_COLLECTION, GUEST_COLLECTION, GUEST_BATCH_MAX } from "./event.mjs";
+import { INVITATION_EVENT_TYPES } from "./occasion.mjs";
 
 export async function distributeInvitations({
   db,
@@ -46,7 +47,7 @@ export async function distributeInvitations({
   if (!evSnap.exists) return { status: 404, body: { error: "event_not_found" } };
   const ev = evSnap.data();
   if (ev.senderUid !== decoded.uid) return { status: 403, body: { error: "forbidden" } };
-  if (ev.type !== "wedding" || ev.status !== "active") {
+  if (!INVITATION_EVENT_TYPES.includes(ev.type) || ev.status !== "active") {
     return { status: 400, body: { error: "invalid_event", field: "status" } };
   }
   const variants = ev.variants || {};

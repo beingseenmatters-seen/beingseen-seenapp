@@ -56,10 +56,10 @@ import {
   drawWinner,
 } from "./onsite.mjs";
 import { distributeInvitations } from "./distribute.mjs";
-import { validateWeddingOccasion } from "./occasion.mjs";
+import { validateOccasion } from "./occasion.mjs";
 import { makeKmsShareCrypto } from "./shareCrypto.mjs";
 import { sharedResponsesForEvent } from "./sharedRsvp.mjs";
-import { runWeddingDraft } from "./occasion.mjs";
+import { runWeddingDraft, runBirthdayDraft } from "./occasion.mjs";
 import { uploadGiftMedia, makeS3MediaStore } from "./giftMedia.mjs";
 
 // Opening Media store — one private bucket, this Lambda as the only gateway.
@@ -1072,7 +1072,7 @@ export const handler = async (event) => {
   }
   if (path === "/sender/event/create") {
     const decoded = await verifyAuthToken(event);
-    const result = await createEvent({ db: admin.firestore(), decoded, body, validateOccasion: validateWeddingOccasion });
+    const result = await createEvent({ db: admin.firestore(), decoded, body, validateOccasion });
     return httpResponse(result.status, result.body);
   }
   if (path === "/sender/guest/upsert") {
@@ -1173,7 +1173,11 @@ export const handler = async (event) => {
     // path below stays app-key-only, exactly as before.
     if (body && typeof body === "object" && body.occasion !== undefined) {
       const decoded = await verifyAuthToken(event);
-      const result = await runWeddingDraft({ decoded, body, callModel: callExpressModel });
+      // One draft door, dispatched on the declared Occasion type.
+      const result =
+        body?.occasion?.type === "birthday"
+          ? await runBirthdayDraft({ decoded, body, callModel: callExpressModel })
+          : await runWeddingDraft({ decoded, body, callModel: callExpressModel });
       return httpResponse(result.status, result.body);
     }
     return await handleExpressDraft(body);

@@ -64,6 +64,27 @@ export const SUPPORTED_OCCASION_VERSIONS = [OCCASION_VERSION, OCCASION_VERSION_C
 export const WEDDING_CULTURES = ["chinese", "western"];
 export const DEFAULT_WEDDING_CULTURE = "chinese";
 
+export const OCCASION_TYPE_BIRTHDAY = "birthday";
+
+/**
+ * Event types the Invitation engine serves. onsite (Live Event) deliberately
+ * keeps its own wedding-only gate — Birthday Invitation owns no on-site flow.
+ */
+export const INVITATION_EVENT_TYPES = [OCCASION_TYPE_WEDDING, OCCASION_TYPE_BIRTHDAY];
+
+/**
+ * Birthday relationship vocabulary — ITS OWN list, not Wedding's. 长辈 and
+ * clients_vip are wedding-shaped; a birthday party invites these.
+ */
+export const BIRTHDAY_AUDIENCES = ["family", "friends", "close_friends", "colleagues", "classmates"];
+
+export const BIRTHDAY_TONES = ["warm", "playful", "casual", "heartfelt", "simple"];
+
+/** Relationship vocabulary for an EVENT type — guests/variants validate here. */
+export function audiencesForEventType(type) {
+  return type === OCCASION_TYPE_BIRTHDAY ? BIRTHDAY_AUDIENCES : WEDDING_AUDIENCES;
+}
+
 /** Stable internal audience values — UI labels come later, never stored. */
 export const WEDDING_AUDIENCES = [
   "relatives",
@@ -318,6 +339,87 @@ export function validateWeddingFacts(raw) {
       registryUrl: reg.registryUrl,
     },
   };
+}
+
+const BIRTHDAY_LIMITS = { name: 40, eventTitle: 60, venueName: 80, address: 160, inviter: 40 };
+export const BIRTHDAY_OCCASION_VERSION = 1;
+
+/**
+ * Birthday facts — deliberately the SMALLEST contract that is a real
+ * invitation. One person (never a couple), when, where, who invites, and an
+ * optional title ("Emma turns 30"). No culture field, no dress code, no RSVP
+ * deadline, no registry, no lunar anything: Birthday exists to prove the
+ * engine can carry a LIGHTER Occasion, not a re-skinned Wedding.
+ */
+export function validateBirthdayFacts(raw) {
+  if (!raw || typeof raw !== "object") return { ok: false, field: "facts" };
+  const birthdayPersonName = cleanString(raw.birthdayPersonName, BIRTHDAY_LIMITS.name);
+  if (!birthdayPersonName) return { ok: false, field: "birthdayPersonName" };
+
+  if (!isValidIsoDate(raw.date)) return { ok: false, field: "date" };
+  const time = raw.time;
+  if (!time || typeof time !== "object") return { ok: false, field: "time" };
+  if (typeof time.start !== "string" || !TIME_RE.test(time.start)) return { ok: false, field: "time.start" };
+  let end = null;
+  if (time.end !== undefined && time.end !== null && time.end !== "") {
+    if (typeof time.end !== "string" || !TIME_RE.test(time.end)) return { ok: false, field: "time.end" };
+    end = time.end;
+  }
+
+  const venue = raw.venue;
+  if (!venue || typeof venue !== "object") return { ok: false, field: "venue" };
+  const displayName = cleanString(venue.displayName, BIRTHDAY_LIMITS.venueName);
+  if (!displayName) return { ok: false, field: "venue.displayName" };
+  let formattedAddress = null;
+  if (venue.formattedAddress !== undefined && venue.formattedAddress !== null && venue.formattedAddress !== "") {
+    formattedAddress = cleanString(venue.formattedAddress, BIRTHDAY_LIMITS.address);
+    if (!formattedAddress) return { ok: false, field: "venue.formattedAddress" };
+  }
+
+  const inviter = cleanString(raw.inviter, BIRTHDAY_LIMITS.inviter);
+  if (!inviter) return { ok: false, field: "inviter" };
+  if (!BIRTHDAY_AUDIENCES.includes(raw.audienceType)) return { ok: false, field: "audienceType" };
+
+  let eventTitle = null;
+  if (raw.eventTitle !== undefined && raw.eventTitle !== null && raw.eventTitle !== "") {
+    eventTitle = cleanString(raw.eventTitle, BIRTHDAY_LIMITS.eventTitle);
+    if (!eventTitle) return { ok: false, field: "eventTitle" };
+  }
+
+  return {
+    ok: true,
+    facts: {
+      birthdayPersonName,
+      eventTitle,
+      date: raw.date,
+      time: { start: time.start, end },
+      venue: { displayName, formattedAddress },
+      inviter,
+      audienceType: raw.audienceType,
+    },
+  };
+}
+
+export function validateBirthdayOccasion(raw) {
+  if (!raw || typeof raw !== "object") return { ok: false, field: "occasion" };
+  if (raw.type !== OCCASION_TYPE_BIRTHDAY) return { ok: false, field: "type" };
+  if (raw.version !== BIRTHDAY_OCCASION_VERSION) return { ok: false, field: "version" };
+  const { type: _t, version: _v, ...facts } = raw;
+  const res = validateBirthdayFacts(facts);
+  if (!res.ok) return res;
+  return { ok: true, occasion: { type: OCCASION_TYPE_BIRTHDAY, version: BIRTHDAY_OCCASION_VERSION, ...res.facts } };
+}
+
+/**
+ * ONE seal-door validator, dispatching on the declared type. Unknown types
+ * fail closed — which is also the deployment-order story: a backend without
+ * Birthday rejects a Birthday seal loudly (invalid_occasion/type); nothing
+ * can silently downgrade.
+ */
+export function validateOccasion(raw) {
+  if (!raw || typeof raw !== "object") return { ok: false, field: "occasion" };
+  if (raw.type === OCCASION_TYPE_BIRTHDAY) return validateBirthdayOccasion(raw);
+  return validateWeddingOccasion(raw);
 }
 
 /**
@@ -783,6 +885,199 @@ export async function runWeddingDraft({ decoded, body, callModel, log = console 
   if (valid.length < MIN_VALID_DRAFTS) {
     log.error?.(`[Occasion] wedding draft generation failed: ${valid.length} valid after retry`);
     return { status: 502, body: { error: "wedding_draft_failed" } };
+  }
+  return { status: 200, body: { drafts: valid.slice(0, 3) } };
+}
+
+
+// --- Birthday generation ------------------------------------------------------
+// Its own corpus — never Wedding wording. Same architecture as Wedding:
+// untrusted personalContext stays in the user message; facts are validated
+// back against the drafts; Event × relationship stays the cost model.
+
+const BIRTHDAY_TONE_GUIDANCE_EN = {
+  warm: "Warm — affectionate and genuine, like inviting someone you really want there.",
+  playful: "Playful — light, fun, a little cheeky; a party, not a ceremony.",
+  casual: "Casual — easy and low-key, the way you'd message a friend.",
+  heartfelt: "Heartfelt — sincere about what this person and this day mean.",
+  simple: "Simple — short, clear and friendly; no fuss.",
+};
+const BIRTHDAY_TONE_GUIDANCE_ZH = {
+  warm: "温暖——真挚亲切，是真心希望对方来的语气。",
+  playful: "俏皮——轻松有趣，可以有点小幽默，是派对不是典礼。",
+  casual: "随性——像给朋友发消息一样自然，不端着。",
+  heartfelt: "走心——认真说出这个人、这一天的意义。",
+  simple: "简洁——短短几句，清楚友好，不啰嗦。",
+};
+const BIRTHDAY_AUDIENCE_GUIDANCE_EN = {
+  family: "Family — close and unguarded; they know the birthday person well.",
+  friends: "Friends — natural and warm, glad to share the day.",
+  close_friends: "Closest friends — personal, room for in-jokes and shared history.",
+  colleagues: "Colleagues — friendly and easy, without presuming intimacy.",
+  classmates: "Classmates — familiar and fun, the tone of a group that grew up together.",
+};
+const BIRTHDAY_AUDIENCE_GUIDANCE_ZH = {
+  family: "家人——亲近自然，不用客套。",
+  friends: "朋友——自然温暖，高兴地邀请对方来一起庆祝。",
+  close_friends: "挚友——更私人，可以带共同回忆和玩笑。",
+  colleagues: "同事——友好轻松，有分寸。",
+  classmates: "同学——熟悉热闹，一起长大的语气。",
+};
+
+export function buildBirthdayDraftPrompt({ facts, tone, personalContext, attempt = 0, language = "zh" }) {
+  const en = language === "en";
+  const dateDisplay = formatWeddingDate(facts.date, language);
+  const toneKey = BIRTHDAY_TONES.includes(tone) ? tone : "warm";
+  const who = facts.eventTitle || (en ? `${facts.birthdayPersonName}'s birthday` : `${facts.birthdayPersonName}的生日`);
+  const angleSets = en
+    ? [
+        "lead with the invitation itself — simply and gladly ask them to come",
+        "lead with the birthday person — why this day is worth showing up for",
+        "the shortest one — a complete, friendly invitation in a few lines",
+        "lead with the fun — what kind of gathering this will be",
+      ]
+    : [
+        "以邀请本身为主线——高兴地请对方来",
+        "以寿星为主线——这个日子为什么值得到场",
+        "最短的一篇——几句话说清，但仍是完整友好的邀请",
+        "以聚会气氛为主线——这会是一场什么样的相聚",
+      ];
+  const n = angleSets.length;
+  const off = ((Math.trunc(attempt) % n) + n) % n;
+  const angles = [0, 1, 2].map((i) => angleSets[(off + i) % n]);
+
+  const system = en
+    ? [
+        "You are writing the body of a birthday party invitation — complete and sendable, not a greeting-card line.",
+        "[FACTS — HIGHEST PRIORITY]",
+        `These must appear exactly: the name "${facts.birthdayPersonName}", the date "${dateDisplay}", and the venue "${facts.venue.displayName}". The time should appear naturally.`,
+        "Write the time as a natural clock time (\"7:00 PM\", \"seven in the evening\") — never 24-hour form.",
+        "Invent NO fact not supplied: no address details, no schedule, no gifts, no dress code, no other guests' names.",
+        "[LANGUAGE] Contemporary, natural English. A party invitation, warm and easy — not solemn, not corporate, no clichés.",
+        "[STRUCTURE] Each draft: a fitting opening, who and what is being celebrated, a clear invitation, date, time, place, and a natural sign-off from \"" + facts.inviter + "\".",
+        "[DIFFERENCE] The three drafts must genuinely differ per the assigned lines.",
+        '[OUTPUT] Strictly one JSON object: {"drafts":["first","second","third"]} — nothing else. Use \\n for line breaks.',
+      ].join("\n")
+    : [
+        "你在替派对主人写一份中文生日邀请正文——完整、可直接送出的邀请，不是贺卡金句。",
+        "【事实规则（最高优先级）】",
+        `以下内容必须原样出现：寿星「${facts.birthdayPersonName}」、日期「${dateDisplay}」、地点「${facts.venue.displayName}」；时间也应自然出现。`,
+        "时间直接用 24 小时制（如「19:00」）或自然中文说法（如「晚上七点」），不要混用。",
+        "严禁编造未提供的事实：具体环节、着装、礼物要求、其他宾客。",
+        "【语言】当代自然的中文，轻松有温度——这是聚会邀请，不是典礼请柬，不要陈词滥调。",
+        `【结构】每篇都要有开场、说清为谁庆祝什么、明确的邀请、日期时间地点，并以「${facts.inviter}」自然落款。`,
+        "【差异】三篇按指定主线真正不同。",
+        '【输出】严格输出 {"drafts":["第一篇","第二篇","第三篇"]}，不要其它内容。换行用 \\n。',
+      ].join("\n");
+
+  const factsLines = en
+    ? [
+        "[BIRTHDAY FACTS]",
+        `Celebrating: ${who}`,
+        `Birthday person: ${facts.birthdayPersonName}`,
+        `Date: ${dateDisplay} (must appear exactly)`,
+        `Time: ${formatWeddingTime(facts.time.start, "en")}${facts.time.end ? ` – ${formatWeddingTime(facts.time.end, "en")}` : ""}`,
+        `Venue: ${facts.venue.displayName} (must appear exactly)`,
+        ...(facts.venue.formattedAddress ? [`Address: ${facts.venue.formattedAddress} (optional to include)`] : []),
+        `Host / sign-off: ${facts.inviter}`,
+      ]
+    : [
+        "【生日事实】",
+        `庆祝：${who}`,
+        `寿星：${facts.birthdayPersonName}`,
+        `日期：${dateDisplay}（须原样出现）`,
+        `时间：${facts.time.start}${facts.time.end ? `–${facts.time.end}` : ""}`,
+        `地点：${facts.venue.displayName}（须原样出现）`,
+        ...(facts.venue.formattedAddress ? [`地址：${facts.venue.formattedAddress}（可自然带入）`] : []),
+        `落款：${facts.inviter}`,
+      ];
+  const user = [
+    ...factsLines,
+    "",
+    (en ? "[GUESTS] " : "【受邀对象】") + (en ? BIRTHDAY_AUDIENCE_GUIDANCE_EN : BIRTHDAY_AUDIENCE_GUIDANCE_ZH)[facts.audienceType],
+    (en ? "[TONE] " : "【语气】") + (en ? BIRTHDAY_TONE_GUIDANCE_EN : BIRTHDAY_TONE_GUIDANCE_ZH)[toneKey],
+    ...(personalContext
+      ? ["", (en ? `[FROM THE HOST] (context to weave in, never quote): "${personalContext}"` : `【主人的心里话】（供你体会，不要原句照抄）：「${personalContext}」`)]
+      : []),
+    "",
+    en ? "[THE THREE LINES]" : "【三篇的主线】",
+    ...(en ? [`First: ${angles[0]}`, `Second: ${angles[1]}`, `Third: ${angles[2]}`] : [`第一篇：${angles[0]}`, `第二篇：${angles[1]}`, `第三篇：${angles[2]}`]),
+  ].join("\n");
+
+  return { system, user };
+}
+
+export function validateBirthdayDraft(text, facts, language = "zh") {
+  const t = typeof text === "string" ? text : "";
+  if (!t.trim()) return false;
+  return (
+    t.includes(facts.birthdayPersonName) &&
+    weddingDateVariants(facts.date, language).some((v) => t.includes(v)) &&
+    t.includes(facts.venue.displayName)
+  );
+}
+
+/** POST /express/draft, occasion.type === "birthday". Same auth + retry shape as Wedding. */
+export async function runBirthdayDraft({ decoded, body, callModel, log = console }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  if (typeof body?.situation === "string" && body.situation.trim()) {
+    return { status: 400, body: { error: "invalid_request" } };
+  }
+  const language = body?.language === "en" ? "en" : body?.language === "zh" || body?.language === undefined || body?.language === null || body?.language === "" ? "zh" : null;
+  if (!language) return { status: 400, body: { error: "occasion_language_unsupported" } };
+
+  const occ = body?.occasion;
+  if (!occ || typeof occ !== "object") return { status: 400, body: { error: "invalid_occasion", field: "occasion" } };
+  if (occ.type !== OCCASION_TYPE_BIRTHDAY) return { status: 400, body: { error: "invalid_occasion", field: "type" } };
+  if (occ.version !== BIRTHDAY_OCCASION_VERSION) return { status: 400, body: { error: "invalid_occasion", field: "version" } };
+  const factsRes = validateBirthdayFacts(occ.facts);
+  if (!factsRes.ok) return { status: 400, body: { error: "invalid_occasion", field: factsRes.field } };
+  const facts = factsRes.facts;
+
+  let tone = "warm";
+  if (occ.tone !== undefined && occ.tone !== null && occ.tone !== "") {
+    if (!BIRTHDAY_TONES.includes(occ.tone)) return { status: 400, body: { error: "invalid_occasion", field: "tone" } };
+    tone = occ.tone;
+  }
+  let personalContext = null;
+  if (occ.personalContext !== undefined && occ.personalContext !== null && occ.personalContext !== "") {
+    if (typeof occ.personalContext !== "string" || occ.personalContext.trim().length > 200) {
+      return { status: 400, body: { error: "invalid_occasion", field: "personalContext" } };
+    }
+    personalContext = occ.personalContext.trim();
+  }
+  const attempt = typeof occ.attempt === "number" && Number.isFinite(occ.attempt) ? Math.max(0, Math.trunc(occ.attempt)) : 0;
+
+  const seen = new Set();
+  const valid = [];
+  for (let round = 0; round < 2; round += 1) {
+    let content;
+    try {
+      content = await callModel({
+        ...buildBirthdayDraftPrompt({ facts, tone, personalContext, attempt: attempt + round, language }),
+        maxTokens: WEDDING_DRAFT_MAX_TOKENS,
+        temperature: WEDDING_DRAFT_TEMPERATURE,
+        jsonObject: true,
+      });
+    } catch (e) {
+      log.error?.("[Occasion] birthday model call failed", e?.message || e);
+      continue;
+    }
+    let parsed = [];
+    try {
+      const p = JSON.parse(String(content || ""));
+      parsed = (Array.isArray(p) ? p : p?.drafts) || [];
+    } catch { parsed = []; }
+    for (const d of parsed.map((x) => String(x).trim()).filter(Boolean)) {
+      if (seen.has(d)) continue;
+      seen.add(d);
+      if (validateBirthdayDraft(d, facts, language)) valid.push(d);
+    }
+    if (valid.length >= 3) break;
+  }
+  if (valid.length < 2) {
+    log.error?.(`[Occasion] birthday draft generation failed: ${valid.length} valid after retry`);
+    return { status: 502, body: { error: "birthday_draft_failed" } };
   }
   return { status: 200, body: { drafts: valid.slice(0, 3) } };
 }

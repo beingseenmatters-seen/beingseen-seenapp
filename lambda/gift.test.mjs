@@ -450,7 +450,11 @@ test("occasion: createGift seals validated wedding facts; retrieve returns them 
 test("occasion: malformed wedding data is rejected clearly, never silently dropped", async () => {
   const db = makeFakeDb();
   const cases = [
-    [weddingOccasion({ type: "birthday" }), "type"],
+    // "birthday" is now a REAL Occasion type: the dispatcher routes it to the
+    // Birthday validator, which rejects these wedding-shaped facts on the
+    // first missing Birthday field. Still fail-closed, more precisely.
+    [weddingOccasion({ type: "birthday" }), "birthdayPersonName"],
+    [weddingOccasion({ type: "graduation" }), "type"],
     // v2 is the CULTURAL contract version: still refused here, because it
     // must declare a culture. An unsupported version is refused as before.
     [weddingOccasion({ version: 2 }), "culture"],
