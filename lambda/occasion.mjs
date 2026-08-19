@@ -376,8 +376,15 @@ export function validateBirthdayFacts(raw) {
     if (!formattedAddress) return { ok: false, field: "venue.formattedAddress" };
   }
 
-  const inviter = cleanString(raw.inviter, BIRTHDAY_LIMITS.inviter);
-  if (!inviter) return { ok: false, field: "inviter" };
+  // Host is OPTIONAL (Founder §3): most birthday invitations come from the
+  // birthday person themself. Sealed null means "no separate host" — display
+  // falls back to the birthday person, and a "Hosted by" line only exists
+  // when a host was explicitly declared.
+  let inviter = null;
+  if (raw.inviter !== undefined && raw.inviter !== null && raw.inviter !== "") {
+    inviter = cleanString(raw.inviter, BIRTHDAY_LIMITS.inviter);
+    if (!inviter) return { ok: false, field: "inviter" };
+  }
   if (!BIRTHDAY_AUDIENCES.includes(raw.audienceType)) return { ok: false, field: "audienceType" };
 
   let eventTitle = null;
@@ -928,6 +935,7 @@ export function buildBirthdayDraftPrompt({ facts, tone, personalContext, attempt
   const en = language === "en";
   const dateDisplay = formatWeddingDate(facts.date, language);
   const toneKey = BIRTHDAY_TONES.includes(tone) ? tone : "warm";
+  const signoff = facts.inviter || facts.birthdayPersonName;
   const who = facts.eventTitle || (en ? `${facts.birthdayPersonName}'s birthday` : `${facts.birthdayPersonName}的生日`);
   const angleSets = en
     ? [
@@ -954,7 +962,7 @@ export function buildBirthdayDraftPrompt({ facts, tone, personalContext, attempt
         "Write the time as a natural clock time (\"7:00 PM\", \"seven in the evening\") — never 24-hour form.",
         "Invent NO fact not supplied: no address details, no schedule, no gifts, no dress code, no other guests' names.",
         "[LANGUAGE] Contemporary, natural English. A party invitation, warm and easy — not solemn, not corporate, no clichés.",
-        "[STRUCTURE] Each draft: a fitting opening, who and what is being celebrated, a clear invitation, date, time, place, and a natural sign-off from \"" + facts.inviter + "\".",
+        "[STRUCTURE] Each draft: a fitting opening, who and what is being celebrated, a clear invitation, date, time, place, and a natural sign-off from \"" + signoff + "\".",
         "[DIFFERENCE] The three drafts must genuinely differ per the assigned lines.",
         '[OUTPUT] Strictly one JSON object: {"drafts":["first","second","third"]} — nothing else. Use \\n for line breaks.',
       ].join("\n")
@@ -965,7 +973,7 @@ export function buildBirthdayDraftPrompt({ facts, tone, personalContext, attempt
         "时间直接用 24 小时制（如「19:00」）或自然中文说法（如「晚上七点」），不要混用。",
         "严禁编造未提供的事实：具体环节、着装、礼物要求、其他宾客。",
         "【语言】当代自然的中文，轻松有温度——这是聚会邀请，不是典礼请柬，不要陈词滥调。",
-        `【结构】每篇都要有开场、说清为谁庆祝什么、明确的邀请、日期时间地点，并以「${facts.inviter}」自然落款。`,
+        `【结构】每篇都要有开场、说清为谁庆祝什么、明确的邀请、日期时间地点，并以「${signoff}」自然落款。`,
         "【差异】三篇按指定主线真正不同。",
         '【输出】严格输出 {"drafts":["第一篇","第二篇","第三篇"]}，不要其它内容。换行用 \\n。',
       ].join("\n");
@@ -979,7 +987,7 @@ export function buildBirthdayDraftPrompt({ facts, tone, personalContext, attempt
         `Time: ${formatWeddingTime(facts.time.start, "en")}${facts.time.end ? ` – ${formatWeddingTime(facts.time.end, "en")}` : ""}`,
         `Venue: ${facts.venue.displayName} (must appear exactly)`,
         ...(facts.venue.formattedAddress ? [`Address: ${facts.venue.formattedAddress} (optional to include)`] : []),
-        `Host / sign-off: ${facts.inviter}`,
+        `Host / sign-off: ${signoff}`,
       ]
     : [
         "【生日事实】",
@@ -989,7 +997,7 @@ export function buildBirthdayDraftPrompt({ facts, tone, personalContext, attempt
         `时间：${facts.time.start}${facts.time.end ? `–${facts.time.end}` : ""}`,
         `地点：${facts.venue.displayName}（须原样出现）`,
         ...(facts.venue.formattedAddress ? [`地址：${facts.venue.formattedAddress}（可自然带入）`] : []),
-        `落款：${facts.inviter}`,
+        `落款：${signoff}`,
       ];
   const user = [
     ...factsLines,

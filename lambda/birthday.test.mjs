@@ -239,3 +239,111 @@ test("fail-closed: unknown birthday version and unknown types are refused at the
   assert.equal(validateOccasion({ type: "graduation", version: 1, ...bFacts() }).field, "type");
   assert.equal(validateOccasion(bOccasion()).ok, true);
 });
+
+// --- Founder §3: host is optional, falls back to the birthday person ---------
+
+test("host is optional: absent inviter seals as null and never fails the contract", () => {
+  const { inviter: _omit, ...noHost } = bFacts();
+  const res = validateBirthdayFacts(noHost);
+  assert.equal(res.ok, true);
+  assert.equal(res.facts.inviter, null);
+  // An explicit host is preserved verbatim.
+  assert.equal(validateBirthdayFacts(bFacts({ inviter: "Sarah & David" })).facts.inviter, "Sarah & David");
+  // A host that is nothing but whitespace is a malformed declaration, not
+  // "absent" — same rule as every other optional string in the contract.
+  const ws = validateBirthdayFacts(bFacts({ inviter: "   " }));
+  assert.equal(ws.ok, false);
+  assert.equal(ws.field, "inviter");
+});
+
+test("draft sign-off falls back to the birthday person when no host is declared", () => {
+  const { inviter: _omit, ...noHost } = bFacts();
+  const facts = validateBirthdayFacts(noHost).facts;
+  for (const lang of ["en", "zh"]) {
+    const prompt = buildBirthdayDraftPrompt({ facts, tone: "warm", language: lang, attempt: 0 });
+    const text = prompt.system + "\n" + prompt.user;
+    assert.ok(text.includes("Emma"), `${lang}: sign-off must fall back to the birthday person`);
+    assert.equal(text.includes("null"), false, `${lang}: null must never leak into a prompt`);
+  }
+  // With a host, the host signs.
+  const hosted = validateBirthdayFacts(bFacts({ inviter: "Sarah" })).facts;
+  const p = buildBirthdayDraftPrompt({ facts: hosted, tone: "warm", language: "en", attempt: 0 });
+  assert.ok((p.system + p.user).includes("Sarah"));
+});
+
+// --- Founder §6: adults + children RSVP, drop-off parties are valid ----------
+
+test("0 adults + N children is a valid acceptance (drop-off children's party)", async () => {
+  const db = makeFakeDb();
+  const inv = await createGift({
+    db, decoded: A, share: fakeShare(),
+    body: { message: "party!", occasion: bOccasion(), eventCreate: true,
+            recipientLabel: "The Lees", accessMode: "direct" },
+  });
+  const r = await rsvpGift({ db, body: { token: inv.body.token, key: "", status: "accepted", adultCount: 0, childCount: 3 } });
+  assert.equal(r.status, 200);
+  const detail = await eventDetail({ db, decoded: A, body: { eventId: inv.body.eventId }, giftCollection: GIFT_COLLECTION, sharedResponses: sharedResponsesForEvent });
+  assert.equal(detail.body.aggregate.adultTotal, 0);
+  assert.equal(detail.body.aggregate.childTotal, 3);
+  assert.equal(detail.body.aggregate.attendingTotal, 3);
+});
+
+test("0 adults + 0 children is refused after acceptance; decline zeroes the contribution", async () => {
+  const db = makeFakeDb();
+  const inv = await createGift({
+    db, decoded: A, share: fakeShare(),
+    body: { message: "party!", occasion: bOccasion(), eventCreate: true,
+            recipientLabel: "The Lees", accessMode: "direct" },
+  });
+  const zero = await rsvpGift({ db, body: { token: inv.body.token, key: "", status: "accepted", adultCount: 0, childCount: 0 } });
+  assert.equal(zero.status, 400);
+  assert.equal(zero.body.error, "invalid_rsvp_counts");
+
+  await rsvpGift({ db, body: { token: inv.body.token, key: "", status: "accepted", adultCount: 1, childCount: 2 } });
+  await rsvpGift({ db, body: { token: inv.body.token, key: "", status: "declined" } });
+  const detail = await eventDetail({ db, decoded: A, body: { eventId: inv.body.eventId }, giftCollection: GIFT_COLLECTION, sharedResponses: sharedResponsesForEvent });
+  assert.equal(detail.body.aggregate.attendingTotal, 0);      // decline removed it
+});
+
+// --- Founder §9: an update REPLACES its previous contribution ----------------
+
+test("managed update replaces: 1A+2C then 0A+2C moves the adult total by -1", async () => {
+  const db = makeFakeDb();
+  const inv = await createGift({
+    db, decoded: A, share: fakeShare(),
+    body: { message: "party!", occasion: bOccasion(), eventCreate: true,
+            recipientLabel: "The Lees", accessMode: "direct" },
+  });
+  await rsvpGift({ db, body: { token: inv.body.token, key: "", status: "accepted", adultCount: 1, childCount: 2 } });
+  await rsvpGift({ db, body: { token: inv.body.token, key: "", status: "accepted", adultCount: 0, childCount: 2 } });
+  const detail = await eventDetail({ db, decoded: A, body: { eventId: inv.body.eventId }, giftCollection: GIFT_COLLECTION, sharedResponses: sharedResponsesForEvent });
+  assert.equal(detail.body.aggregate.adultTotal, 0);          // replaced, not 1
+  assert.equal(detail.body.aggregate.childTotal, 2);          // not 4
+  assert.equal(detail.body.aggregate.acceptedGroups, 1);   // one household, once
+});
+
+test("shared scanner update replaces its own contribution; children combine across sources", async () => {
+  const db = makeFakeDb();
+  const shared = await createGift({
+    db, decoded: A, share: fakeShare(),
+    body: { message: "party!", occasion: bOccasion(), eventCreate: true,
+            recipientLabel: "Group chat", sharedDistribution: true, accessMode: "direct" },
+  });
+  const eventId = shared.body.eventId;
+  const managed = await createGift({
+    db, decoded: A, share: fakeShare(),
+    body: { message: "party!", occasion: bOccasion(), eventId, recipientLabel: "The Lees", accessMode: "direct" },
+  });
+  await rsvpGift({ db, body: { token: managed.body.token, key: "", status: "accepted", adultCount: 2, childCount: 1 } });
+
+  const first = await rsvpGift({ db, body: { token: shared.body.token, key: "", status: "accepted", adultCount: 1, childCount: 3 } });
+  const pt = first.body.participantToken;
+  assert.ok(pt, "shared scanner gets an anonymous identity");
+  await rsvpGift({ db, body: { token: shared.body.token, key: "", participantToken: pt, status: "accepted", adultCount: 1, childCount: 1 } });
+
+  const detail = await eventDetail({ db, decoded: A, body: { eventId }, giftCollection: GIFT_COLLECTION, sharedResponses: sharedResponsesForEvent });
+  assert.equal(detail.body.sharedAggregate.childTotal, 1);    // replaced, not 4
+  assert.equal(detail.body.aggregate.adultTotal, 3);          // 2 managed + 1 shared
+  assert.equal(detail.body.aggregate.childTotal, 2);          // 1 managed + 1 shared
+  assert.equal(detail.body.aggregate.attendingTotal, 5);
+});
