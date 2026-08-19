@@ -347,3 +347,29 @@ test("shared scanner update replaces its own contribution; children combine acro
   assert.equal(detail.body.aggregate.childTotal, 2);          // 1 managed + 1 shared
   assert.equal(detail.body.aggregate.attendingTotal, 5);
 });
+
+// --- Model-contract pin: json_object REQUIRES the word "JSON" in messages ----
+// Root cause of the founder's 帮我写 failure (2026-08-19 device QA): OpenAI
+// hard-rejects response_format json_object when no message contains the
+// literal word "JSON". The zh birthday prompt lacked it, so every zh
+// generation threw before the model ever wrote a draft. Pin ALL invitation
+// prompt builders in BOTH languages so no future Occasion repeats this.
+
+test('every draft prompt names JSON explicitly — the json_object API contract', async () => {
+  const { buildWeddingDraftPrompt } = await import('./occasion.mjs');
+  const bFactsFull = validateBirthdayFacts(bFacts()).facts;
+  const wFacts = {
+    couple: { partner1: "Emma", partner2: "James" }, date: "2026-11-20",
+    time: { start: "17:00" }, venue: { displayName: "The Garden House" },
+    inviter: "Emma & James", audienceType: "friends",
+  };
+  const prompts = [
+    ["birthday zh", buildBirthdayDraftPrompt({ facts: bFactsFull, tone: "warm", language: "zh", attempt: 0 })],
+    ["birthday en", buildBirthdayDraftPrompt({ facts: bFactsFull, tone: "warm", language: "en", attempt: 0 })],
+    ["wedding zh", buildWeddingDraftPrompt({ facts: wFacts, tone: "sincere", language: "zh", attempt: 0 })],
+    ["wedding en", buildWeddingDraftPrompt({ facts: { ...wFacts, culture: "western" }, tone: "sincere", language: "en", attempt: 0 })],
+  ];
+  for (const [name, p] of prompts) {
+    assert.ok(/json/i.test(`${p.system}\n${p.user}`), `${name} prompt must contain the word "JSON"`);
+  }
+});

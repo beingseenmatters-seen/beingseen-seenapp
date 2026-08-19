@@ -975,7 +975,7 @@ export function buildBirthdayDraftPrompt({ facts, tone, personalContext, attempt
         "【语言】当代自然的中文，轻松有温度——这是聚会邀请，不是典礼请柬，不要陈词滥调。",
         `【结构】每篇都要有开场、说清为谁庆祝什么、明确的邀请、日期时间地点，并以「${signoff}」自然落款。`,
         "【差异】三篇按指定主线真正不同。",
-        '【输出】严格输出 {"drafts":["第一篇","第二篇","第三篇"]}，不要其它内容。换行用 \\n。',
+        '【输出】严格输出一个 JSON 对象：{"drafts":["第一篇","第二篇","第三篇"]}，不要其它内容。换行用 \\n。',
       ].join("\n");
 
   const factsLines = en
