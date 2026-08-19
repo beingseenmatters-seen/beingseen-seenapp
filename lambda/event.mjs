@@ -21,7 +21,7 @@
  * response ever includes key material or sealed share credentials.
  */
 import crypto from "node:crypto";
-import { audiencesForEventType } from "./occasion.mjs";
+import { audiencesForEventType, variantKeysForEventType } from "./occasion.mjs";
 
 export const EVENT_COLLECTION = "events";
 export const EVENT_SCHEMA_VERSION = 1;
@@ -649,7 +649,7 @@ export async function saveVariant({ db, decoded, body, now = Date.now() }) {
   if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
   const owned = await loadOwnedEvent(db, decoded, body?.eventId);
   if (owned.err) return owned.err;
-  if (!audiencesForEventType(owned.ev.type).includes(body?.relationshipType)) {
+  if (!variantKeysForEventType(owned.ev.type).includes(body?.relationshipType)) {
     return { status: 400, body: { error: "invalid_relationship" } };
   }
   const message = typeof body?.message === "string" ? body.message.trim() : "";

@@ -80,6 +80,21 @@ export const BIRTHDAY_AUDIENCES = ["family", "friends", "close_friends", "collea
 
 export const BIRTHDAY_TONES = ["warm", "playful", "casual", "heartfelt", "simple"];
 
+/**
+ * Expression-variant vocabulary for a Birthday Event (Founder: relationship
+ * variants, 2026-08-19): one reusable variant per relationship PLUS a
+ * "general" variant — the default wording, and the ONLY wording an anonymous
+ * shared-link audience ever receives. "general" is a variant/wording key, not
+ * a guest relationship: guests still validate against BIRTHDAY_AUDIENCES.
+ */
+export const BIRTHDAY_GENERAL_AUDIENCE = "general";
+export const BIRTHDAY_VARIANT_KEYS = [BIRTHDAY_GENERAL_AUDIENCE, ...BIRTHDAY_AUDIENCES];
+
+/** Variant (saved wording) vocabulary for an EVENT type. Wedding unchanged. */
+export function variantKeysForEventType(type) {
+  return type === OCCASION_TYPE_BIRTHDAY ? BIRTHDAY_VARIANT_KEYS : WEDDING_AUDIENCES;
+}
+
 /** Relationship vocabulary for an EVENT type — guests/variants validate here. */
 export function audiencesForEventType(type) {
   return type === OCCASION_TYPE_BIRTHDAY ? BIRTHDAY_AUDIENCES : WEDDING_AUDIENCES;
@@ -385,7 +400,9 @@ export function validateBirthdayFacts(raw) {
     inviter = cleanString(raw.inviter, BIRTHDAY_LIMITS.inviter);
     if (!inviter) return { ok: false, field: "inviter" };
   }
-  if (!BIRTHDAY_AUDIENCES.includes(raw.audienceType)) return { ok: false, field: "audienceType" };
+  // Sealed audienceType may be any VARIANT key: a Direct Share seals the
+  // "general" wording for its anonymous audience (Founder §2/§10).
+  if (!BIRTHDAY_VARIANT_KEYS.includes(raw.audienceType)) return { ok: false, field: "audienceType" };
 
   let eventTitle = null;
   if (raw.eventTitle !== undefined && raw.eventTitle !== null && raw.eventTitle !== "") {
@@ -917,6 +934,7 @@ const BIRTHDAY_TONE_GUIDANCE_ZH = {
   simple: "简洁——短短几句，清楚友好，不啰嗦。",
 };
 const BIRTHDAY_AUDIENCE_GUIDANCE_EN = {
+  general: "Everyone invited — warm and welcoming to any guest; no inside references, no assumed closeness.",
   family: "Family — close and unguarded; they know the birthday person well.",
   friends: "Friends — natural and warm, glad to share the day.",
   close_friends: "Closest friends — personal, room for in-jokes and shared history.",
@@ -924,6 +942,7 @@ const BIRTHDAY_AUDIENCE_GUIDANCE_EN = {
   classmates: "Classmates — familiar and fun, the tone of a group that grew up together.",
 };
 const BIRTHDAY_AUDIENCE_GUIDANCE_ZH = {
+  general: "所有来宾——对任何人都亲切合适，不预设关系，不用内部梗。",
   family: "家人——亲近自然，不用客套。",
   friends: "朋友——自然温暖，高兴地邀请对方来一起庆祝。",
   close_friends: "挚友——更私人，可以带共同回忆和玩笑。",

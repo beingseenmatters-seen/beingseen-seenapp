@@ -373,3 +373,82 @@ test('every draft prompt names JSON explicitly — the json_object API contract'
     assert.ok(/json/i.test(`${p.system}\n${p.user}`), `${name} prompt must contain the word "JSON"`);
   }
 });
+
+// --- Relationship-specific expression variants (Founder, 2026-08-19) ---------
+
+test("one Birthday Event carries several relationship variants plus General; matching guests get their wording", async () => {
+  const db = makeFakeDb();
+  const ev = await createEvent({ db, decoded: A, body: { occasion: bOccasion() }, validateOccasion });
+  const eventId = ev.body.eventId;
+
+  // General + two relationship variants, one saved call each (Event × relationship).
+  for (const [rel, msg] of [
+    ["general", "大家来庆祝Emma的生日吧 2026年11月20日 The Garden House"],
+    ["classmates", "同学们！Emma的生日 2026年11月20日 The Garden House 老地方见"],
+    ["family", "家人们，Emma的生日 2026年11月20日 The Garden House 一起来"],
+  ]) {
+    const r = await saveVariant({ db, decoded: A, body: { eventId, relationshipType: rel, message: msg }, giftCollection: GIFT_COLLECTION });
+    assert.equal(r.status, 200, `${rel} variant must save`);
+  }
+
+  const mk = (label, rel) => upsertGuest({ db, decoded: A, body: { eventId, label, relationshipType: rel }, giftCollection: GIFT_COLLECTION });
+  const amy = await mk("Amy", "classmates");
+  const smiths = await mk("The Smith Family", "family");
+  const george = await mk("George", "friends");          // NO friends variant saved
+
+  const dist = await distributeInvitations({
+    db, decoded: A, share: fakeShare(), giftCollection: GIFT_COLLECTION,
+    body: { eventId, guestIds: [amy.body.guestId, smiths.body.guestId, george.body.guestId] },
+  });
+  assert.deepEqual(dist.body.results.map((r) => r.status), ["created", "created", "created"]);
+
+  const messageOf = async (giftId) => (await db.collection(GIFT_COLLECTION).doc(giftId).get()).data().message;
+  assert.match(await messageOf(dist.body.results[0].giftId), /同学们/);        // classmates variant
+  assert.match(await messageOf(dist.body.results[1].giftId), /家人们/);        // family variant
+  assert.match(await messageOf(dist.body.results[2].giftId), /大家来庆祝/);    // General fallback
+  // The sealed audience stays the guest's REAL relationship even on fallback.
+  const georgeRec = (await db.collection(GIFT_COLLECTION).doc(dist.body.results[2].giftId).get()).data();
+  assert.equal(georgeRec.occasion.audienceType, "friends");
+});
+
+test("a guest with neither a relationship variant nor General still fails loudly", async () => {
+  const db = makeFakeDb();
+  const ev = await createEvent({ db, decoded: A, body: { occasion: bOccasion() }, validateOccasion });
+  const g = await upsertGuest({ db, decoded: A, body: { eventId: ev.body.eventId, label: "Amy", relationshipType: "classmates" }, giftCollection: GIFT_COLLECTION });
+  const dist = await distributeInvitations({
+    db, decoded: A, share: fakeShare(), giftCollection: GIFT_COLLECTION,
+    body: { eventId: ev.body.eventId, guestIds: [g.body.guestId] },
+  });
+  assert.equal(dist.body.results[0].status, "failed");
+  assert.equal(dist.body.results[0].error, "missing_variant");
+});
+
+test("Direct Share seals the General wording with audienceType general", async () => {
+  const db = makeFakeDb();
+  const res = await createGift({
+    db, decoded: A, share: fakeShare(),
+    body: { message: "大家来庆祝！", occasion: bOccasion({ audienceType: "general" }),
+            eventCreate: true, recipientLabel: "群聊", sharedDistribution: true, accessMode: "direct" },
+  });
+  assert.equal(res.status, 200);
+  const rec = (await db.collection(GIFT_COLLECTION).doc(res.body.giftId).get()).data();
+  assert.equal(rec.occasion.audienceType, "general");
+});
+
+test("general is a WORDING key, never a guest relationship — and Wedding is untouched", async () => {
+  const db = makeFakeDb();
+  const ev = await createEvent({ db, decoded: A, body: { occasion: bOccasion() }, validateOccasion });
+  // No "general" guest can exist.
+  const g = await upsertGuest({ db, decoded: A, body: { eventId: ev.body.eventId, label: "X", relationshipType: "general" }, giftCollection: GIFT_COLLECTION });
+  assert.equal(g.status, 400);
+  // Wedding variants refuse "general" (strict per-relationship contract) and
+  // wedding drafts refuse it as an audience.
+  const { validateWeddingFacts, variantKeysForEventType, BIRTHDAY_VARIANT_KEYS } = await import("./occasion.mjs");
+  assert.ok(!variantKeysForEventType("wedding").includes("general"));
+  assert.ok(BIRTHDAY_VARIANT_KEYS.includes("general"));
+  assert.equal(validateWeddingFacts({ couple: { partner1: "A", partner2: "B" }, date: "2026-11-20",
+    time: { start: "17:00" }, venue: { displayName: "V" }, inviter: "A", audienceType: "general" }).ok, false);
+  // Distribution never touches a model: batch cost is createGift per row, zero drafts.
+  const { readFileSync } = await import("node:fs");
+  assert.ok(!/callModel|ExpressModel|openai/i.test(readFileSync(new URL("./distribute.mjs", import.meta.url), "utf-8")));
+});
