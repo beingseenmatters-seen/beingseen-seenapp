@@ -293,3 +293,87 @@ test("a MANAGED household still answers on its own record, untouched", async () 
   assert.equal(opened.body.rsvpAdultCount, 2);
   assert.equal(opened.body.sharedResponse, null);
 });
+
+
+// --- Access-control hardening (closure-audit finding, 2026-08-19) -----------
+
+/**
+ * The invariant: EVERY write through /gift/rsvp proves the same credential
+ * retrieve demands. The per-scanner delegation used to run before the
+ * heart_key check, so a 私密 direct-share link accepted answers from anyone
+ * holding the token alone.
+ */
+async function heartKeySharedInvitation(db) {
+  const res = await createGift({
+    db, decoded: A, share: fakeShare(),
+    body: { message: "Join us", occasion: FACTS, eventCreate: true,
+            recipientLabel: "Our guests", sharedDistribution: true, accessMode: "heart_key" },
+  });
+  assert.equal(res.status, 200);
+  assert.ok(res.body.retrievalKey, "heart_key invitation carries a key");
+  return res.body;
+}
+
+test("a heart_key shared link refuses RSVP writes without the key", async () => {
+  const db = makeFakeDb();
+  const inv = await heartKeySharedInvitation(db);
+
+  const noKey = await rsvpGift({ db, body: { token: inv.token, key: "", status: "accepted", adultCount: 3, childCount: 0 } });
+  assert.equal(noKey.status, 401);
+  assert.equal(noKey.body.error, "invalid_key");
+
+  const wrongKey = await rsvpGift({ db, body: { token: inv.token, key: "000000", status: "accepted", adultCount: 3, childCount: 0 } });
+  assert.equal(wrongKey.status, 401);
+  assert.ok(typeof wrongKey.body.attemptsRemaining === "number", "wrong keys burn attempts, as on retrieve");
+
+  // Message-only writes are gated identically.
+  const msg = await rsvpGift({ db, body: { token: inv.token, key: "", recipientMessage: "spam" } });
+  assert.equal(msg.status, 401);
+
+  // Nothing was written anywhere.
+  assert.equal([...db._store.keys()].filter((k) => k.startsWith(SHARED_RSVP_COLLECTION)).length, 0);
+  const rec = [...db._store.values()].find((v) => v.sharedDistribution === true);
+  assert.equal(rec.rsvpStatus ?? null, null);
+});
+
+test("with the key proven, a heart_key shared link answers per scanner as usual", async () => {
+  const db = makeFakeDb();
+  const inv = await heartKeySharedInvitation(db);
+
+  // Burn one attempt first, then prove the key — stale counters must clear.
+  await rsvpGift({ db, body: { token: inv.token, key: "000000", status: "accepted", adultCount: 1, childCount: 0 } });
+  const ok = await rsvpGift({ db, body: { token: inv.token, key: inv.retrievalKey, status: "accepted", adultCount: 2, childCount: 0 } });
+  assert.equal(ok.status, 200);
+  assert.ok(ok.body.participantToken, "scanner identity minted");
+  assert.equal(ok.body.response.adultCount, 2);
+
+  const rec = [...db._store.values()].find((v) => v.sharedDistribution === true);
+  assert.equal(rec.failedAttempts, 0);            // counters cleared on proof
+  assert.equal(rec.rsvpStatus ?? null, null);      // the answer never touches the record
+  assert.equal([...db._store.keys()].filter((k) => k.startsWith(SHARED_RSVP_COLLECTION)).length, 1);
+});
+
+test("shared retrieve never surfaces legacy record-level RSVP fields", async () => {
+  const db = makeFakeDb();
+  const inv = await sharedInvitation(db);
+
+  // Simulate a record answered under the OLD model (before per-scanner).
+  const [key, rec] = [...db._store.entries()].find(([, v]) => v.sharedDistribution === true);
+  db._store.set(key, { ...rec, rsvpStatus: "accepted", rsvpAt: 123, rsvpAdultCount: 5, rsvpChildCount: 0 });
+
+  const opened = await retrieveGift({ db, body: { token: inv.token } });
+  assert.equal(opened.status, 200);
+  assert.equal(opened.body.rsvpStatus, null);       // a stranger's answer is nobody's answer
+  assert.equal(opened.body.rsvpAdultCount, null);
+  assert.equal(opened.body.rsvpAt, null);
+
+  // A MANAGED record still reports its own RSVP exactly as before.
+  const managed = await createGift({
+    db, decoded: A, share: fakeShare(),
+    body: { message: "hi", occasion: FACTS, eventCreate: true, recipientLabel: "The Smith Family", accessMode: "direct" },
+  });
+  await rsvpGift({ db, body: { token: managed.body.token, key: "", status: "accepted", adultCount: 2, childCount: 0 } });
+  const m = await retrieveGift({ db, body: { token: managed.body.token } });
+  assert.equal(m.body.rsvpStatus, "accepted");
+  assert.equal(m.body.rsvpAdultCount, 2);
+});

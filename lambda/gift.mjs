@@ -470,12 +470,15 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
         tone: rec.tone ?? null,
         createdAt: rec.createdAt,
         redeemedAt,
-        rsvpStatus: rec.rsvpStatus ?? null,
-        rsvpAt: rec.rsvpAt ?? null,
+        // A shared link's answers live on per-scanner responses; any RSVP
+        // fields still on the record are pre-per-scanner legacy and are
+        // meaningless to every scanner — never surfaced.
+        rsvpStatus: rec.sharedDistribution === true ? null : (rec.rsvpStatus ?? null),
+        rsvpAt: rec.sharedDistribution === true ? null : (rec.rsvpAt ?? null),
         // Household counts (4.5-A) — the recipient's OWN previous answer,
         // echoed so 更改答复 can prefill. Never other households' data.
-        rsvpAdultCount: rec.rsvpAdultCount ?? null,
-        rsvpChildCount: rec.rsvpChildCount ?? null,
+        rsvpAdultCount: rec.sharedDistribution === true ? null : (rec.rsvpAdultCount ?? null),
+        rsvpChildCount: rec.sharedDistribution === true ? null : (rec.rsvpChildCount ?? null),
         // The household's own answer, echoed so they can edit it. Never on a
         // shared link — that audience is not one household.
         rsvpDietary: rec.sharedDistribution === true ? null : (rec.rsvpDietary ?? null),
@@ -536,10 +539,13 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
       redeemedAt,
       // Invitation RSVP state, when one has been recorded (null otherwise) —
       // lets a reopened invitation show the answer already given.
-      rsvpStatus: rec.rsvpStatus ?? null,
-      rsvpAt: rec.rsvpAt ?? null,
-      rsvpAdultCount: rec.rsvpAdultCount ?? null,
-      rsvpChildCount: rec.rsvpChildCount ?? null,
+      // A shared link's answers live on per-scanner responses; any RSVP
+      // fields still on the record are pre-per-scanner legacy and are
+      // meaningless to every scanner — never surfaced.
+      rsvpStatus: rec.sharedDistribution === true ? null : (rec.rsvpStatus ?? null),
+      rsvpAt: rec.sharedDistribution === true ? null : (rec.rsvpAt ?? null),
+      rsvpAdultCount: rec.sharedDistribution === true ? null : (rec.rsvpAdultCount ?? null),
+      rsvpChildCount: rec.sharedDistribution === true ? null : (rec.rsvpChildCount ?? null),
       rsvpDietary: rec.sharedDistribution === true ? null : (rec.rsvpDietary ?? null),
       rsvpMessage: rec.sharedDistribution === true ? null : (rec.rsvpMessage ?? null),
       sharedResponse: await sharedResponseFor(db, rec, tokenHash, body),
@@ -684,16 +690,13 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
     return { status: 409, body: { error: "rsvp_not_applicable" } };
   }
 
-  // A direct-share link is ONE record forwarded to many people, so its answer
-  // cannot live here: the first scanner would answer for everyone. Delegate to
-  // the per-scanner response instead. Same door, different owner — which also
-  // means no new API Gateway route is needed for the feature.
-  if (rec.sharedDistribution === true) {
-    return submitSharedRsvpForRecord({ db, body, rec, tokenHash, now });
-  }
-
-  // Same access policy as retrieve: direct gifts RSVP on token possession
-  // alone; heart_key (and every legacy record) still proves the key.
+  // ACCESS CONTROL COMES FIRST (closure-audit finding, 2026-08-19). The
+  // per-scanner delegation for shared links used to sit ABOVE this block, so
+  // a heart_key direct-share invitation accepted RSVP writes from anyone
+  // holding the token alone — the key gated reading, but not answering.
+  // Every write through this door now proves the same credential retrieve
+  // demands: direct → token possession; heart_key → the key, with the same
+  // shared failed-attempt counters and cooldowns as retrieve.
   const rsvpMode = rec.accessMode === "direct" ? "direct" : "heart_key";
   if (rsvpMode === "heart_key") {
     if (key.length === 0) {
@@ -707,6 +710,21 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
       }
       return { status: 401, body: { error: "invalid_key", attemptsRemaining: fail.attemptsRemaining } };
     }
+  }
+
+  // Credential proven. A direct-share link is ONE record forwarded to many
+  // people, so its answer cannot live here: the first scanner would answer
+  // for everyone. Delegate to the per-scanner response — same door, different
+  // owner. The record itself only sheds any stale failure state; the answer
+  // never touches it.
+  if (rec.sharedDistribution === true) {
+    if (rsvpMode === "heart_key" && (rec.failedAttempts || rec.lockedUntil || rec.cooldownTier)) {
+      await ref.update({ failedAttempts: 0, lockedUntil: null, cooldownTier: 0 });
+    }
+    return submitSharedRsvpForRecord({ db, body, rec, tokenHash, now });
+  }
+
+  if (rsvpMode === "heart_key") {
     // Valid key — clear any stale failure state so a legitimate guest who
     // mistyped earlier is never cooled down after proving the key.
     await ref.update({
