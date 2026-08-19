@@ -137,7 +137,7 @@ export async function distributeInvitations({
     // relationship contract unchanged.
     const variant =
       variants[guest.relationshipType] ??
-      (ev.type === "birthday" ? variants.general : undefined);
+      (ev.type === "birthday" || ev.type === "business_event" ? variants.general : undefined);
     if (!variant?.message) { fail("missing_variant", { relationshipType: guest.relationshipType }); continue; }
 
     // Presentation for this row: reuse the source when one exists, else seed

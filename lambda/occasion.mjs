@@ -70,7 +70,9 @@ export const OCCASION_TYPE_BIRTHDAY = "birthday";
  * Event types the Invitation engine serves. onsite (Live Event) deliberately
  * keeps its own wedding-only gate — Birthday Invitation owns no on-site flow.
  */
-export const INVITATION_EVENT_TYPES = [OCCASION_TYPE_WEDDING, OCCASION_TYPE_BIRTHDAY];
+export const OCCASION_TYPE_BUSINESS = "business_event";
+
+export const INVITATION_EVENT_TYPES = [OCCASION_TYPE_WEDDING, OCCASION_TYPE_BIRTHDAY, OCCASION_TYPE_BUSINESS];
 
 /**
  * Birthday relationship vocabulary — ITS OWN list, not Wedding's. 长辈 and
@@ -92,12 +94,45 @@ export const BIRTHDAY_VARIANT_KEYS = [BIRTHDAY_GENERAL_AUDIENCE, ...BIRTHDAY_AUD
 
 /** Variant (saved wording) vocabulary for an EVENT type. Wedding unchanged. */
 export function variantKeysForEventType(type) {
-  return type === OCCASION_TYPE_BIRTHDAY ? BIRTHDAY_VARIANT_KEYS : WEDDING_AUDIENCES;
+  if (type === OCCASION_TYPE_BIRTHDAY) return BIRTHDAY_VARIANT_KEYS;
+  if (type === OCCASION_TYPE_BUSINESS) return BUSINESS_VARIANT_KEYS;
+  return WEDDING_AUDIENCES;
 }
+
+/**
+ * Business Event vocabulary — ITS OWN lists (Founder §12): no wedding family
+ * grammar, no birthday classmates. One authoritative vocabulary shared by AI
+ * variants, Guest List and distribution matching.
+ */
+export const BUSINESS_AUDIENCES = ["clients", "partners", "colleagues", "leadership", "suppliers", "media"];
+export const BUSINESS_TONES = ["formal", "warm", "festive", "concise"];
+export const BUSINESS_GENERAL_AUDIENCE = "general";
+export const BUSINESS_VARIANT_KEYS = [BUSINESS_GENERAL_AUDIENCE, ...BUSINESS_AUDIENCES];
+
+/**
+ * ONE Event type × many business contexts (Founder §1/§5): contexts change
+ * wording register, optional fields and capabilities through THIS registry —
+ * never through separate engines or scattered conditionals.
+ *   dressCode  — optional sealed fact accepted for the context
+ *   dietary    — the RSVP dietary field is offered to recipients
+ *   materials  — Event-level external Product Materials (product_launch only,
+ *                the first user of the future Event Resources primitive)
+ */
+export const BUSINESS_CONTEXTS = ["business_dinner", "grand_opening", "company_anniversary", "product_launch", "client_appreciation", "other"];
+export const BUSINESS_CONTEXT_CAPABILITIES = {
+  business_dinner:     { dressCode: true,  dietary: true,  materials: false },
+  grand_opening:       { dressCode: true,  dietary: false, materials: false },
+  company_anniversary: { dressCode: true,  dietary: true,  materials: false },
+  product_launch:      { dressCode: false, dietary: false, materials: true },
+  client_appreciation: { dressCode: false, dietary: true,  materials: false },
+  other:               { dressCode: true,  dietary: true,  materials: false },
+};
 
 /** Relationship vocabulary for an EVENT type — guests/variants validate here. */
 export function audiencesForEventType(type) {
-  return type === OCCASION_TYPE_BIRTHDAY ? BIRTHDAY_AUDIENCES : WEDDING_AUDIENCES;
+  if (type === OCCASION_TYPE_BIRTHDAY) return BIRTHDAY_AUDIENCES;
+  if (type === OCCASION_TYPE_BUSINESS) return BUSINESS_AUDIENCES;
+  return WEDDING_AUDIENCES;
 }
 
 /** Stable internal audience values — UI labels come later, never stored. */
@@ -424,6 +459,133 @@ export function validateBirthdayFacts(raw) {
   };
 }
 
+export const BUSINESS_OCCASION_VERSION = 1;
+const BUSINESS_LIMITS = { host: 80, eventTitle: 80, venueName: 80, address: 160, details: 300, dressCode: 40, materialTitle: 60, materialUrl: 300, materialDescription: 120 };
+export const BUSINESS_MATERIALS_MAX = 6;
+
+/**
+ * Product Materials — EXTERNAL links only (Founder §6/§7/§8). The smallest
+ * Event-level resource model: no upload, no storage, no mirroring, no viewer.
+ * HTTPS only; javascript:/data:/every non-web scheme refused. Gift.Seen never
+ * verifies the remote CONTENT — only that the link is a well-formed https URL.
+ * First user of the future Event Resources primitive (product_launch only).
+ */
+export function validateBusinessMaterials(raw) {
+  if (raw === undefined || raw === null) return { ok: true, materials: [] };
+  if (!Array.isArray(raw)) return { ok: false, field: "materials" };
+  if (raw.length > BUSINESS_MATERIALS_MAX) return { ok: false, field: "materials" };
+  const materials = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") return { ok: false, field: "materials" };
+    const title = cleanString(item.title, BUSINESS_LIMITS.materialTitle);
+    if (!title) return { ok: false, field: "materials.title" };
+    if (typeof item.url !== "string" || item.url.trim().length > BUSINESS_LIMITS.materialUrl) {
+      return { ok: false, field: "materials.url" };
+    }
+    let parsed;
+    try {
+      parsed = new URL(item.url.trim());
+    } catch {
+      return { ok: false, field: "materials.url" };
+    }
+    if (parsed.protocol !== "https:") return { ok: false, field: "materials.url" };
+    let description = null;
+    if (item.description !== undefined && item.description !== null && item.description !== "") {
+      description = cleanString(item.description, BUSINESS_LIMITS.materialDescription);
+      if (!description) return { ok: false, field: "materials.description" };
+    }
+    materials.push({ title, url: parsed.toString(), description });
+  }
+  return { ok: true, materials };
+}
+
+/**
+ * Business Event facts — the third Event contract (Founder §3). Deliberately
+ * business-shaped: a host ORGANISATION and a required event title; no couple,
+ * no culture, no lunar, no registry, no birthday person. Context is a sealed
+ * fact and gates optional fields through BUSINESS_CONTEXT_CAPABILITIES.
+ */
+export function validateBusinessFacts(raw) {
+  if (!raw || typeof raw !== "object") return { ok: false, field: "facts" };
+  const host = cleanString(raw.host, BUSINESS_LIMITS.host);
+  if (!host) return { ok: false, field: "host" };
+  const eventTitle = cleanString(raw.eventTitle, BUSINESS_LIMITS.eventTitle);
+  if (!eventTitle) return { ok: false, field: "eventTitle" };
+  if (!BUSINESS_CONTEXTS.includes(raw.context)) return { ok: false, field: "context" };
+  const caps = BUSINESS_CONTEXT_CAPABILITIES[raw.context];
+
+  if (!isValidIsoDate(raw.date)) return { ok: false, field: "date" };
+  const time = raw.time;
+  if (!time || typeof time !== "object") return { ok: false, field: "time" };
+  if (typeof time.start !== "string" || !TIME_RE.test(time.start)) return { ok: false, field: "time.start" };
+  let end = null;
+  if (time.end !== undefined && time.end !== null && time.end !== "") {
+    if (typeof time.end !== "string" || !TIME_RE.test(time.end)) return { ok: false, field: "time.end" };
+    end = time.end;
+  }
+
+  const venue = raw.venue;
+  if (!venue || typeof venue !== "object") return { ok: false, field: "venue" };
+  const displayName = cleanString(venue.displayName, BUSINESS_LIMITS.venueName);
+  if (!displayName) return { ok: false, field: "venue.displayName" };
+  let formattedAddress = null;
+  if (venue.formattedAddress !== undefined && venue.formattedAddress !== null && venue.formattedAddress !== "") {
+    formattedAddress = cleanString(venue.formattedAddress, BUSINESS_LIMITS.address);
+    if (!formattedAddress) return { ok: false, field: "venue.formattedAddress" };
+  }
+
+  let details = null;
+  if (raw.details !== undefined && raw.details !== null && raw.details !== "") {
+    details = cleanString(raw.details, BUSINESS_LIMITS.details);
+    if (!details) return { ok: false, field: "details" };
+  }
+  let dressCode = null;
+  if (raw.dressCode !== undefined && raw.dressCode !== null && raw.dressCode !== "") {
+    if (!caps.dressCode) return { ok: false, field: "dressCode" };
+    dressCode = cleanString(raw.dressCode, BUSINESS_LIMITS.dressCode);
+    if (!dressCode) return { ok: false, field: "dressCode" };
+  }
+
+  // Materials ride the capability map: only product_launch may declare them.
+  if (raw.materials !== undefined && raw.materials !== null && !caps.materials) {
+    if (Array.isArray(raw.materials) && raw.materials.length === 0) {
+      // an explicit empty list is harmless on any context
+    } else {
+      return { ok: false, field: "materials" };
+    }
+  }
+  const mats = validateBusinessMaterials(caps.materials ? raw.materials : []);
+  if (!mats.ok) return mats;
+
+  if (!BUSINESS_VARIANT_KEYS.includes(raw.audienceType)) return { ok: false, field: "audienceType" };
+
+  return {
+    ok: true,
+    facts: {
+      host,
+      eventTitle,
+      context: raw.context,
+      date: raw.date,
+      time: { start: time.start, end },
+      venue: { displayName, formattedAddress },
+      details,
+      dressCode,
+      materials: mats.materials,
+      audienceType: raw.audienceType,
+    },
+  };
+}
+
+export function validateBusinessOccasion(raw) {
+  if (!raw || typeof raw !== "object") return { ok: false, field: "occasion" };
+  if (raw.type !== OCCASION_TYPE_BUSINESS) return { ok: false, field: "type" };
+  if (raw.version !== BUSINESS_OCCASION_VERSION) return { ok: false, field: "version" };
+  const { type: _t, version: _v, ...facts } = raw;
+  const res = validateBusinessFacts(facts);
+  if (!res.ok) return res;
+  return { ok: true, occasion: { type: OCCASION_TYPE_BUSINESS, version: BUSINESS_OCCASION_VERSION, ...res.facts } };
+}
+
 export function validateBirthdayOccasion(raw) {
   if (!raw || typeof raw !== "object") return { ok: false, field: "occasion" };
   if (raw.type !== OCCASION_TYPE_BIRTHDAY) return { ok: false, field: "type" };
@@ -443,6 +605,7 @@ export function validateBirthdayOccasion(raw) {
 export function validateOccasion(raw) {
   if (!raw || typeof raw !== "object") return { ok: false, field: "occasion" };
   if (raw.type === OCCASION_TYPE_BIRTHDAY) return validateBirthdayOccasion(raw);
+  if (raw.type === OCCASION_TYPE_BUSINESS) return validateBusinessOccasion(raw);
   return validateWeddingOccasion(raw);
 }
 
@@ -1105,6 +1268,219 @@ export async function runBirthdayDraft({ decoded, body, callModel, log = console
   if (valid.length < 2) {
     log.error?.(`[Occasion] birthday draft generation failed: ${valid.length} valid after retry`);
     return { status: 502, body: { error: "birthday_draft_failed" } };
+  }
+  return { status: 200, body: { drafts: valid.slice(0, 3) } };
+}
+
+// --- Business Event generation (Founder §11) ---------------------------------
+
+const BUSINESS_CONTEXT_GUIDANCE_EN = {
+  business_dinner: "A business dinner — gracious and professional; the pleasure of the guest's company at a hosted dinner.",
+  grand_opening: "A grand opening — celebratory and confident; a milestone the host is proud to share.",
+  company_anniversary: "A company anniversary — grateful and celebratory; honouring the journey and the people who made it.",
+  product_launch: "A product launch — energetic and forward-looking; an unveiling the guest is invited to witness first.",
+  client_appreciation: "Client appreciation — warm, sincere thanks; the guest's partnership is the point of the evening.",
+  other: "A professional business occasion — courteous, clear and welcoming.",
+};
+const BUSINESS_CONTEXT_GUIDANCE_ZH = {
+  business_dinner: "商务晚宴——得体周到，诚挚邀请对方拨冗出席。",
+  grand_opening: "开业庆典——喜庆而自信，是主办方乐于分享的里程碑（开业大吉的语感，但不落俗套）。",
+  company_anniversary: "公司周年庆——感恩与庆祝并重，致敬一路同行的伙伴。",
+  product_launch: "新品发布会——蓬勃向前，诚邀对方共同见证发布时刻。",
+  client_appreciation: "客户答谢——真诚致谢，宾客的信任与支持是这场活动的意义。",
+  other: "正式的商务活动——礼貌、清晰、令人乐于赴约。",
+};
+const BUSINESS_AUDIENCE_GUIDANCE_EN = {
+  general: "All invited guests — professional and welcoming to anyone; no assumed familiarity.",
+  clients: "Clients — appreciative and courteous; their business relationship is valued.",
+  partners: "Partners — collegial and respectful; building on shared work.",
+  colleagues: "Colleagues — warm and inclusive; an internal invitation, still polished.",
+  leadership: "Leadership and executives — respectful and concise; their time is acknowledged.",
+  suppliers: "Suppliers — courteous and appreciative of the working relationship.",
+  media: "Media and press guests — informative and welcoming; clear on what they will see.",
+};
+const BUSINESS_AUDIENCE_GUIDANCE_ZH = {
+  general: "全体来宾——专业、周到，对任何人都合适，不预设关系。",
+  clients: "客户——致谢与敬重，珍视双方的合作。",
+  partners: "合作伙伴——同道之谊，敬重而不生分。",
+  colleagues: "同事——温暖亲和的内部邀请，但仍然得体。",
+  leadership: "领导与高管——尊重、简洁，体谅对方时间宝贵。",
+  suppliers: "供应商——礼貌周到，感谢长期协作。",
+  media: "媒体来宾——信息清楚、欢迎报道，说明活动看点。",
+};
+const BUSINESS_TONE_GUIDANCE_EN = {
+  formal: "Formal — polished business register, no stiffness.",
+  warm: "Warm — professional but personable.",
+  festive: "Festive — celebratory energy within a business register.",
+  concise: "Concise — a few clear, courteous lines; nothing wasted.",
+};
+const BUSINESS_TONE_GUIDANCE_ZH = {
+  formal: "正式——得体庄重，但不僵硬。",
+  warm: "温暖——专业之余有人情味。",
+  festive: "喜庆——在商务分寸内的庆祝气氛。",
+  concise: "简洁——几句话说清楚，礼貌而利落。",
+};
+
+export function buildBusinessDraftPrompt({ facts, tone, personalContext, attempt = 0, language = "zh" }) {
+  const en = language === "en";
+  const dateDisplay = formatWeddingDate(facts.date, language);
+  const toneKey = BUSINESS_TONES.includes(tone) ? tone : "formal";
+  const angleSets = en
+    ? [
+        "lead with the invitation itself — a clear, gracious ask to attend",
+        "lead with the occasion — why this event matters to the host",
+        "the shortest one — complete and courteous in a few lines",
+        "lead with the guest — why their presence in particular is valued",
+      ]
+    : [
+        "以邀请本身为主线——清楚、诚挚地相邀",
+        "以活动为主线——这场活动对主办方的意义",
+        "最短的一篇——几句话说清，仍然完整得体",
+        "以来宾为主线——为什么格外希望对方到场",
+      ];
+  const n = angleSets.length;
+  const off = ((Math.trunc(attempt) % n) + n) % n;
+  const angles = [0, 1, 2].map((i) => angleSets[(off + i) % n]);
+
+  // Product Materials are STRUCTURED resources and are deliberately absent
+  // from generation input — a link can never leak into sealed prose.
+  const system = en
+    ? [
+        "You are writing the body of a formal business event invitation — complete and sendable.",
+        "[FACTS — HIGHEST PRIORITY]",
+        `These must appear exactly: the host "${facts.host}", the date "${dateDisplay}", and the venue "${facts.venue.displayName}". The event title "${facts.eventTitle}" and the time should appear naturally.`,
+        "Write the time as a natural clock time (\"6:30 PM\") — never 24-hour form.",
+        "Invent NO fact not supplied: no agenda, no speakers, no gifts, no links, no other guests.",
+        "[LANGUAGE] Contemporary professional English — courteous and confident; no stiffness, no clichés, no marketing hype.",
+        "[STRUCTURE] Each draft: a fitting opening, the occasion, a clear invitation, date, time, place, and a natural closing from the host.",
+        "[DIFFERENCE] The three drafts must genuinely differ per the assigned lines.",
+        '[OUTPUT] Strictly one JSON object: {"drafts":["first","second","third"]} — nothing else. Use \\n for line breaks.',
+      ].join("\n")
+    : [
+        "你在替主办方写一份正式的中文商务活动邀请正文——完整、可直接送出。",
+        "【事实规则（最高优先级）】",
+        `以下内容必须原样出现：主办方「${facts.host}」、日期「${dateDisplay}」、地点「${facts.venue.displayName}」；活动名称「${facts.eventTitle}」与时间也应自然出现。`,
+        "时间用 24 小时制（如「18:30」）或自然中文说法（如「下午六点半」），不要混用。",
+        "严禁编造未提供的事实：议程、嘉宾、礼品、链接一概不写。",
+        "【语言】当代得体的商务中文——诚挚、自信、有分寸；不僵硬、不套话、不夸张营销。",
+        "【结构】每篇都要有开场、说明活动、明确的邀请、日期时间地点，并以主办方名义自然收尾。",
+        "【差异】三篇按指定主线真正不同。",
+        '【输出】严格输出一个 JSON 对象：{"drafts":["第一篇","第二篇","第三篇"]}，不要其它内容。换行用 \\n。',
+      ].join("\n");
+
+  const factsLines = en
+    ? [
+        "[EVENT FACTS]",
+        `Occasion: ${(BUSINESS_CONTEXT_GUIDANCE_EN[facts.context] || BUSINESS_CONTEXT_GUIDANCE_EN.other)}`,
+        `Event title: ${facts.eventTitle}`,
+        `Host: ${facts.host} (must appear exactly)`,
+        `Date: ${dateDisplay} (must appear exactly)`,
+        `Time: ${formatWeddingTime(facts.time.start, "en")}${facts.time.end ? ` – ${formatWeddingTime(facts.time.end, "en")}` : ""}`,
+        `Venue: ${facts.venue.displayName} (must appear exactly)`,
+        ...(facts.venue.formattedAddress ? [`Address: ${facts.venue.formattedAddress} (optional to include)`] : []),
+        ...(facts.details ? [`Details worth weaving in naturally: ${facts.details}`] : []),
+        ...(facts.dressCode ? [`Dress code: ${facts.dressCode} (mention briefly and naturally)`] : []),
+      ]
+    : [
+        "【活动事实】",
+        `场合：${(BUSINESS_CONTEXT_GUIDANCE_ZH[facts.context] || BUSINESS_CONTEXT_GUIDANCE_ZH.other)}`,
+        `活动名称：${facts.eventTitle}`,
+        `主办方：${facts.host}（须原样出现）`,
+        `日期：${dateDisplay}（须原样出现）`,
+        `时间：${facts.time.start}${facts.time.end ? `–${facts.time.end}` : ""}`,
+        `地点：${facts.venue.displayName}（须原样出现）`,
+        ...(facts.venue.formattedAddress ? [`地址：${facts.venue.formattedAddress}（可自然带入）`] : []),
+        ...(facts.details ? [`可自然融入的补充信息：${facts.details}`] : []),
+        ...(facts.dressCode ? [`着装：${facts.dressCode}（简短自然地提一句）`] : []),
+      ];
+  const user = [
+    ...factsLines,
+    "",
+    (en ? "[GUESTS] " : "【受邀对象】") + (en ? BUSINESS_AUDIENCE_GUIDANCE_EN : BUSINESS_AUDIENCE_GUIDANCE_ZH)[facts.audienceType],
+    (en ? "[TONE] " : "【语气】") + (en ? BUSINESS_TONE_GUIDANCE_EN : BUSINESS_TONE_GUIDANCE_ZH)[toneKey],
+    ...(personalContext
+      ? ["", (en ? `[FROM THE HOST] (context to weave in, never quote): "${personalContext}"` : `【主办方补充】（供你体会，不要原句照抄）：「${personalContext}」`)]
+      : []),
+    "",
+    en ? "[THE THREE LINES]" : "【三篇的主线】",
+    ...(en ? [`First: ${angles[0]}`, `Second: ${angles[1]}`, `Third: ${angles[2]}`] : [`第一篇：${angles[0]}`, `第二篇：${angles[1]}`, `第三篇：${angles[2]}`]),
+  ].join("\n");
+
+  return { system, user };
+}
+
+/** Every valid draft carries host + a date variant + venue verbatim. */
+export function validateBusinessDraft(text, facts, language = "zh") {
+  const t = typeof text === "string" ? text : "";
+  if (!t.trim()) return false;
+  return (
+    t.includes(facts.host) &&
+    weddingDateVariants(facts.date, language).some((v) => t.includes(v)) &&
+    t.includes(facts.venue.displayName)
+  );
+}
+
+/** POST /express/draft, occasion.type === "business_event". Same auth + retry shape. */
+export async function runBusinessDraft({ decoded, body, callModel, log = console }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  if (typeof body?.situation === "string" && body.situation.trim()) {
+    return { status: 400, body: { error: "invalid_request" } };
+  }
+  const language = body?.language === "en" ? "en" : body?.language === "zh" || body?.language === undefined || body?.language === null || body?.language === "" ? "zh" : null;
+  if (!language) return { status: 400, body: { error: "occasion_language_unsupported" } };
+
+  const occ = body?.occasion;
+  if (!occ || typeof occ !== "object") return { status: 400, body: { error: "invalid_occasion", field: "occasion" } };
+  if (occ.type !== OCCASION_TYPE_BUSINESS) return { status: 400, body: { error: "invalid_occasion", field: "type" } };
+  if (occ.version !== BUSINESS_OCCASION_VERSION) return { status: 400, body: { error: "invalid_occasion", field: "version" } };
+  const factsRes = validateBusinessFacts(occ.facts);
+  if (!factsRes.ok) return { status: 400, body: { error: "invalid_occasion", field: factsRes.field } };
+  const facts = factsRes.facts;
+
+  let tone = "formal";
+  if (occ.tone !== undefined && occ.tone !== null && occ.tone !== "") {
+    if (!BUSINESS_TONES.includes(occ.tone)) return { status: 400, body: { error: "invalid_occasion", field: "tone" } };
+    tone = occ.tone;
+  }
+  let personalContext = null;
+  if (occ.personalContext !== undefined && occ.personalContext !== null && occ.personalContext !== "") {
+    if (typeof occ.personalContext !== "string" || occ.personalContext.trim().length > 200) {
+      return { status: 400, body: { error: "invalid_occasion", field: "personalContext" } };
+    }
+    personalContext = occ.personalContext.trim();
+  }
+  const attempt = typeof occ.attempt === "number" && Number.isFinite(occ.attempt) ? Math.max(0, Math.trunc(occ.attempt)) : 0;
+
+  const seen = new Set();
+  const valid = [];
+  for (let round = 0; round < 2; round += 1) {
+    let content;
+    try {
+      content = await callModel({
+        ...buildBusinessDraftPrompt({ facts, tone, personalContext, attempt: attempt + round, language }),
+        maxTokens: WEDDING_DRAFT_MAX_TOKENS,
+        temperature: WEDDING_DRAFT_TEMPERATURE,
+        jsonObject: true,
+      });
+    } catch (e) {
+      log.error?.("[Occasion] business model call failed", e?.message || e);
+      continue;
+    }
+    let parsed = [];
+    try {
+      const p = JSON.parse(String(content || ""));
+      parsed = (Array.isArray(p) ? p : p?.drafts) || [];
+    } catch { parsed = []; }
+    for (const d of parsed.map((x) => String(x).trim()).filter(Boolean)) {
+      if (seen.has(d)) continue;
+      seen.add(d);
+      if (validateBusinessDraft(d, facts, language)) valid.push(d);
+    }
+    if (valid.length >= 3) break;
+  }
+  if (valid.length < 2) {
+    log.error?.(`[Occasion] business draft generation failed: ${valid.length} valid after retry`);
+    return { status: 502, body: { error: "business_draft_failed" } };
   }
   return { status: 200, body: { drafts: valid.slice(0, 3) } };
 }

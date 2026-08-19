@@ -59,7 +59,7 @@ import { distributeInvitations } from "./distribute.mjs";
 import { validateOccasion } from "./occasion.mjs";
 import { makeKmsShareCrypto } from "./shareCrypto.mjs";
 import { sharedResponsesForEvent } from "./sharedRsvp.mjs";
-import { runWeddingDraft, runBirthdayDraft } from "./occasion.mjs";
+import { runWeddingDraft, runBirthdayDraft, runBusinessDraft } from "./occasion.mjs";
 import { uploadGiftMedia, makeS3MediaStore } from "./giftMedia.mjs";
 
 // Opening Media store — one private bucket, this Lambda as the only gateway.
@@ -1177,7 +1177,9 @@ export const handler = async (event) => {
       const result =
         body?.occasion?.type === "birthday"
           ? await runBirthdayDraft({ decoded, body, callModel: callExpressModel })
-          : await runWeddingDraft({ decoded, body, callModel: callExpressModel });
+          : body?.occasion?.type === "business_event"
+            ? await runBusinessDraft({ decoded, body, callModel: callExpressModel })
+            : await runWeddingDraft({ decoded, body, callModel: callExpressModel });
       return httpResponse(result.status, result.body);
     }
     return await handleExpressDraft(body);
