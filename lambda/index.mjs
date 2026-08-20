@@ -41,7 +41,7 @@ import {
   parseExtractionContent,
   toExtractResponsePayload,
 } from "./reflectModes.mjs";
-import { createGift, retrieveGift, revokeGift, rsvpGift, GIFT_COLLECTION, GIFT_PUBLIC_BASE_URL } from "./gift.mjs";
+import { createGift, retrieveGift, revokeGift, setGiftHidden, rsvpGift, GIFT_COLLECTION, GIFT_PUBLIC_BASE_URL } from "./gift.mjs";
 import { senderLibrary, eventDetail, recoverShare, createEvent, upsertGuest, removeGuest, saveVariant } from "./event.mjs";
 import {
   createOnsite,
@@ -1032,6 +1032,11 @@ export const handler = async (event) => {
       body,
       giftCollection: GIFT_COLLECTION,
     });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/sender/gift/hidden") {
+    const decoded = await verifyAuthToken(event);
+    const result = await setGiftHidden({ db: admin.firestore(), decoded, body });
     return httpResponse(result.status, result.body);
   }
   if (path === "/gift/revoke") {

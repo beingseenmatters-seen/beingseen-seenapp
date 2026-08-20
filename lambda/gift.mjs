@@ -769,3 +769,38 @@ export async function revokeGift({ db, decoded, body, media = null }) {
   }
   return { status: 200, body: { ok: true } };
 }
+
+/**
+ * POST /sender/gift/hidden — sender-only Library VISIBILITY, nothing else.
+ *
+ * `hidden` is operational sender-owned metadata on the gift record — the same
+ * doc that already carries `revoked`, but a DIFFERENT and INDEPENDENT field.
+ * It is deliberately NOT access state:
+ *   · the recipient link/QR stays fully valid (retrieve never reads `hidden`);
+ *   · the sealed content, token, presentation and `expiresAt` are untouched;
+ *   · it never sets or clears `revoked` — the four states (active/revoked ×
+ *     visible/hidden) are all valid and orthogonal.
+ * Owner-authorized like revoke (senderUid must match). Idempotent. Absent
+ * `hidden` on any pre-existing gift means visible.
+ */
+export async function setGiftHidden({ db, decoded, body }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  const tokenHash =
+    typeof body?.giftId === "string" && body.giftId.trim()
+      ? body.giftId.trim()
+      : typeof body?.tokenHash === "string"
+        ? body.tokenHash.trim()
+        : "";
+  if (!tokenHash) return { status: 400, body: { error: "invalid_request" } };
+  if (typeof body?.hidden !== "boolean")
+    return { status: 400, body: { error: "invalid_request", field: "hidden" } };
+
+  const ref = db.collection(GIFT_COLLECTION).doc(tokenHash);
+  const snap = await ref.get();
+  if (!snap.exists) return { status: 404, body: { error: "not_found" } };
+  const rec = snap.data();
+  if (rec.senderUid !== decoded.uid) return { status: 403, body: { error: "forbidden" } };
+
+  await ref.update({ hidden: body.hidden });
+  return { status: 200, body: { ok: true, hidden: body.hidden } };
+}

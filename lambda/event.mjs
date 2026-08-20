@@ -263,6 +263,8 @@ function libraryRow(id, rec, now) {
         }
       : {}),
     shareRecoverable: Boolean(rec.shareTokenSealed),
+    // Sender-only Library visibility (independent of revoked). Absent → visible.
+    hidden: Boolean(rec.hidden),
   };
 }
 

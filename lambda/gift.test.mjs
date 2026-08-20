@@ -9,6 +9,7 @@ import {
   createGift,
   retrieveGift,
   revokeGift,
+  setGiftHidden,
   rsvpGift,
   GIFT_COLLECTION,
 } from "./gift.mjs";
@@ -1341,4 +1342,66 @@ test("a message needs a real token — isolation holds", async () => {
   assert.equal((await rsvpGift({ db, body: { token: "not-a-token", recipientMessage: "x" } })).status, 404);
   const bRec = await retrieveGift({ db, body: { token: b.body.token } });
   assert.equal(bRec.body.rsvpMessage ?? null, null);     // B never saw A's words
+});
+
+// --- Hide / Unhide: sender-only Library visibility (2026-08-20) --------------
+
+test("setGiftHidden toggles sender-only visibility without touching access state", async () => {
+  const db = makeFakeDb();
+  const res = await createGift({ db, decoded: AUTHOR, body: { message: "心意" }, now: 1000 });
+  const giftId = sha256Hex(res.body.token);
+  const rec0 = db._store.get(`${GIFT_COLLECTION}/${giftId}`);
+  // Default: absent hidden === visible; recipient can retrieve.
+  assert.equal(rec0.hidden, undefined);
+
+  // Hide.
+  const h = await setGiftHidden({ db, decoded: AUTHOR, body: { giftId, hidden: true } });
+  assert.equal(h.status, 200);
+  assert.equal(h.body.hidden, true);
+  const rec1 = db._store.get(`${GIFT_COLLECTION}/${giftId}`);
+  assert.equal(rec1.hidden, true);
+  // NOT revoked, expiresAt/content untouched.
+  assert.equal(rec1.revoked ?? false, false);
+  assert.equal(rec1.expiresAt, rec0.expiresAt);
+  assert.equal(rec1.message, rec0.message);
+  // Recipient link/QR STILL valid while hidden.
+  const r = await retrieveGift({ db, body: { token: res.body.token, key: res.body.retrievalKey }, now: 2000 });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.message, "心意");
+
+  // Unhide restores visibility, never touches revoked.
+  const u = await setGiftHidden({ db, decoded: AUTHOR, body: { giftId, hidden: false } });
+  assert.equal(u.body.hidden, false);
+  assert.equal(db._store.get(`${GIFT_COLLECTION}/${giftId}`).hidden, false);
+});
+
+test("revoked + hidden is a valid orthogonal state; unhide never un-revokes", async () => {
+  const db = makeFakeDb();
+  const res = await createGift({ db, decoded: AUTHOR, body: { message: "心意" }, now: 1000 });
+  const giftId = sha256Hex(res.body.token);
+  await revokeGift({ db, decoded: AUTHOR, body: { token: res.body.token } });
+  await setGiftHidden({ db, decoded: AUTHOR, body: { giftId, hidden: true } });
+  let rec = db._store.get(`${GIFT_COLLECTION}/${giftId}`);
+  assert.equal(rec.revoked, true);
+  assert.equal(rec.hidden, true);
+  // Unhide: still revoked (recipient never regains access), just visible again.
+  await setGiftHidden({ db, decoded: AUTHOR, body: { giftId, hidden: false } });
+  rec = db._store.get(`${GIFT_COLLECTION}/${giftId}`);
+  assert.equal(rec.revoked, true);
+  assert.equal(rec.hidden, false);
+  const r = await retrieveGift({ db, body: { token: res.body.token, key: res.body.retrievalKey }, now: 2000 });
+  assert.equal(r.status, 410); // revoked stays revoked
+});
+
+test("hide is owner-authorized: another sender cannot hide/unhide, and bad input is refused", async () => {
+  const db = makeFakeDb();
+  const res = await createGift({ db, decoded: AUTHOR, body: { message: "心意" }, now: 1000 });
+  const giftId = sha256Hex(res.body.token);
+  const OTHER = { uid: "someone-else" };
+  const forbidden = await setGiftHidden({ db, decoded: OTHER, body: { giftId, hidden: true } });
+  assert.equal(forbidden.status, 403);
+  assert.equal(db._store.get(`${GIFT_COLLECTION}/${giftId}`).hidden, undefined); // unchanged
+  assert.equal((await setGiftHidden({ db, decoded: null, body: { giftId, hidden: true } })).status, 401);
+  assert.equal((await setGiftHidden({ db, decoded: AUTHOR, body: { giftId } })).status, 400); // no boolean
+  assert.equal((await setGiftHidden({ db, decoded: AUTHOR, body: { giftId: "nope", hidden: true } })).status, 404);
 });
