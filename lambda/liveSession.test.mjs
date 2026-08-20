@@ -176,3 +176,30 @@ test("boundaries: no Gift object, no Heart Key, only lucky_draw, no Lucky Balls"
   const bad = await handleSenderLive({ db, decoded: OWNER, body: { action: "nope" } });
   assert.equal(bad.body.field, "action");
 });
+
+// --- Lucky Draw MODES: family with a shared winner engine (2026-08-20) --------
+
+test("Lucky Draw modes: lucky_number is the V1 mode; lucky_ball is reserved, not configurable", async () => {
+  const db = makeFakeDb();
+  const sess = await createStandalone(db);
+  const sid = sess.body.sessionId;
+  const cfg = (mode) => handleSenderLive({ db, decoded: OWNER, body: { action: "draw_configure", sessionId: sid, enabled: true, startAt: 1000, cutoffAt: 5000, prizes: { third: "3", second: "2", first: "1" }, ...(mode ? { mode } : {}) }, now: 500 });
+
+  // Default is lucky_number, stored on the draw doc.
+  assert.equal((await cfg()).status, 200);
+  assert.equal(db._store.get(`${DRAW_COLLECTION}/${sid}`).mode, "lucky_number");
+  assert.equal((await cfg("lucky_number")).status, 200);
+
+  // lucky_ball is reserved but NOT implemented → refused (no half-built game).
+  const ball = await cfg("lucky_ball");
+  assert.equal(ball.status, 400);
+  assert.equal(ball.body.error, "invalid_mode");
+  // An unknown mode is likewise refused.
+  assert.equal((await cfg("roulette")).body.error, "invalid_mode");
+
+  // The winner engine is mode-agnostic: it selects from the pool regardless,
+  // and never reads `mode` (proven by the unchanged drawWinner tests above).
+  const { LUCKY_DRAW_MODES, IMPLEMENTED_LUCKY_DRAW_MODES } = await import("./onsite.mjs");
+  assert.deepEqual([...LUCKY_DRAW_MODES], ["lucky_number", "lucky_ball"]);
+  assert.deepEqual([...IMPLEMENTED_LUCKY_DRAW_MODES], ["lucky_number"]);
+});

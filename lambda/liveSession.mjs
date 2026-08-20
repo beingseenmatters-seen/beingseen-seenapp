@@ -224,7 +224,7 @@ export async function liveSessionDetail({ db, decoded, body, now = Date.now() })
         createdAt: s.createdAt,
       },
       draw: draw && draw.expireAt && now > draw.expireAt ? null : draw
-        ? { status: draw.status, enabled: draw.enabled, startAt: draw.startAt, cutoffAt: draw.cutoffAt, prizes: draw.prizes, winners: draw.winners ?? [], entrantCount: draw.entrantCount ?? null }
+        ? { status: draw.status, enabled: draw.enabled, mode: draw.mode ?? "lucky_number", startAt: draw.startAt, cutoffAt: draw.cutoffAt, prizes: draw.prizes, winners: draw.winners ?? [], entrantCount: draw.entrantCount ?? null }
         : null,
     },
   };

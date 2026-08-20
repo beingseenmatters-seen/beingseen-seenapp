@@ -44,6 +44,20 @@ const ONSITE_MESSAGE_MAX_LEN = 2000; // couple's Wedding Day message — gift co
 const ONSITE_TTL_MS = 365 * 24 * 60 * 60 * 1000; // record parity with gifts
 const DRAW_STATUSES = ["draft", "open", "locked", "drawing", "completed"]; // AA-3
 
+/**
+ * Lucky Draw MODES (Founder, 2026-08-20): Lucky Draw is a FAMILY; the modes
+ * differ ONLY in (a) participant draw-identity allocation and (b) reveal
+ * ceremony. The winner engine (eligibility → frozen pool → server-authoritative
+ * random winner → transaction persistence → one-person-one-prize → idempotent
+ * recovery) is SHARED and mode-agnostic — drawWinner never reads `mode`.
+ *   lucky_number — one six-digit identity, instant reveal (V1, implemented).
+ *   lucky_ball   — six unique numbers 01–30, sequential ball reveal. RESERVED:
+ *                  presentation only, NOT a probability/number-matching lottery.
+ *                  Identity allocation + animation are NOT implemented here.
+ */
+export const LUCKY_DRAW_MODES = ["lucky_number", "lucky_ball"];
+export const IMPLEMENTED_LUCKY_DRAW_MODES = ["lucky_number"];
+
 // --- Small primitives (kept module-local; event.mjs-style independence) ----
 const sha256Hex = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 const mintToken = () => crypto.randomBytes(16).toString("base64url");
@@ -382,9 +396,20 @@ export async function configureDraw({ db, decoded, body, now = Date.now() }) {
     labels[tier] = v;
   }
 
+  // Mode is a reserved seam: default lucky_number; an unimplemented mode
+  // (lucky_ball) is refused so no half-built game can be configured. The
+  // winner engine is unaffected — mode only steers identity + reveal.
+  const mode = body?.mode === undefined || body?.mode === null || body?.mode === ""
+    ? "lucky_number"
+    : body.mode;
+  if (!IMPLEMENTED_LUCKY_DRAW_MODES.includes(mode)) {
+    return { status: 400, body: { error: "invalid_mode", field: "mode" } };
+  }
+
   const doc = {
     schemaVersion: 1,
     eventId,
+    mode,
     senderUid: decoded.uid,
     enabled: body.enabled,
     status: existing?.status ?? "draft",
