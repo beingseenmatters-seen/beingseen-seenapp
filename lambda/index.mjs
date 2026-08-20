@@ -55,6 +55,7 @@ import {
   listEntrants,
   drawWinner,
 } from "./onsite.mjs";
+import { handleSenderLive } from "./liveSession.mjs";
 import { distributeInvitations } from "./distribute.mjs";
 import { validateOccasion } from "./occasion.mjs";
 import { makeKmsShareCrypto } from "./shareCrypto.mjs";
@@ -1103,6 +1104,21 @@ export const handler = async (event) => {
     return httpResponse(result.status, result.body);
   }
   // ---- Wedding Day on-site (WD-1) — sender side: authenticated owner only.
+  // Live Interaction — ONE consolidated sender door (per-route gateway;
+  // create/list/detail/draw_* all dispatch on body.action). NEW gateway route.
+  if (path === "/sender/live") {
+    const decoded = await verifyAuthToken(event);
+    const result = await handleSenderLive({
+      db: admin.firestore(),
+      decoded,
+      body,
+      share: giftShareCrypto,
+      media: giftMediaStore,
+      giftCollection: GIFT_COLLECTION,
+      publicBaseUrl: GIFT_PUBLIC_BASE_URL,
+    });
+    return httpResponse(result.status, result.body);
+  }
   if (path === "/sender/onsite/create") {
     const decoded = await verifyAuthToken(event);
     const result = await createOnsite({

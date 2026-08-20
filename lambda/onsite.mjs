@@ -35,6 +35,7 @@ export const ONSITE_CONTEXT_ROLE = "on_site";
 export const GUESTBOOK_COLLECTION = "eventGuestbook";
 export const ENTRANT_COLLECTION = "eventDrawEntrants";
 export const DRAW_COLLECTION = "eventDraw";
+export const LIVE_SESSION_COLLECTION = "liveSessions";
 export const BLESSING_MAX_LEN = 200; // Founder AA-4, existing .length convention
 export const DISPLAY_NAME_MAX_LEN = 20;
 export const PRIZE_LABEL_MAX_LEN = 40;
@@ -93,6 +94,28 @@ async function ownedWeddingEvent({ db, decoded, eventId }) {
   if (ev.senderUid !== decoded.uid) return { res: { status: 403, body: { error: "forbidden" } } };
   if (ev.type !== "wedding") return { res: { status: 409, body: { error: "wedding_only" } } };
   return { ev };
+}
+
+/**
+ * Ownership for a DRAW SESSION (Live Interaction extraction, 2026-08-20).
+ * The draw engine is keyed by an opaque SESSION KEY (the `eventId` param name
+ * is kept for zero-churn — it equals the real Event id for a linked Wedding
+ * and an `ls_…` id for a standalone Live Session). Winner transaction and all
+ * draw docs are untouched: a Wedding-linked session uses sessionId===eventId,
+ * so existing records are already correctly keyed and no migration runs.
+ * Resolves a generic LiveSession doc first, then falls back to the LEGACY
+ * Wedding Event (exact prior behaviour). Draw fns only read `owned.res`.
+ */
+async function ownedDrawSession({ db, decoded, eventId }) {
+  if (!decoded?.uid) return { res: { status: 401, body: { error: "unauthorized" } } };
+  if (!eventId) return { res: { status: 400, body: { error: "invalid_request" } } };
+  const lsSnap = await db.collection(LIVE_SESSION_COLLECTION).doc(eventId).get();
+  if (lsSnap.exists) {
+    const ls = lsSnap.data();
+    if (ls.ownerUid !== decoded.uid) return { res: { status: 403, body: { error: "forbidden" } } };
+    return { session: ls };
+  }
+  return ownedWeddingEvent({ db, decoded, eventId });
 }
 
 /**
@@ -328,7 +351,7 @@ export async function listGuestbook({ db, decoded, body, now = Date.now() }) {
 /** POST /sender/onsite/draw/configure — data contract only; no selection. */
 export async function configureDraw({ db, decoded, body, now = Date.now() }) {
   const eventId = typeof body?.eventId === "string" ? body.eventId.trim() : "";
-  const owned = await ownedWeddingEvent({ db, decoded, eventId });
+  const owned = await ownedDrawSession({ db, decoded, eventId });
   if (owned.res) return owned.res;
 
   const ref = db.collection(DRAW_COLLECTION).doc(eventId);
@@ -393,7 +416,7 @@ export async function configureDraw({ db, decoded, body, now = Date.now() }) {
 /** POST /sender/onsite/draw/open — draft → open (idempotent on open). */
 export async function openDraw({ db, decoded, body, now = Date.now() }) {
   const eventId = typeof body?.eventId === "string" ? body.eventId.trim() : "";
-  const owned = await ownedWeddingEvent({ db, decoded, eventId });
+  const owned = await ownedDrawSession({ db, decoded, eventId });
   if (owned.res) return owned.res;
 
   const ref = db.collection(DRAW_COLLECTION).doc(eventId);
@@ -415,7 +438,7 @@ export async function openDraw({ db, decoded, body, now = Date.now() }) {
  */
 export async function lockDraw({ db, decoded, body, now = Date.now() }) {
   const eventId = typeof body?.eventId === "string" ? body.eventId.trim() : "";
-  const owned = await ownedWeddingEvent({ db, decoded, eventId });
+  const owned = await ownedDrawSession({ db, decoded, eventId });
   if (owned.res) return owned.res;
 
   const ref = db.collection(DRAW_COLLECTION).doc(eventId);
@@ -464,7 +487,7 @@ export async function lockDraw({ db, decoded, body, now = Date.now() }) {
  */
 export async function listEntrants({ db, decoded, body, now = Date.now() }) {
   const eventId = typeof body?.eventId === "string" ? body.eventId.trim() : "";
-  const owned = await ownedWeddingEvent({ db, decoded, eventId });
+  const owned = await ownedDrawSession({ db, decoded, eventId });
   if (owned.res) return owned.res;
 
   const ref = db.collection(DRAW_COLLECTION).doc(eventId);
@@ -530,7 +553,7 @@ export async function listEntrants({ db, decoded, body, now = Date.now() }) {
  */
 export async function drawWinner({ db, decoded, body, now = Date.now() }) {
   const eventId = typeof body?.eventId === "string" ? body.eventId.trim() : "";
-  const owned = await ownedWeddingEvent({ db, decoded, eventId });
+  const owned = await ownedDrawSession({ db, decoded, eventId });
   if (owned.res) return owned.res;
   const tier = body?.tier;
   if (![3, 2, 1].includes(tier)) return { status: 400, body: { error: "invalid_tier" } };
@@ -725,16 +748,22 @@ export async function claimLuckyCode({ db, body, giftCollection, now = Date.now(
     return { status: 409, body: { error: "draw_not_started", startAt: draw.startAt } };
   if (now >= draw.cutoffAt) return { status: 409, body: { error: "draw_closed" } };
 
-  // Eligibility begins only after ≥1 successful blessing (AA-4). Single-field
-  // query (participantIdHash) + in-code filters — no composite index.
-  const gbSnap = await db
-    .collection(GUESTBOOK_COLLECTION)
-    .where("participantIdHash", "==", participantIdHash)
-    .get();
-  const hasBlessing = (gbSnap.docs ?? [])
-    .map((d) => d.data())
-    .some((g) => g.eventId === rec.eventId && g.status === "active");
-  if (!hasBlessing) return { status: 403, body: { error: "not_eligible" } };
+  // Eligibility gate: a Wedding on_site session couples the lottery to the
+  // Guestbook (≥1 blessing first, AA-4). A standalone Live Interaction Lucky
+  // Draw has no Guestbook, so its participation record sets
+  // requireBlessing:false and eligibility is possession of the QR token alone.
+  // Existing Wedding records lack the field → default requires a blessing
+  // (behaviour preserved). Single-field query, no composite index.
+  if (rec.requireBlessing !== false) {
+    const gbSnap = await db
+      .collection(GUESTBOOK_COLLECTION)
+      .where("participantIdHash", "==", participantIdHash)
+      .get();
+    const hasBlessing = (gbSnap.docs ?? [])
+      .map((d) => d.data())
+      .some((g) => g.eventId === rec.eventId && g.status === "active");
+    if (!hasBlessing) return { status: 403, body: { error: "not_eligible" } };
+  }
 
   const pool = await eventEntrants({ db, eventId: rec.eventId, now });
   const luckyCode = pickUniqueLuckyCode(new Set(pool.map(({ e }) => e.luckyCode)));
