@@ -69,6 +69,7 @@ zip -r "$PACKAGE" \
   gift.mjs \
   event.mjs \
   onsite.mjs \
+  liveSession.mjs \
   distribute.mjs \
   shareCrypto.mjs \
   sharedRsvp.mjs \
