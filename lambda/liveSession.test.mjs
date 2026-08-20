@@ -203,3 +203,92 @@ test("Lucky Draw modes: lucky_number is the V1 mode; lucky_ball is reserved, not
   assert.deepEqual([...LUCKY_DRAW_MODES], ["lucky_number", "lucky_ball"]);
   assert.deepEqual([...IMPLEMENTED_LUCKY_DRAW_MODES], ["lucky_number"]);
 });
+
+// --- Multi-winner per tier (Founder, 2026-08-21) -----------------------------
+
+test("per-tier winner count: 3rd×3, 2nd×2, 1st×1 → six DISTINCT winners, atomic", async () => {
+  const db = makeFakeDb();
+  const sess = await createStandalone(db);
+  const sid = sess.body.sessionId;
+  // Configure with per-tier counts via {label, count}.
+  const cfg = await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_configure", sessionId: sid, enabled: true, startAt: 1000, cutoffAt: 5000,
+    prizes: { third: { label: "3rd", count: 3 }, second: { label: "2nd", count: 2 }, first: { label: "1st", count: 1 } } }, now: 500 });
+  assert.equal(cfg.status, 200);
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_open", sessionId: sid }, now: 1500 });
+  // Eight participants join.
+  for (let i = 0; i < 8; i += 1) {
+    await claimLuckyCode({ db, giftCollection: GIFT_COLLECTION, body: { token: sess.body.token, participantToken: `p${i}`.padEnd(20, 'x') }, now: 2000 });
+  }
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_lock", sessionId: sid }, now: 6000 });
+
+  // Draw 3rd → 3 winners in one atomic call.
+  const w3 = await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_winner", sessionId: sid, tier: 3 }, now: 6100 });
+  assert.equal(w3.body.luckyCodes.length, 3);
+  assert.equal(w3.body.status, "drawing");
+  // Draw 2nd → 2 winners.
+  const w2 = await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_winner", sessionId: sid, tier: 2 }, now: 6200 });
+  assert.equal(w2.body.luckyCodes.length, 2);
+  // Draw 1st → 1 winner, completes.
+  const w1 = await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_winner", sessionId: sid, tier: 1 }, now: 6300 });
+  assert.equal(w1.body.luckyCodes.length, 1);
+  assert.equal(w1.body.status, "completed");
+
+  // Six DISTINCT winners total; one participant one prize.
+  const allCodes = db._store.get(`${DRAW_COLLECTION}/${sid}`).winners.map((w) => w.luckyCode);
+  assert.equal(allCodes.length, 6);
+  assert.equal(new Set(allCodes).size, 6);
+  // Every won entrant has exactly one prizeTier.
+  const won = [...db._store.entries()].filter(([k, v]) => k.startsWith(`${ENTRANT_COLLECTION}/`) && v.status === "won");
+  assert.equal(won.length, 6);
+});
+
+test("multi-winner tier is ATOMIC + idempotent; insufficient pool refuses the whole tier", async () => {
+  const db = makeFakeDb();
+  const sess = await createStandalone(db);
+  const sid = sess.body.sessionId;
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_configure", sessionId: sid, enabled: true, startAt: 1000, cutoffAt: 5000,
+    prizes: { third: { label: "3rd", count: 3 }, second: { label: "2nd", count: 2 }, first: { label: "1st", count: 1 } } }, now: 500 });
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_open", sessionId: sid }, now: 1500 });
+  // Only TWO participants — fewer than the 3rd-prize count of 3.
+  for (let i = 0; i < 2; i += 1) {
+    await claimLuckyCode({ db, giftCollection: GIFT_COLLECTION, body: { token: sess.body.token, participantToken: `q${i}`.padEnd(20, 'x') }, now: 2000 });
+  }
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_lock", sessionId: sid }, now: 6000 });
+
+  // Refuses the WHOLE tier (never a partial draw) — no winners committed.
+  const bad = await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_winner", sessionId: sid, tier: 3 }, now: 6100 });
+  assert.equal(bad.body.error, "insufficient_entrants");
+  assert.equal(bad.body.need, 3);
+  assert.equal(bad.body.available, 2);
+  assert.equal(db._store.get(`${DRAW_COLLECTION}/${sid}`).winners.length, 0);
+});
+
+test("drawing a full tier twice returns the SAME committed set (refresh recovery)", async () => {
+  const db = makeFakeDb();
+  const sess = await createStandalone(db);
+  const sid = sess.body.sessionId;
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_configure", sessionId: sid, enabled: true, startAt: 1000, cutoffAt: 5000,
+    prizes: { third: { label: "3rd", count: 3 }, second: { label: "2nd", count: 2 }, first: { label: "1st", count: 1 } } }, now: 500 });
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_open", sessionId: sid }, now: 1500 });
+  for (let i = 0; i < 6; i += 1) await claimLuckyCode({ db, giftCollection: GIFT_COLLECTION, body: { token: sess.body.token, participantToken: `r${i}`.padEnd(20, 'x') }, now: 2000 });
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_lock", sessionId: sid }, now: 6000 });
+  const first = await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_winner", sessionId: sid, tier: 3 }, now: 6100 });
+  const again = await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_winner", sessionId: sid, tier: 3 }, now: 6150 });
+  assert.deepEqual(again.body.luckyCodes.sort(), first.body.luckyCodes.sort());
+  assert.equal(again.body.alreadyDrawn, true);
+  // Out-of-order still refused (can't draw 1st before 2nd).
+  assert.equal((await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_winner", sessionId: sid, tier: 1 }, now: 6200 })).body.error, "draw_out_of_order");
+});
+
+test("prize count validates 1..MAX; a string prize stays one winner (Wedding back-compat)", async () => {
+  const db = makeFakeDb();
+  const sess = await createStandalone(db);
+  const sid = sess.body.sessionId;
+  const cfg = (prizes) => handleSenderLive({ db, decoded: OWNER, body: { action: "draw_configure", sessionId: sid, enabled: true, startAt: 1000, cutoffAt: 5000, prizes }, now: 500 });
+  assert.equal((await cfg({ third: { label: "x", count: 0 }, second: { label: "y" }, first: { label: "z" } })).body.field, "third.count");
+  assert.equal((await cfg({ third: { label: "x", count: 999 }, second: { label: "y" }, first: { label: "z" } })).body.field, "third.count");
+  // String labels → count 1 each (legacy Wedding contract).
+  await cfg({ third: "3rd", second: "2nd", first: "1st" });
+  const prizes = db._store.get(`${DRAW_COLLECTION}/${sid}`).prizes;
+  assert.deepEqual(prizes.map((p) => p.count), [1, 1, 1]);
+});

@@ -43,6 +43,7 @@ export const LOTTERY_LINGER_MS = 3 * 60 * 60 * 1000; // Founder AA-2
 const ONSITE_MESSAGE_MAX_LEN = 2000; // couple's Wedding Day message — gift convention
 const ONSITE_TTL_MS = 365 * 24 * 60 * 60 * 1000; // record parity with gifts
 const DRAW_STATUSES = ["draft", "open", "locked", "drawing", "completed"]; // AA-3
+export const PRIZE_COUNT_MAX = 50; // max winners per tier
 
 /**
  * Lucky Draw MODES (Founder, 2026-08-20): Lucky Draw is a FAMILY; the modes
@@ -384,16 +385,28 @@ export async function configureDraw({ db, decoded, body, now = Date.now() }) {
   if (!(startAt < cutoffAt))
     return { status: 400, body: { error: "invalid_window", field: "order" } };
 
-  const labels = {};
+  // Per-tier winner COUNT (Founder, 2026-08-20): a tier can award N winners.
+  // Back-compat: a string prize is one winner (Wedding legacy). The new Lucky
+  // Number frontend sends { label, count }. Count validated 1..MAX; the pool
+  // sufficiency check happens authoritatively at DRAW time (pool may be empty
+  // at configure time).
+  const prizeDefs = [];
   for (const [field, tier] of [
     ["third", 3],
     ["second", 2],
     ["first", 1],
   ]) {
-    const v = typeof body?.prizes?.[field] === "string" ? body.prizes[field].trim() : "";
-    if (!v || v.length > PRIZE_LABEL_MAX_LEN)
+    const raw = body?.prizes?.[field];
+    const label = typeof raw === "string" ? raw.trim() : typeof raw?.label === "string" ? raw.label.trim() : "";
+    if (!label || label.length > PRIZE_LABEL_MAX_LEN)
       return { status: 400, body: { error: "invalid_prize", field } };
-    labels[tier] = v;
+    let count = 1;
+    if (raw && typeof raw === "object" && raw.count !== undefined) {
+      if (!Number.isInteger(raw.count) || raw.count < 1 || raw.count > PRIZE_COUNT_MAX)
+        return { status: 400, body: { error: "invalid_prize", field: `${field}.count` } };
+      count = raw.count;
+    }
+    prizeDefs.push({ tier, label, count });
   }
 
   // Mode is a reserved seam: default lucky_number; an unimplemented mode
@@ -415,12 +428,9 @@ export async function configureDraw({ db, decoded, body, now = Date.now() }) {
     status: existing?.status ?? "draft",
     startAt,
     cutoffAt,
-    // V1 fixed tiers ×1 each (Founder AA-7); Gift.Seen supplies no prizes.
-    prizes: [
-      { tier: 3, label: labels[3] },
-      { tier: 2, label: labels[2] },
-      { tier: 1, label: labels[1] },
-    ],
+    // Tiers 3→2→1, each awarding `count` winners (default 1; Gift.Seen supplies
+    // no prizes). One participant still wins at most one prize.
+    prizes: prizeDefs,
     winners: existing?.winners ?? [],
     entrantCount: existing?.entrantCount ?? null,
     batchId: existing?.batchId ?? null,
@@ -557,17 +567,19 @@ export async function listEntrants({ db, decoded, body, now = Date.now() }) {
  *
  * Fairness contract (Founder):
  *   · the server selects; the frontend reel is pure ceremony;
- *   · fixed order 三等奖(3) → 二等奖(2) → 一等奖(1), one winner each;
+ *   · fixed order 三等奖(3) → 二等奖(2) → 一等奖(1); each tier awards its
+ *     configured COUNT of winners (default 1) — the tier's winners are drawn
+ *     ATOMICALLY in one transaction, so a tier is all-or-nothing;
  *   · one participant may win at most one prize (status 'won' excludes);
  *   · a committed tier is FINAL — every replay/refresh/double-click/second
- *     device converges on the same committed luckyCode; no redraw exists;
- *   · fewer eligible entrants than remaining tiers → clear refusal
+ *     device converges on the SAME committed set; no redraw exists;
+ *   · fewer eligible entrants than the tier's count → clear refusal
  *     (insufficient_entrants), never a fabricated or duplicated winner.
  *
  * Implemented as the codebase's first Firestore transaction: reads of the
  * draw doc + eligible entrants and ALL writes happen inside runTransaction,
  * so concurrent host clicks serialize — the loser's retry re-reads state,
- * finds the tier committed, and returns the same winner. randomInt is
+ * finds the tier committed, and returns the same winners. randomInt is
  * crypto-grade server randomness; re-rolls across transaction retries are
  * harmless because exactly one attempt ever commits.
  *
@@ -595,20 +607,23 @@ export async function drawWinner({ db, decoded, body, now = Date.now() }) {
       if (!draw || draw.enabled !== true) return { status: 404, body: { error: "draw_not_found" } };
 
       const winners = Array.isArray(draw.winners) ? draw.winners : [];
-      const committed = winners.find((w) => w.tier === tier);
-      if (committed) {
-        // Replay/refresh/double-click/second device — the committed result.
+      const prizes = Array.isArray(draw.prizes) ? draw.prizes : [];
+      const count = prizes.find((p) => p.tier === tier)?.count ?? 1;
+      const committedForTier = winners.filter((w) => w.tier === tier);
+      if (committedForTier.length >= count) {
+        // Replay/refresh/double-click/second device — the SAME committed set.
+        const codes = committedForTier.map((w) => w.luckyCode);
         return {
           status: 200,
-          body: { ok: true, tier, luckyCode: committed.luckyCode, alreadyDrawn: true, status: draw.status },
+          body: { ok: true, tier, luckyCode: codes[0], luckyCodes: codes, alreadyDrawn: true, status: draw.status },
         };
       }
       if (!["locked", "drawing"].includes(draw.status)) {
         return { status: 409, body: { error: "draw_not_locked", status: draw.status } };
       }
       // Fixed ceremony order 3 → 2 → 1: the requested tier must be the next
-      // undrawn one (skipping ahead is refused, never silently reordered).
-      const drawnTiers = winners.map((w) => w.tier);
+      // one with no committed winners (skipping ahead is refused).
+      const drawnTiers = [...new Set(winners.map((w) => w.tier))];
       const nextTier = [3, 2, 1].find((t2) => !drawnTiers.includes(t2));
       if (tier !== nextTier) {
         return { status: 409, body: { error: "draw_out_of_order", nextTier } };
@@ -619,30 +634,41 @@ export async function drawWinner({ db, decoded, body, now = Date.now() }) {
         .map((d) => ({ id: d.id, e: d.data() }))
         .filter(({ e }) => readGate(e, now))
         .filter(({ e }) => e.status === "eligible");
-      if (eligible.length === 0) {
-        return { status: 409, body: { error: "insufficient_entrants" } };
+      // The tier is atomic: draw ALL `count` winners now, or refuse. Never a
+      // partial tier, never a duplicated participant.
+      if (eligible.length < count) {
+        return { status: 409, body: { error: "insufficient_entrants", need: count, available: eligible.length } };
       }
 
-      const pick = eligible[crypto.randomInt(eligible.length)];
-      const isLast = tier === 1;
+      // Pick `count` DISTINCT winners (crypto-grade, without replacement).
+      const pool = eligible.slice();
+      const picks = [];
+      for (let i = 0; i < count; i += 1) {
+        picks.push(pool.splice(crypto.randomInt(pool.length), 1)[0]);
+      }
+      const isLast = tier === 1; // 一等奖 is the final tier → completes the draw
       const completedAt = isLast ? now : (draw.completedAt ?? null);
-      tx.update(db.collection(ENTRANT_COLLECTION).doc(pick.id), {
-        status: "won",
-        prizeTier: tier,
-        wonAt: now,
-        ...(isLast ? { expireAt: now + LOTTERY_LINGER_MS } : {}),
-      });
+      for (const pk of picks) {
+        tx.update(db.collection(ENTRANT_COLLECTION).doc(pk.id), {
+          status: "won",
+          prizeTier: tier,
+          wonAt: now,
+          ...(isLast ? { expireAt: now + LOTTERY_LINGER_MS } : {}),
+        });
+      }
+      const newWinners = [...winners, ...picks.map((pk) => ({ tier, luckyCode: pk.e.luckyCode, at: now }))];
       tx.update(drawRef, {
-        winners: [...winners, { tier, luckyCode: pick.e.luckyCode, at: now }],
+        winners: newWinners,
         status: isLast ? "completed" : "drawing",
         completedAt,
         updatedAt: now,
         // AA-2 re-anchor on completion; until then the cutoff anchor stands.
         ...(isLast ? { expireAt: now + LOTTERY_LINGER_MS } : {}),
       });
+      const codes = picks.map((pk) => pk.e.luckyCode);
       return {
         status: 200,
-        body: { ok: true, tier, luckyCode: pick.e.luckyCode, alreadyDrawn: false, status: isLast ? "completed" : "drawing" },
+        body: { ok: true, tier, luckyCode: codes[0], luckyCodes: codes, alreadyDrawn: false, status: isLast ? "completed" : "drawing" },
       };
     });
   } catch (err) {
