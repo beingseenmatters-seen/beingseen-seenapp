@@ -1034,11 +1034,6 @@ export const handler = async (event) => {
     });
     return httpResponse(result.status, result.body);
   }
-  if (path === "/sender/gift/hidden") {
-    const decoded = await verifyAuthToken(event);
-    const result = await setGiftHidden({ db: admin.firestore(), decoded, body });
-    return httpResponse(result.status, result.body);
-  }
   if (path === "/gift/revoke") {
     const decoded = await verifyAuthToken(event);
     const result = await revokeGift({ db: admin.firestore(), decoded, body, media: giftMediaStore });
@@ -1163,6 +1158,13 @@ export const handler = async (event) => {
   }
   if (path === "/sender/gift/share") {
     const decoded = await verifyAuthToken(event);
+    // Sender-only Library visibility rides this existing sender-gift door via
+    // an explicit action (API Gateway is per-route; a new /sender/gift/hidden
+    // path 404s at the gateway — shared-RSVP lesson). Default: share recovery.
+    if (body?.action === "set_hidden") {
+      const hid = await setGiftHidden({ db: admin.firestore(), decoded, body });
+      return httpResponse(hid.status, hid.body);
+    }
     const result = await recoverShare({
       db: admin.firestore(),
       decoded,
