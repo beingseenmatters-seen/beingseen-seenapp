@@ -564,14 +564,14 @@ const pt = (n) => `quizplayer${n}`.padEnd(20, "z");
 
 test("Quiz create is a live_quiz LiveSession (no Event); pure scoring is deterministic, NO async/AI", () => {
   // scoreQuizAnswer is a PURE SYNC function — never a Promise, never a model call.
-  const fq = QUIZ_QUESTIONS.find((q) => q.id === "q_en_1"); // free_text piano
+  const fq = QUIZ_QUESTIONS.find((q) => q.id === "q_en_e1"); // free_text piano
   const r1 = scoreQuizAnswer(fq, "A Piano!", 30000, 60000);
   assert.equal(r1.correct, true);
   assert.equal(typeof r1.then, "undefined");                  // not a Promise
   assert.equal(scoreQuizAnswer(fq, "guitar", 30000, 60000).correct, false);
   // Normalization: case/punctuation/articles-as-configured, exact accepted match.
   assert.equal(normalizeQuizAnswer("The Piano.", "en"), "thepiano");
-  const mc = QUIZ_QUESTIONS.find((q) => q.id === "q_en_5"); // hexagon, correctIndex 1
+  const mc = QUIZ_QUESTIONS.find((q) => q.id === "q_en_e4"); // hexagon, correctIndex 1
   assert.equal(scoreQuizAnswer(mc, 1, 60000, 60000).correct, true);
   assert.equal(scoreQuizAnswer(mc, 0, 60000, 60000).correct, false);
 });
@@ -690,13 +690,13 @@ test("zh + en are the SAME engine; refresh recovers answer; deterministic tie; f
   const db = makeFakeDb();
   const sess = await createQuiz(db);
   const sid = sess.body.sessionId; const tok = sess.body.token;
-  await qConfig(db, sid, { locale: "zh", questionCount: 1, answerDurationSeconds: 60 });
-  const q0 = QUIZ_QUESTIONS.filter((q) => q.locale === "zh")[0]; // q_zh_1 free_text 水
+  await qConfig(db, sid, { locale: "zh", mix: { easy: 1, medium: 0, hard: 0 }, answerDurationSeconds: 60 });
+  const q0 = quizQuestionById(db._store.get(`${QUIZ_COLLECTION}/${sid}`).questionIds[0]); // q_zh_e1 free_text 水
   await qCtl(db, sid, "open", 0);
-  // Two correct at the SAME remaining → equal points → tie broken deterministically.
-  await gAnswer(db, tok, pt(1), q0.id, "水", 5000, "甲");
-  await gAnswer(db, tok, pt(2), q0.id, "清水", 5000, "乙");
-  // Refresh mid-round returns the same submitted answer.
+  // Distinct scores (one right, one wrong) → no prize tie → completes cleanly.
+  await gAnswer(db, tok, pt(1), q0.id, "水", 5000, "甲");    // correct
+  await gAnswer(db, tok, pt(2), q0.id, "沙子", 5000, "乙");  // wrong
+  // Refresh mid-round returns the same submitted answer (session continuity).
   const mid = await gState(db, tok, pt(1), 6000);
   assert.equal(mid.body.mine.answered, true);
   assert.equal(mid.body.mine.answer, "水");
@@ -705,12 +705,11 @@ test("zh + en are the SAME engine; refresh recovers answer; deterministic tie; f
   await qCtl(db, sid, "reveal", 7100);
   await qCtl(db, sid, "scores", 7200);
   const done = await qCtl(db, sid, "next", 7300);
-  assert.equal(done.body.phase, "completed");
+  assert.equal(done.body.phase, "completed");               // no prize tie → done
   const lb = db._store.get(`${QUIZ_COLLECTION}/${sid}`).finalLeaderboard;
   assert.equal(lb.length, 2);
-  assert.deepEqual(lb.map((r) => r.rank), [1, 2]);            // deterministic ranks, no random tie-break
-  assert.equal(lb[0].points, lb[1].points);                  // equal score
-  assert.ok(lb[0].participantIdHash < lb[1].participantIdHash); // stable hash tie-break
+  assert.deepEqual(lb.map((r) => r.rank), [1, 2]);
+  assert.ok(lb[0].points > lb[1].points);                   // the correct player leads
   // Owner state hides participantIdHash from the public leaderboard.
   const os = await qState(db, sid, 8000);
   assert.equal(os.body.leaderboard[0].participantIdHash, undefined);
@@ -721,8 +720,8 @@ test("no AI per answer: 300 submissions create 300 answer docs, zero model calls
   const db = makeFakeDb();
   const sess = await createQuiz(db);
   const sid = sess.body.sessionId; const tok = sess.body.token;
-  await qConfig(db, sid, { locale: "en", questionCount: 1, answerDurationSeconds: 300 });
-  const q0 = QUIZ_QUESTIONS.filter((q) => q.locale === "en")[0];
+  await qConfig(db, sid, { locale: "en", mix: { easy: 1, medium: 0, hard: 0 }, answerDurationSeconds: 300 });
+  const q0 = quizQuestionById(db._store.get(`${QUIZ_COLLECTION}/${sid}`).questionIds[0]);
   await qCtl(db, sid, "open", 0);
   for (let i = 0; i < 300; i += 1) {
     await gAnswer(db, tok, pt(`n${i}`), q0.id, i % 2 ? "piano" : "wrong", 1000 + i);
@@ -730,4 +729,131 @@ test("no AI per answer: 300 submissions create 300 answer docs, zero model calls
   const docs = [...db._store.keys()].filter((k) => k.startsWith(`${QUIZ_ANSWER_COLLECTION}/`));
   assert.equal(docs.length, 300);                             // 300 answers = 300 DB rows, not 300 AI calls
   assert.equal(db._store.get(`${QUIZ_COLLECTION}/${sid}`).answersSubmitted, 300);
+});
+
+// --- Live Quiz amendment: difficulty mix, prizes, tie-break ------------------
+
+test("difficulty mix (default 3E/4M/3H for 10) draws only non-tie-break questions", async () => {
+  const db = makeFakeDb();
+  const sess = await createQuiz(db);
+  const sid = sess.body.sessionId;
+  const cfg = await qConfig(db, sid, { locale: "en", questionCount: 10 });
+  assert.deepEqual(cfg.body.mix, { easy: 3, medium: 4, hard: 3 });
+  const doc = db._store.get(`${QUIZ_COLLECTION}/${sid}`);
+  assert.equal(doc.questionIds.filter((id) => quizQuestionById(id).tieBreakerEligible).length, 0); // reserved pool untouched
+  // Explicit mix sets the count.
+  const cfg2 = await qConfig(db, sid, { locale: "en", mix: { easy: 2, medium: 1, hard: 0 } });
+  assert.deepEqual(cfg2.body.mix, { easy: 2, medium: 1, hard: 0 });
+  assert.equal(cfg2.body.questionCount, 3);
+});
+
+test("top-3 prizes are optional, persisted, and never affect scoring", async () => {
+  const db = makeFakeDb();
+  const sess = await createQuiz(db);
+  const sid = sess.body.sessionId;
+  assert.deepEqual((await qConfig(db, sid, { locale: "en", questionCount: 3 })).body.prizes, { first: null, second: null, third: null });
+  const c2 = await qConfig(db, sid, { locale: "en", questionCount: 3, prizes: { first: "iPad", second: "Headphones", third: "Voucher" } });
+  assert.deepEqual(c2.body.prizes, { first: "iPad", second: "Headphones", third: "Voucher" });
+  assert.equal(db._store.get(`${QUIZ_COLLECTION}/${sid}`).prizes.first, "iPad");
+});
+
+// Helper: enter a 1st/2nd tie (P1,P2 both correct at the same instant), P3 lower.
+async function seedPrizeTie(db) {
+  const sess = await createQuiz(db);
+  const sid = sess.body.sessionId; const tok = sess.body.token;
+  await qConfig(db, sid, { locale: "zh", mix: { easy: 1, medium: 0, hard: 0 }, prizes: { first: "Gold", second: "Silver", third: "Bronze" } });
+  const q0 = quizQuestionById(db._store.get(`${QUIZ_COLLECTION}/${sid}`).questionIds[0]);
+  await qCtl(db, sid, "open", 0);
+  await gAnswer(db, tok, pt(1), q0.id, "水", 5000, "P1");   // correct
+  await gAnswer(db, tok, pt(2), q0.id, "水", 5000, "P2");   // correct, same instant → tie
+  await gAnswer(db, tok, pt(3), q0.id, "沙子", 5000, "P3"); // wrong
+  await qCtl(db, sid, "lock", 7000); await qCtl(db, sid, "reveal", 7100); await qCtl(db, sid, "scores", 7200);
+  return { sid, tok };
+}
+
+test("a top-3 score tie triggers a Tie-break Round; only the tied players are eligible", async () => {
+  const db = makeFakeDb();
+  const { sid, tok } = await seedPrizeTie(db);
+  const enter = await qCtl(db, sid, "next", 7300);
+  assert.equal(enter.body.phase, "ready");                  // NOT completed — tie-break entered
+  const doc = db._store.get(`${QUIZ_COLLECTION}/${sid}`);
+  assert.equal(doc.tieBreak.active, true);
+  assert.equal(doc.tieBreak.eligible.length, 2);            // only P1 & P2
+  const tbq = quizQuestionById(doc.tieBreak.questionId);
+  assert.equal(tbq.tieBreakerEligible, true);               // from the reserved pool
+  await qCtl(db, sid, "open", 8000);
+  // Non-eligible P3 (rank 3) cannot answer the tie-break.
+  const p3 = await gAnswer(db, tok, pt(3), tbq.id, tbq.correctIndex, 8100);
+  assert.equal(p3.status, 403);
+  assert.equal(p3.body.error, "not_in_tiebreak");
+});
+
+test("tie-break resolves to a deterministic podium with prize mapping (no random winner)", async () => {
+  const db = makeFakeDb();
+  const { sid, tok } = await seedPrizeTie(db);
+  await qCtl(db, sid, "next", 7300);
+  const tbq = quizQuestionById(db._store.get(`${QUIZ_COLLECTION}/${sid}`).tieBreak.questionId);
+  await qCtl(db, sid, "open", 8000);
+  await gAnswer(db, tok, pt(1), tbq.id, tbq.correctIndex, 8100);                          // P1 correct
+  await gAnswer(db, tok, pt(2), tbq.id, (tbq.correctIndex + 1) % tbq.choices.length, 8100); // P2 wrong
+  await qCtl(db, sid, "lock", 9000); await qCtl(db, sid, "reveal", 9100); await qCtl(db, sid, "scores", 9200);
+  const fin = await qCtl(db, sid, "next", 9300);
+  assert.equal(fin.body.phase, "completed");
+  const lb = db._store.get(`${QUIZ_COLLECTION}/${sid}`).finalLeaderboard;
+  assert.deepEqual(lb.slice(0, 3).map((r) => r.nickname), ["P1", "P2", "P3"]); // P1 won the tie-break
+  assert.equal(lb[0].points, lb[1].points);                 // same MAIN score; tie-break decided order
+  // Prize mapping surfaces to the winners.
+  assert.equal((await gState(db, tok, pt(1), 9400)).body.myScore.prize, "Gold");
+  assert.equal((await gState(db, tok, pt(2), 9400)).body.myScore.prize, "Silver");
+  assert.equal((await gState(db, tok, pt(3), 9400)).body.myScore.prize, "Bronze");
+});
+
+test("tie-break REPEATS when still tied, until resolved", async () => {
+  const db = makeFakeDb();
+  const { sid, tok } = await seedPrizeTie(db);
+  await qCtl(db, sid, "next", 7300);                         // round 1
+  let tbq = quizQuestionById(db._store.get(`${QUIZ_COLLECTION}/${sid}`).tieBreak.questionId);
+  await qCtl(db, sid, "open", 8000);
+  await gAnswer(db, tok, pt(1), tbq.id, tbq.correctIndex, 8100); // both correct, same instant → STILL tied
+  await gAnswer(db, tok, pt(2), tbq.id, tbq.correctIndex, 8100);
+  await qCtl(db, sid, "lock", 9000); await qCtl(db, sid, "reveal", 9100); await qCtl(db, sid, "scores", 9200);
+  const r2 = await qCtl(db, sid, "next", 9300);
+  assert.equal(r2.body.phase, "ready");                     // another tie-break, not a coin flip
+  const doc = db._store.get(`${QUIZ_COLLECTION}/${sid}`);
+  assert.equal(doc.tieBreak.round, 2);
+  assert.notEqual(doc.tieBreak.questionId, tbq.id);         // a fresh reserved question
+  // Round 2: P1 wins.
+  tbq = quizQuestionById(doc.tieBreak.questionId);
+  await qCtl(db, sid, "open", 10000);
+  await gAnswer(db, tok, pt(1), tbq.id, tbq.correctIndex, 10100);
+  await gAnswer(db, tok, pt(2), tbq.id, (tbq.correctIndex + 1) % tbq.choices.length, 10200);
+  await qCtl(db, sid, "lock", 11000); await qCtl(db, sid, "reveal", 11100); await qCtl(db, sid, "scores", 11200);
+  assert.equal((await qCtl(db, sid, "next", 11300)).body.phase, "completed");
+});
+
+test("refresh recovers tie-break state; a tie OUTSIDE top-3 never triggers a tie-break", async () => {
+  const db = makeFakeDb();
+  const { sid, tok } = await seedPrizeTie(db);
+  await qCtl(db, sid, "next", 7300);
+  // Owner + guest refresh reconstruct the tie-break.
+  const os = await qState(db, sid, 8500);
+  assert.equal(os.body.tieBreak.active, true);
+  assert.equal(os.body.tieBreak.round, 1);
+  assert.equal((await gState(db, tok, pt(1), 8500)).body.tieBreak.eligible, true);   // eligible
+  assert.equal((await gState(db, tok, pt(3), 8500)).body.tieBreak.eligible, false);  // spectator
+
+  // Separate quiz: distinct top-3, a tie only at rank 4/5 → completes, no tie-break.
+  const db2 = makeFakeDb();
+  const sess2 = await createQuiz(db2);
+  const sid2 = sess2.body.sessionId; const tok2 = sess2.body.token;
+  await qConfig(db2, sid2, { locale: "en", mix: { easy: 1, medium: 0, hard: 0 }, answerDurationSeconds: 60 });
+  const q = quizQuestionById(db2._store.get(`${QUIZ_COLLECTION}/${sid2}`).questionIds[0]);
+  await qCtl(db2, sid2, "open", 0);
+  await gAnswer(db2, tok2, pt("a"), q.id, "piano", 0);       // fastest correct
+  await gAnswer(db2, tok2, pt("b"), q.id, "piano", 10000);   // slower correct
+  await gAnswer(db2, tok2, pt("c"), q.id, "piano", 20000);   // slowest correct → distinct top 3
+  await gAnswer(db2, tok2, pt("d"), q.id, "guitar", 5000);   // wrong → 0
+  await gAnswer(db2, tok2, pt("e"), q.id, "drum", 6000);     // wrong → 0 (tied at rank 4/5)
+  await qCtl(db2, sid2, "lock", 61000); await qCtl(db2, sid2, "reveal", 61100); await qCtl(db2, sid2, "scores", 61200);
+  assert.equal((await qCtl(db2, sid2, "next", 61300)).body.phase, "completed"); // 4/5 tie is non-prize
 });

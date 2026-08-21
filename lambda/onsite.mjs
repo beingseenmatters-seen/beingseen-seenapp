@@ -512,33 +512,100 @@ export const QUIZ_DURATION_MAX_S = 300;
 // Curated V1 content — native zh wordplay + native en riddles (NOT translated).
 // One unambiguous answer each. Registry is extensible; future packs (Trivia,
 // Product Quiz, About Us, Custom) add rows/locales with NO engine change.
+// difficulty ∈ easy | medium | hard (question METADATA, not separate engines).
+// tieBreakerEligible questions are RESERVED for tie-breaks — never picked for
+// normal play — so a full quiz can't exhaust the decisive pool.
+export const QUIZ_DIFFICULTIES = ["easy", "medium", "hard"];
 export const QUIZ_QUESTIONS = [
-  { id: "q_zh_1", locale: "zh", mode: "字谜", answerType: "free_text", difficulty: "easy",
+  // --- zh (猜一猜) — native wordplay + trivia ---
+  { id: "q_zh_e1", locale: "zh", mode: "字谜", answerType: "free_text", difficulty: "easy",
     text: "什么东西越洗越脏？", canonical: "水", variants: ["水", "清水"], explanation: "洗东西的水会越用越脏。" },
-  { id: "q_zh_2", locale: "zh", mode: "脑筋急转弯", answerType: "free_text", difficulty: "medium",
-    text: "什么车寸步难行？", canonical: "风车", variants: ["风车"], explanation: "风车只会转，不会走。" },
-  { id: "q_zh_3", locale: "zh", mode: "趣味谜语", answerType: "free_text", difficulty: "medium",
-    text: "身穿绿衣裳，肚里水汪汪，客人来到家，先切它一块。（打一水果）", canonical: "西瓜", variants: ["西瓜"], explanation: "谜底是西瓜。" },
-  { id: "q_zh_4", locale: "zh", mode: "脑筋急转弯", answerType: "multiple_choice", difficulty: "easy",
+  { id: "q_zh_e2", locale: "zh", mode: "脑筋急转弯", answerType: "multiple_choice", difficulty: "easy",
     text: "一年四季都盛开的花是什么花？", choices: ["水仙花", "塑料花", "玫瑰花", "昙花"], correctIndex: 1, explanation: "塑料花不受季节影响。" },
-  { id: "q_zh_5", locale: "zh", mode: "字谜", answerType: "multiple_choice", difficulty: "easy",
+  { id: "q_zh_e3", locale: "zh", mode: "字谜", answerType: "multiple_choice", difficulty: "easy",
     text: "“明”字去掉“日”是哪个字？", choices: ["月", "目", "朋", "门"], correctIndex: 0, explanation: "明＝日＋月，去掉日剩月。" },
-  { id: "q_zh_6", locale: "zh", mode: "脑筋急转弯", answerType: "free_text", difficulty: "harder",
+  { id: "q_zh_e4", locale: "zh", mode: "趣味谜语", answerType: "free_text", difficulty: "easy",
+    text: "红门楼，白墙壁，里面坐着个胖小子。（打一人体部位）", canonical: "嘴", variants: ["嘴", "嘴巴"], explanation: "红唇、白牙、舌头——是嘴。" },
+  { id: "q_zh_m1", locale: "zh", mode: "脑筋急转弯", answerType: "free_text", difficulty: "medium",
+    text: "什么车寸步难行？", canonical: "风车", variants: ["风车"], explanation: "风车只会转，不会走。" },
+  { id: "q_zh_m2", locale: "zh", mode: "趣味谜语", answerType: "free_text", difficulty: "medium",
+    text: "身穿绿衣裳，肚里水汪汪，客人来到家，先切它一块。（打一水果）", canonical: "西瓜", variants: ["西瓜"], explanation: "谜底是西瓜。" },
+  { id: "q_zh_m3", locale: "zh", mode: "字谜", answerType: "multiple_choice", difficulty: "medium",
+    text: "“休”字去掉单人旁是哪个字？", choices: ["木", "本", "术", "禾"], correctIndex: 0, explanation: "休＝亻＋木，去掉单人旁剩木。" },
+  { id: "q_zh_m4", locale: "zh", mode: "趣味谜语", answerType: "free_text", difficulty: "medium",
+    text: "什么坚果最开心？", canonical: "开心果", variants: ["开心果"], explanation: "谐音——开心果。" },
+  { id: "q_zh_m5", locale: "zh", mode: "脑筋急转弯", answerType: "multiple_choice", difficulty: "medium",
+    text: "下列哪样东西越擦越小？", choices: ["橡皮", "毛巾", "黑板", "镜子"], correctIndex: 0, explanation: "橡皮越擦越小。" },
+  { id: "q_zh_h1", locale: "zh", mode: "脑筋急转弯", answerType: "free_text", difficulty: "hard",
     text: "什么东西天气越热，它爬得越高？", canonical: "温度", variants: ["温度", "气温"], explanation: "温度计里的温度。" },
-  { id: "q_en_1", locale: "en", mode: "riddle", answerType: "free_text", difficulty: "easy",
+  { id: "q_zh_h2", locale: "zh", mode: "字谜", answerType: "multiple_choice", difficulty: "hard",
+    text: "画时圆，写时方，冬时短，夏时长。（打一字）", choices: ["日", "月", "口", "田"], correctIndex: 0, explanation: "太阳画作圆、写作方；冬短夏长——日。" },
+  { id: "q_zh_h3", locale: "zh", mode: "趣味谜语", answerType: "free_text", difficulty: "hard",
+    text: "有头无颈，有眼无眉，有尾无身，一辈子在水里。（打一动物）", canonical: "鱼", variants: ["鱼"], explanation: "谜底是鱼。" },
+  { id: "q_zh_h4", locale: "zh", mode: "trivia", answerType: "multiple_choice", difficulty: "hard",
+    text: "成语“守株待兔”主要比喻什么？", choices: ["不劳而获、妄想坐等", "勤劳致富", "随机应变", "团结协作"], correctIndex: 0, explanation: "守株待兔比喻不劳而获、死守经验。" },
+  { id: "q_zh_t1", locale: "zh", mode: "trivia", answerType: "multiple_choice", difficulty: "hard", tieBreakerEligible: true,
+    text: "珠穆朗玛峰海拔约多少米？", choices: ["6848", "7848", "8848", "9848"], correctIndex: 2, explanation: "约 8848 米。" },
+  { id: "q_zh_t2", locale: "zh", mode: "trivia", answerType: "multiple_choice", difficulty: "hard", tieBreakerEligible: true,
+    text: "圆周率 π 精确到小数点后三位是？", choices: ["3.141", "3.142", "3.145", "3.140"], correctIndex: 0, explanation: "π ≈ 3.14159…，三位小数为 3.141（截断）。" },
+  { id: "q_zh_t3", locale: "zh", mode: "trivia", answerType: "multiple_choice", difficulty: "hard", tieBreakerEligible: true,
+    text: "光在真空中的速度约为每秒多少万公里？", choices: ["15", "30", "45", "60"], correctIndex: 1, explanation: "约 30 万公里/秒。" },
+  // --- en (native riddles / brain teasers / trivia) ---
+  { id: "q_en_e1", locale: "en", mode: "riddle", answerType: "free_text", difficulty: "easy",
     text: "What has keys but can't open locks?", canonical: "piano", variants: ["piano", "a piano", "the piano"], explanation: "A piano has keys." },
-  { id: "q_en_2", locale: "en", mode: "brain_teaser", answerType: "free_text", difficulty: "easy",
+  { id: "q_en_e2", locale: "en", mode: "brain_teaser", answerType: "free_text", difficulty: "easy",
     text: "What gets wetter the more it dries?", canonical: "towel", variants: ["towel", "a towel", "the towel"], explanation: "A towel gets wet as it dries you." },
-  { id: "q_en_3", locale: "en", mode: "brain_teaser", answerType: "free_text", difficulty: "easy",
+  { id: "q_en_e3", locale: "en", mode: "brain_teaser", answerType: "free_text", difficulty: "easy",
     text: "What has to be broken before you can use it?", canonical: "egg", variants: ["egg", "an egg"], explanation: "You break an egg to use it." },
-  { id: "q_en_4", locale: "en", mode: "word_puzzle", answerType: "multiple_choice", difficulty: "medium",
-    text: "Which word is always spelled incorrectly?", choices: ["Wrong", "Incorrectly", "Rightly", "Never"], correctIndex: 1, explanation: "\"Incorrectly\" is spelled i-n-c-o-r-r-e-c-t-l-y." },
-  { id: "q_en_5", locale: "en", mode: "trivia", answerType: "multiple_choice", difficulty: "easy",
+  { id: "q_en_e4", locale: "en", mode: "trivia", answerType: "multiple_choice", difficulty: "easy",
     text: "How many sides does a hexagon have?", choices: ["5", "6", "7", "8"], correctIndex: 1, explanation: "A hexagon has six sides." },
-  { id: "q_en_6", locale: "en", mode: "riddle", answerType: "free_text", difficulty: "harder",
+  { id: "q_en_m1", locale: "en", mode: "word_puzzle", answerType: "multiple_choice", difficulty: "medium",
+    text: "Which word is always spelled incorrectly?", choices: ["Wrong", "Incorrectly", "Rightly", "Never"], correctIndex: 1, explanation: "\"Incorrectly\" is spelled i-n-c-o-r-r-e-c-t-l-y." },
+  { id: "q_en_m2", locale: "en", mode: "riddle", answerType: "free_text", difficulty: "medium",
     text: "What has a neck but no head?", canonical: "bottle", variants: ["bottle", "a bottle", "the bottle"], explanation: "A bottle has a neck." },
+  { id: "q_en_m3", locale: "en", mode: "riddle", answerType: "free_text", difficulty: "medium",
+    text: "What has hands but cannot clap?", canonical: "clock", variants: ["clock", "a clock", "the clock"], explanation: "A clock has hands." },
+  { id: "q_en_m4", locale: "en", mode: "trivia", answerType: "multiple_choice", difficulty: "medium",
+    text: "Which planet is known as the Red Planet?", choices: ["Venus", "Mars", "Jupiter", "Saturn"], correctIndex: 1, explanation: "Mars is the Red Planet." },
+  { id: "q_en_m5", locale: "en", mode: "word_puzzle", answerType: "free_text", difficulty: "medium",
+    text: "What word becomes shorter when you add two letters to it?", canonical: "short", variants: ["short"], explanation: "short + er → shorter." },
+  { id: "q_en_h1", locale: "en", mode: "riddle", answerType: "free_text", difficulty: "hard",
+    text: "What can travel around the world while staying in a corner?", canonical: "stamp", variants: ["stamp", "a stamp"], explanation: "A postage stamp." },
+  { id: "q_en_h2", locale: "en", mode: "riddle", answerType: "free_text", difficulty: "hard",
+    text: "The more you take, the more you leave behind. What are they?", canonical: "footsteps", variants: ["footsteps", "steps"], explanation: "Footsteps." },
+  { id: "q_en_h3", locale: "en", mode: "trivia", answerType: "multiple_choice", difficulty: "hard",
+    text: "What is the capital of Australia?", choices: ["Sydney", "Melbourne", "Canberra", "Perth"], correctIndex: 2, explanation: "Canberra is the capital of Australia." },
+  { id: "q_en_h4", locale: "en", mode: "riddle", answerType: "free_text", difficulty: "hard",
+    text: "What has many teeth but cannot bite?", canonical: "comb", variants: ["comb", "a comb"], explanation: "A comb." },
+  { id: "q_en_t1", locale: "en", mode: "trivia", answerType: "multiple_choice", difficulty: "hard", tieBreakerEligible: true,
+    text: "In what year did humans first land on the Moon?", choices: ["1965", "1969", "1972", "1958"], correctIndex: 1, explanation: "Apollo 11, 1969." },
+  { id: "q_en_t2", locale: "en", mode: "trivia", answerType: "multiple_choice", difficulty: "hard", tieBreakerEligible: true,
+    text: "How many bones are in the adult human body?", choices: ["206", "201", "215", "198"], correctIndex: 0, explanation: "206 bones." },
+  { id: "q_en_t3", locale: "en", mode: "trivia", answerType: "multiple_choice", difficulty: "hard", tieBreakerEligible: true,
+    text: "What is the largest planet in our solar system?", choices: ["Saturn", "Neptune", "Jupiter", "Earth"], correctIndex: 2, explanation: "Jupiter is the largest planet." },
 ];
-const quizPool = (locale) => QUIZ_QUESTIONS.filter((q) => q.locale === locale);
+// Normal play draws ONLY non-tie-break questions.
+const quizPool = (locale) => QUIZ_QUESTIONS.filter((q) => q.locale === locale && !q.tieBreakerEligible);
+const quizTieBreakPool = (locale) => QUIZ_QUESTIONS.filter((q) => q.locale === locale && q.tieBreakerEligible);
+
+/** Default difficulty mix for a quiz of `n` (≈30% easy / 40% medium / 30% hard;
+ *  10 → 3E·4M·3H, the Founder default). */
+function defaultQuizMix(n) {
+  const easy = Math.round(n * 0.3);
+  const hard = Math.round(n * 0.3);
+  return { easy, medium: Math.max(0, n - easy - hard), hard };
+}
+/** Pick questions to a difficulty mix, ordered easy → medium → hard (a ramp),
+ *  clamped to the available NORMAL pool per level. */
+function pickQuizByMix(locale, mix) {
+  const pool = quizPool(locale);
+  const take = (d, k) => pool.filter((q) => q.difficulty === d).slice(0, Math.max(0, k));
+  return [...take("easy", mix.easy), ...take("medium", mix.medium), ...take("hard", mix.hard)];
+}
+const clampPrize = (s) => {
+  const t = typeof s === "string" ? s.trim() : "";
+  return t ? t.slice(0, PRIZE_LABEL_MAX_LEN) : null;
+};
 export const quizQuestionById = (id) => QUIZ_QUESTIONS.find((q) => q.id === id) ?? null;
 const quizAnswerDocId = (eventId, questionId, hash) => sha256Hex(`qa:${eventId}:${questionId}:${hash}`);
 
@@ -597,26 +664,58 @@ function publicQuizQuestion(q, revealed) {
   }
   return base;
 }
-/** Leaderboard from committed answers. Deterministic tie-break: points desc,
- *  then more-correct, then finished-earlier, then hash asc (stable). */
+/** The current question — the tie-break question while a tie-break is active,
+ *  else the normal question at currentIndex. */
+function currentQuizQuestion(q) {
+  if (q?.tieBreak && q.tieBreak.active) return quizQuestionById(q.tieBreak.questionId);
+  return quizQuestionById(q?.questionIds?.[q?.currentIndex ?? 0]);
+}
+
+/**
+ * Leaderboard from committed answers. `points` is the MAIN-round score (shown);
+ * tie-break answer points accumulate separately in `tbPoints` and ONLY order
+ * within a score tie. Final sort: main points → tie-break points → more-correct
+ * → finished-earlier → hash (stable). The last three are deterministic, never
+ * random; but they do NOT decide a prize position — that requires a tie-break.
+ */
 async function quizLeaderboard(db, eventId, now) {
   const snap = await db.collection(QUIZ_ANSWER_COLLECTION).where("sessionId", "==", eventId).get();
   const byP = new Map();
   for (const d of snap.docs ?? []) {
     const a = d.data();
     if (!readGate(a, now)) continue;
-    const cur = byP.get(a.participantIdHash) ?? { participantIdHash: a.participantIdHash, nickname: null, points: 0, correct: 0, lastAt: 0 };
-    cur.points += a.points ?? 0;
-    if (a.correct) cur.correct += 1;
+    const cur = byP.get(a.participantIdHash) ?? { participantIdHash: a.participantIdHash, nickname: null, points: 0, tbPoints: 0, correct: 0, lastAt: 0 };
+    if (a.tieBreak) cur.tbPoints += a.points ?? 0;
+    else { cur.points += a.points ?? 0; if (a.correct) cur.correct += 1; }
     cur.lastAt = Math.max(cur.lastAt, a.submittedAt ?? 0);
     if (a.nickname) cur.nickname = a.nickname;
     byP.set(a.participantIdHash, cur);
   }
   return [...byP.values()]
-    .sort((x, y) => y.points - x.points || y.correct - x.correct || x.lastAt - y.lastAt || (x.participantIdHash < y.participantIdHash ? -1 : 1))
-    .map((r, i) => ({ rank: i + 1, participantIdHash: r.participantIdHash, nickname: r.nickname, points: r.points, correct: r.correct }));
+    .sort((x, y) => y.points - x.points || y.tbPoints - x.tbPoints || y.correct - x.correct || x.lastAt - y.lastAt || (x.participantIdHash < y.participantIdHash ? -1 : 1))
+    .map((r, i) => ({ rank: i + 1, participantIdHash: r.participantIdHash, nickname: r.nickname, points: r.points, tbPoints: r.tbPoints, correct: r.correct }));
 }
 const publicLeaderboard = (rows) => (rows ?? []).map((r) => ({ rank: r.rank, nickname: r.nickname, points: r.points, correct: r.correct }));
+
+/**
+ * The set of participants whose (main, tie-break) points leave a TOP-3 prize
+ * position ambiguous — i.e. a score-tie group that reaches into ranks 1–3.
+ * Only these participants are eligible for a tie-break. Non-prize ties (rank ≥4)
+ * are ordered deterministically (never trigger a tie-break).
+ */
+function prizeTieSet(rows) {
+  const key = (r) => `${r.points}|${r.tbPoints ?? 0}`;
+  const eligible = new Set();
+  let pos = 1;
+  for (let i = 0; i < rows.length; ) {
+    let j = i;
+    while (j < rows.length && key(rows[j]) === key(rows[i])) j += 1;
+    const size = j - i;
+    if (size > 1 && pos <= 3) for (let k = i; k < j; k += 1) eligible.add(rows[k].participantIdHash);
+    pos += size; i = j;
+  }
+  return eligible;
+}
 
 /** Owner: configure the quiz (locale pack + question count). Only before start. */
 export async function quizConfigure({ db, decoded, body, now = Date.now() }) {
@@ -625,27 +724,52 @@ export async function quizConfigure({ db, decoded, body, now = Date.now() }) {
   if (owned.res) return owned.res;
   const locale = body?.locale === "en" ? "en" : "zh";
   const pool = quizPool(locale);
-  let count = Number.isInteger(body?.questionCount) ? body.questionCount : Math.min(5, pool.length);
+  // Difficulty MIX (metadata, not separate engines). An explicit {easy,medium,hard}
+  // sets the count; otherwise questionCount + the ≈30/40/30 default mix.
+  const explicitMix = body?.mix && typeof body.mix === "object" && ["easy", "medium", "hard"].some((k) => Number.isInteger(body.mix[k]));
+  let count = explicitMix
+    ? (body.mix.easy || 0) + (body.mix.medium || 0) + (body.mix.hard || 0)
+    : Number.isInteger(body?.questionCount) ? body.questionCount : Math.min(5, pool.length);
   count = Math.max(1, Math.min(count, pool.length, QUIZ_MAX_QUESTIONS));
+  const rawMix = explicitMix ? body.mix : defaultQuizMix(count);
+  let picked = pickQuizByMix(locale, {
+    easy: Number.isInteger(rawMix.easy) ? rawMix.easy : 0,
+    medium: Number.isInteger(rawMix.medium) ? rawMix.medium : 0,
+    hard: Number.isInteger(rawMix.hard) ? rawMix.hard : 0,
+  });
+  // Backfill from the pool (in easy→hard order) if the mix under-fills the count.
+  if (picked.length < count) {
+    const have = new Set(picked.map((q) => q.id));
+    const order = { easy: 0, medium: 1, hard: 2 };
+    for (const q of [...pool].sort((a, b) => order[a.difficulty] - order[b.difficulty])) {
+      if (picked.length >= count) break;
+      if (!have.has(q.id)) { picked.push(q); have.add(q.id); }
+    }
+  }
+  picked = picked.slice(0, count);
   let duration = Number.isInteger(body?.answerDurationSeconds) ? body.answerDurationSeconds : QUIZ_DEFAULT_DURATION_S;
   duration = Math.max(QUIZ_DURATION_MIN_S, Math.min(duration, QUIZ_DURATION_MAX_S));
+  const prizes = { first: clampPrize(body?.prizes?.first), second: clampPrize(body?.prizes?.second), third: clampPrize(body?.prizes?.third) };
   const ref = db.collection(QUIZ_COLLECTION).doc(eventId);
   const existing = (await ref.get()).data();
   if (existing && existing.phase && existing.phase !== "ready")
     return { status: 409, body: { error: "quiz_in_progress", phase: existing.phase } };
+  const mix = { easy: picked.filter((q) => q.difficulty === "easy").length, medium: picked.filter((q) => q.difficulty === "medium").length, hard: picked.filter((q) => q.difficulty === "hard").length };
   const doc = {
     schemaVersion: 1, sessionId: eventId, eventId, senderUid: decoded.uid, locale,
-    questionIds: pool.slice(0, count).map((q) => q.id), questionCount: count,
+    questionIds: picked.map((q) => q.id), questionCount: picked.length, mix,
     answerDurationSeconds: duration, // session default; a question may override at open
+    prizes, // never affects scoring; shown before + on the podium
     currentIndex: 0, phase: "ready", openedAt: null, durationSeconds: null, closesAt: null,
     paused: false, pausedRemainingMs: null, answersSubmitted: 0,
+    // Tie-break state (server-authoritative). null until a prize-boundary tie.
+    tieBreak: null, usedTieBreakIds: [],
     finalLeaderboard: null, completedAt: null,
     createdAt: existing?.createdAt ?? now, updatedAt: now,
   };
   await ref.set(doc);
-  // "Pure answering time" ≈ questions × duration — NOT total event time (reveals,
-  // rankings, host commentary and transitions add more).
-  return { status: 200, body: { ok: true, locale, questionCount: count, answerDurationSeconds: duration, estimatedAnswerSeconds: count * duration, phase: "ready" } };
+  // "Pure answering time" ≈ questions × duration — NOT total event time.
+  return { status: 200, body: { ok: true, locale, questionCount: picked.length, mix, prizes, answerDurationSeconds: duration, estimatedAnswerSeconds: picked.length * duration, phase: "ready" } };
 }
 
 /**
@@ -676,7 +800,7 @@ export async function quizControl({ db, decoded, body, now = Date.now() }) {
     if (!need) return { status: 400, body: { error: "invalid_request", field: "op" } };
     if (q.phase !== need) return { status: 409, body: { error: "wrong_phase", phase: q.phase, need } };
     if (op === "open") {
-      const question = quizQuestionById(q.questionIds[q.currentIndex]);
+      const question = currentQuizQuestion(q); // tie-break question while a tie-break is active
       let dur = Number.isInteger(body?.durationSeconds) ? body.durationSeconds
         : question?.durationSeconds ?? q.answerDurationSeconds ?? QUIZ_DEFAULT_DURATION_S; // per-question override → session default
       dur = Math.max(QUIZ_DURATION_MIN_S, Math.min(dur, QUIZ_DURATION_MAX_S));
@@ -686,11 +810,37 @@ export async function quizControl({ db, decoded, body, now = Date.now() }) {
     else if (op === "reveal") { patch.phase = "answer_reveal"; }
     else if (op === "scores") { patch.phase = "score_reveal"; }
     else if (op === "next") {
-      const nextIndex = q.currentIndex + 1;
-      if (nextIndex >= total) {
-        patch.phase = "completed"; patch.completedAt = now;
-        patch.finalLeaderboard = await quizLeaderboard(db, eventId, now); // snapshot survives answer TTL
-      } else { patch.currentIndex = nextIndex; patch.phase = "ready"; patch.openedAt = null; patch.durationSeconds = null; patch.closesAt = null; patch.paused = false; patch.pausedRemainingMs = null; }
+      const inTieBreak = !!(q.tieBreak && q.tieBreak.active);
+      const moreNormal = q.currentIndex + 1 < total;
+      const enterTieBreak = (eligible, roundBase) => {
+        const used = q.usedTieBreakIds ?? [];
+        const nextTb = quizTieBreakPool(q.locale).find((x) => !used.includes(x.id));
+        if (!nextTb) return false; // pool exhausted → resolve deterministically (below)
+        patch.tieBreak = { active: true, round: roundBase + 1, eligible: [...eligible], questionId: nextTb.id };
+        patch.usedTieBreakIds = [...used, nextTb.id];
+        // Enter at `ready` — the host still opens/times/locks the tie-break round.
+        patch.phase = "ready"; patch.openedAt = null; patch.durationSeconds = null; patch.closesAt = null;
+        patch.paused = false; patch.pausedRemainingMs = null;
+        return true;
+      };
+      const finish = (rows, tb) => { patch.phase = "completed"; patch.completedAt = now; patch.finalLeaderboard = rows; if (tb) patch.tieBreak = tb; };
+
+      if (inTieBreak) {
+        const rows = await quizLeaderboard(db, eventId, now);
+        // Only participants still tied AND part of this tie-break remain eligible.
+        const remaining = new Set([...prizeTieSet(rows)].filter((h) => q.tieBreak.eligible.includes(h)));
+        if (remaining.size >= 2 && enterTieBreak(remaining, q.tieBreak.round ?? 1)) { /* another tie-break */ }
+        else finish(rows, { ...q.tieBreak, active: false });
+      } else if (moreNormal) {
+        patch.currentIndex = q.currentIndex + 1; patch.phase = "ready"; patch.openedAt = null;
+        patch.durationSeconds = null; patch.closesAt = null; patch.paused = false; patch.pausedRemainingMs = null;
+      } else {
+        // Last normal question done — is a TOP-3 prize position ambiguous?
+        const rows = await quizLeaderboard(db, eventId, now);
+        const tied = prizeTieSet(rows);
+        if (tied.size >= 2 && enterTieBreak(tied, 0)) { /* enter Tie-break Round */ }
+        else finish(rows);
+      }
     }
   }
   await ref.update(patch);
@@ -707,7 +857,8 @@ export async function quizOwnerState({ db, decoded, body, now = Date.now() }) {
   const q = (await db.collection(QUIZ_COLLECTION).doc(eventId).get()).data();
   if (!q) return { status: 200, body: { configured: false } };
   const revealed = ["answer_reveal", "score_reveal", "completed"].includes(q.phase);
-  const question = quizQuestionById(q.questionIds[q.currentIndex]);
+  const question = currentQuizQuestion(q);
+  const tb = q.tieBreak && q.tieBreak.active ? q.tieBreak : null;
   const ansSnap = await db.collection(QUIZ_ANSWER_COLLECTION).where("sessionId", "==", eventId).get();
   const answers = (ansSnap.docs ?? []).map((d) => d.data()).filter((a) => readGate(a, now));
   const leaderboard = q.phase === "completed" ? q.finalLeaderboard
@@ -721,6 +872,9 @@ export async function quizOwnerState({ db, decoded, body, now = Date.now() }) {
       timer: quizTimer(q, now),
       answerDurationSeconds: q.answerDurationSeconds ?? QUIZ_DEFAULT_DURATION_S,
       estimatedAnswerSeconds: q.questionIds.length * (q.answerDurationSeconds ?? QUIZ_DEFAULT_DURATION_S),
+      mix: q.mix ?? null,
+      prizes: q.prizes ?? { first: null, second: null, third: null }, // shown before + on podium; never scores
+      tieBreak: tb ? { active: true, round: tb.round, eligibleCount: tb.eligible.length } : null,
       answeredThis: answers.filter((a) => a.questionId === question?.id).length,
       participants: new Set(answers.map((a) => a.participantIdHash)).size,
       answersSubmitted: q.answersSubmitted ?? 0,
@@ -742,7 +896,9 @@ export async function quizGuestState({ db, body, giftCollection, now = Date.now(
   const q = (await db.collection(QUIZ_COLLECTION).doc(rec.eventId).get()).data();
   if (!q) return { status: 200, body: { configured: false } };
   const revealed = ["answer_reveal", "score_reveal", "completed"].includes(q.phase);
-  const question = quizQuestionById(q.questionIds[q.currentIndex]);
+  const question = currentQuizQuestion(q);
+  const tbActive = !!(q.tieBreak && q.tieBreak.active);
+  const tbEligible = tbActive && participantIdHash ? q.tieBreak.eligible.includes(participantIdHash) : false;
   let mine = null;
   if (participantIdHash && question) {
     const aSnap = await db.collection(QUIZ_ANSWER_COLLECTION).doc(quizAnswerDocId(rec.eventId, question.id, participantIdHash)).get();
@@ -755,7 +911,10 @@ export async function quizGuestState({ db, body, giftCollection, now = Date.now(
   if (participantIdHash && (q.phase === "score_reveal" || q.phase === "completed")) {
     const rows = q.phase === "completed" ? (q.finalLeaderboard ?? []) : await quizLeaderboard(db, rec.eventId, now);
     const row = rows.find((r) => r.participantIdHash === participantIdHash);
-    if (row) myScore = { rank: row.rank, points: row.points, correct: row.correct };
+    if (row) {
+      const prize = q.phase === "completed" && row.rank <= 3 ? [q.prizes?.first, q.prizes?.second, q.prizes?.third][row.rank - 1] ?? null : null;
+      myScore = { rank: row.rank, points: row.points, correct: row.correct, ...(prize ? { prize } : {}) };
+    }
   }
   return {
     status: 200,
@@ -764,6 +923,9 @@ export async function quizGuestState({ db, body, giftCollection, now = Date.now(
       questionNumber: q.currentIndex + 1, questionTotal: q.questionIds.length,
       question: publicQuizQuestion(question, revealed),
       timer: quizTimer(q, now),
+      // A tie-break excludes non-eligible players from answering; their phone shows
+      // "Top-3 tie-break in progress".
+      tieBreak: tbActive ? { inProgress: true, eligible: tbEligible } : null,
       mine, myScore,
     },
   };
@@ -785,9 +947,14 @@ export async function quizGuestAnswer({ db, body, giftCollection, now = Date.now
 
   const q = (await db.collection(QUIZ_COLLECTION).doc(rec.eventId).get()).data();
   if (!q) return { status: 409, body: { error: "quiz_not_open" } };
-  const current = quizQuestionById(q.questionIds[q.currentIndex]);
+  const current = currentQuizQuestion(q); // tie-break question while a tie-break is active
   if (!current || current.id !== questionId) return { status: 409, body: { error: "wrong_question" } };
   if (q.phase !== "question_open") return { status: 409, body: { error: "answers_locked" } };
+  // During a tie-break, only the participants involved in the prize-boundary tie
+  // may answer — everyone else is a spectator.
+  const inTieBreak = !!(q.tieBreak && q.tieBreak.active);
+  if (inTieBreak && !q.tieBreak.eligible.includes(participantIdHash))
+    return { status: 403, body: { error: "not_in_tiebreak" } };
   // Server-authoritative timer: at zero, late answers are refused even before the
   // host taps Lock (pause freezes the clock, so a held round still accepts).
   const remainingMs = quizRemainingMs(q, now);
@@ -817,7 +984,7 @@ export async function quizGuestAnswer({ db, body, giftCollection, now = Date.now
   try {
     await ref.create({
       schemaVersion: 1, sessionId: rec.eventId, questionId, participantIdHash, nickname,
-      answer, answerType: current.answerType, correct, points, submittedAt: now,
+      answer, answerType: current.answerType, correct, points, tieBreak: inTieBreak, submittedAt: now,
       expireAt: now + QUIZ_ANSWER_TTL_MS, // operational lifecycle
     });
   } catch (err) {
