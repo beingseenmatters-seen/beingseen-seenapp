@@ -31,6 +31,9 @@ import {
   lockDraw,
   listEntrants,
   drawWinner,
+  guestbookInbox,
+  guestbookModerate,
+  guestbookDisplay,
 } from "./onsite.mjs";
 
 const sha256Hex = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
@@ -41,8 +44,12 @@ const TITLE_MAX = 80;
 const HOST_LABEL_MAX = 80;
 const SESSION_MESSAGE_MAX = 2000;
 const SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000;
-// V1 capabilities. Guestbook / quiz are RESERVED — not enabled here.
+// V1 capabilities. A standalone session carries the ONE capability the host
+// chose at create; a linked Wedding carries both (an Event supports draw AND
+// guestbook). Quiz is still RESERVED.
 export const LIVE_CAPABILITIES = ["lucky_draw"];
+export const ALL_LIVE_CAPABILITIES = ["lucky_draw", "live_guestbook"];
+const capabilityFor = (raw) => (raw === "live_guestbook" ? ["live_guestbook"] : ["lucky_draw"]);
 export const LIVE_SKINS = ["neutral", "wedding"];
 
 const clean = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -80,9 +87,10 @@ export async function createLiveSession({
       eventId,
       title,
       hostLabel: clean(body?.hostLabel, HOST_LABEL_MAX) || null,
-      capabilities: LIVE_CAPABILITIES,
+      // A linked Event supports BOTH the draw and the guestbook.
+      capabilities: ALL_LIVE_CAPABILITIES,
       // Linked sessions may inherit their Event's presentation identity; the
-      // Lucky Draw engine never branches on it — skin is display-only.
+      // engines never branch on it — skin is display-only.
       skin: ev.type === "wedding" ? "wedding" : "neutral",
       occasion: ev.occasion ?? null,
       status: "active",
@@ -138,7 +146,8 @@ export async function createLiveSession({
     title,
     hostLabel,
     mode,
-    capabilities: LIVE_CAPABILITIES,
+    // Standalone: the capability the host chose (Lucky Draw OR Live Guestbook).
+    capabilities: capabilityFor(body?.capability),
     skin: "neutral",
     participationGiftId: tokenHash,
     status: "active",
@@ -264,6 +273,14 @@ export async function handleSenderLive({ db, decoded, body, share, media, giftCo
       return listEntrants({ db, decoded, body: withKey, now });
     case "draw_winner":
       return drawWinner({ db, decoded, body: withKey, now });
+    // Live Guestbook — owner inbox, human approval, and the server-filtered
+    // public display feed. Guest submission reuses /gift/onsite/blessing.
+    case "guestbook_inbox":
+      return guestbookInbox({ db, decoded, body: withKey, now });
+    case "guestbook_moderate":
+      return guestbookModerate({ db, decoded, body: withKey, now });
+    case "guestbook_display":
+      return guestbookDisplay({ db, decoded, body: withKey, now });
     default:
       return { status: 400, body: { error: "invalid_request", field: "action" } };
   }

@@ -38,6 +38,9 @@ export const DRAW_COLLECTION = "eventDraw";
 export const LIVE_SESSION_COLLECTION = "liveSessions";
 export const BLESSING_MAX_LEN = 200; // Founder AA-4, existing .length convention
 export const DISPLAY_NAME_MAX_LEN = 20;
+// Live Guestbook abuse control: one held anonymous identity may leave at most
+// this many messages per event (prevents obvious flooding without registration).
+export const GUESTBOOK_MAX_PER_PARTICIPANT = 5;
 export const PRIZE_LABEL_MAX_LEN = 40;
 export const LOTTERY_LINGER_MS = 3 * 60 * 60 * 1000; // Founder AA-2
 const ONSITE_MESSAGE_MAX_LEN = 2000; // couple's Wedding Day message — gift convention
@@ -398,6 +401,90 @@ export async function listGuestbook({ db, decoded, body, now = Date.now() }) {
       displayName: g.displayName ?? null,
       createdAt: g.createdAt,
     }));
+  return { status: 200, body: { entries, count: entries.length } };
+}
+
+// --- Live Guestbook: owner inbox + approval + server-filtered display -------
+// Keyed by the SESSION (ownedDrawSession resolves a LiveSession, then a legacy
+// wedding Event), so the ONE engine serves standalone + linked Wedding alike.
+
+/**
+ * Owner inbox — EVERY submitted message with its moderation + display status.
+ * This is the private review surface; approval for the public screen is a
+ * SEPARATE explicit action (guestbookModerate).
+ */
+export async function guestbookInbox({ db, decoded, body, now = Date.now() }) {
+  const eventId = typeof body?.eventId === "string" ? body.eventId.trim() : "";
+  const owned = await ownedDrawSession({ db, decoded, eventId });
+  if (owned.res) return owned.res;
+  const snap = await db.collection(GUESTBOOK_COLLECTION).where("eventId", "==", eventId).get();
+  const entries = (snap.docs ?? [])
+    .map((d) => ({ id: d.id, g: d.data() }))
+    .filter(({ g }) => g.senderUid === decoded.uid && g.status !== "deleted")
+    .sort((a, b) => (a.g.createdAt ?? 0) - (b.g.createdAt ?? 0))
+    .map(({ id, g }) => ({
+      entryId: id,
+      text: g.text,
+      displayName: g.displayName ?? null,
+      createdAt: g.createdAt,
+      approvedForDisplay: g.approvedForDisplay === true,
+      status: g.status ?? "active",
+      moderation: g.moderation ?? "normal",
+    }));
+  return {
+    status: 200,
+    body: {
+      entries,
+      count: entries.length,
+      approvedCount: entries.filter((e) => e.approvedForDisplay && e.status === "active").length,
+    },
+  };
+}
+
+/**
+ * Owner moderation of ONE message. op ∈ approve | unapprove | hide | unhide.
+ * approve is the ONLY thing that lets a message reach the public screen, and it
+ * is always a human action here. Removing approval (unapprove / hide) drops it
+ * from future rotation immediately. hide also clears approval (belt-and-braces).
+ */
+export async function guestbookModerate({ db, decoded, body, now = Date.now() }) {
+  const eventId = typeof body?.eventId === "string" ? body.eventId.trim() : "";
+  const entryId = typeof body?.entryId === "string" ? body.entryId.trim() : "";
+  const op = typeof body?.op === "string" ? body.op : "";
+  if (!entryId) return { status: 400, body: { error: "invalid_request", field: "entryId" } };
+  const owned = await ownedDrawSession({ db, decoded, eventId });
+  if (owned.res) return owned.res;
+  const ref = db.collection(GUESTBOOK_COLLECTION).doc(entryId);
+  const snap = await ref.get();
+  const g = snap.exists ? snap.data() : null;
+  if (!g || g.eventId !== eventId || g.senderUid !== decoded.uid)
+    return { status: 404, body: { error: "entry_not_found" } };
+  const patch =
+    op === "approve" ? { approvedForDisplay: true, approvedAt: now }
+    : op === "unapprove" ? { approvedForDisplay: false }
+    : op === "hide" ? { status: "hidden", approvedForDisplay: false }
+    : op === "unhide" ? { status: "active" } // NOT re-approved — approval must be re-granted
+    : null;
+  if (!patch) return { status: 400, body: { error: "invalid_request", field: "op" } };
+  await ref.update({ ...patch, updatedAt: now });
+  return { status: 200, body: { ok: true, entryId, op, approvedForDisplay: patch.approvedForDisplay ?? g.approvedForDisplay === true, status: patch.status ?? g.status ?? "active" } };
+}
+
+/**
+ * The PUBLIC display feed for the big screen — SERVER-FILTERED to only
+ * approved + active messages. This is the P0 guarantee: an unapproved or hidden
+ * message can never appear here, regardless of any frontend behaviour.
+ */
+export async function guestbookDisplay({ db, decoded, body, now = Date.now() }) {
+  const eventId = typeof body?.eventId === "string" ? body.eventId.trim() : "";
+  const owned = await ownedDrawSession({ db, decoded, eventId });
+  if (owned.res) return owned.res;
+  const snap = await db.collection(GUESTBOOK_COLLECTION).where("eventId", "==", eventId).get();
+  const entries = (snap.docs ?? [])
+    .map((d) => ({ id: d.id, g: d.data() }))
+    .filter(({ g }) => g.senderUid === decoded.uid && g.status === "active" && g.approvedForDisplay === true)
+    .sort((a, b) => (a.g.approvedAt ?? a.g.createdAt ?? 0) - (b.g.approvedAt ?? b.g.createdAt ?? 0))
+    .map(({ id, g }) => ({ entryId: id, text: g.text, displayName: g.displayName ?? null }));
   return { status: 200, body: { entries, count: entries.length } };
 }
 
@@ -788,6 +875,19 @@ export async function submitBlessing({ db, body, giftCollection, now = Date.now(
     };
   }
 
+  // Abuse controls (anonymous, no registration): cap messages per held identity
+  // and reject a same-text resubmission from that identity. A cleared identity
+  // can start over — accepted trade-off for anonymous participation.
+  const gbSnap = await db.collection(GUESTBOOK_COLLECTION).where("eventId", "==", rec.eventId).get();
+  const mine = (gbSnap.docs ?? [])
+    .map((d) => ({ id: d.id, g: d.data() }))
+    .filter(({ g }) => g.participantIdHash === participantIdHash && g.status !== "deleted");
+  if (mine.length >= GUESTBOOK_MAX_PER_PARTICIPANT)
+    return { status: 429, body: { error: "too_many_blessings", limit: GUESTBOOK_MAX_PER_PARTICIPANT } };
+  const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  const dupe = mine.find(({ g }) => norm(g.text) === norm(text));
+  if (dupe) return { status: 200, body: { ok: true, entryId: dupe.id, duplicate: true, participantToken: presented } };
+
   // NO lottery expireAt here — blessings follow the Event lifecycle (§23).
   await ref.set({
     schemaVersion: 1,
@@ -796,7 +896,12 @@ export async function submitBlessing({ db, body, giftCollection, now = Date.now(
     text,
     displayName,
     participantIdHash,
-    allowLiveDisplay: false, // reserved consent flag (§21); default private
+    allowLiveDisplay: false, // reserved guest-consent flag (§21); default private
+    // P0 PUBLIC-DISPLAY GATE (Founder): a message NEVER reaches the big screen
+    // until the host explicitly approves it. Default false; the display feed is
+    // server-filtered on this — never on frontend alone.
+    approvedForDisplay: false,
+    moderation: moderation.tier ?? "normal", // advisory only; never authorizes display
     status: "active",
     createdAt: now,
   });

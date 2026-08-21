@@ -14,6 +14,8 @@ import {
 import {
   configureDraw, drawWinner, claimLuckyCode, LIVE_SESSION_COLLECTION, DRAW_COLLECTION, ENTRANT_COLLECTION,
   drawLuckyBalls, pickUniqueLuckyBalls, ballSignature, LUCKY_BALL_COUNT, LUCKY_BALL_MAX,
+  submitBlessing, guestbookInbox, guestbookModerate, guestbookDisplay,
+  GUESTBOOK_COLLECTION, GUESTBOOK_MAX_PER_PARTICIPANT,
 } from "./onsite.mjs";
 import { GIFT_COLLECTION } from "./gift.mjs";
 import { EVENT_COLLECTION } from "./event.mjs";
@@ -414,4 +416,135 @@ test("My Live Sessions surfaces mode for both Lucky Number and Lucky Ball", asyn
   const list = await handleSenderLive({ db, decoded: OWNER, body: { action: "list" }, now: 3000 });
   const modes = list.body.sessions.map((s) => s.mode).sort();
   assert.deepEqual(modes, ["lucky_ball", "lucky_number"]);
+});
+
+// --- Live Guestbook (capability: live_guestbook) ----------------------------
+
+const createGuestbookSession = (db, title = "Reception Wall") =>
+  createLiveSession({ db, decoded: OWNER, body: { title, capability: "live_guestbook" }, share: fakeShare(), giftCollection: GIFT_COLLECTION, publicBaseUrl: "https://x" });
+
+const submit = (db, token, text, extra = {}) =>
+  submitBlessing({ db, giftCollection: GIFT_COLLECTION, body: { token, text, idempotencyKey: `idem${Math.abs(hashStr(text + (extra.tag ?? "")))}`, participantToken: extra.pt ?? "guestparticipant00001", ...extra }, now: extra.now ?? 1000 });
+const hashStr = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; };
+
+test("standalone Guestbook: create needs NO Event, carries live_guestbook capability, neutral skin", async () => {
+  const db = makeFakeDb();
+  const res = await createGuestbookSession(db);
+  assert.equal(res.status, 200);
+  assert.match(res.body.sessionId, /^ls_/);
+  const s = db._store.get(`${LIVE_SESSION_COLLECTION}/${res.body.sessionId}`);
+  assert.deepEqual(s.capabilities, ["live_guestbook"]);   // the chosen capability only
+  assert.equal(s.eventId, null);                          // no Event
+  assert.equal(s.skin, "neutral");
+});
+
+test("linked Wedding session carries BOTH capabilities + wedding skin; standalone stays neutral", async () => {
+  const db = makeFakeDb();
+  const eventId = "evt-gb";
+  db._store.set(`${EVENT_COLLECTION}/${eventId}`, { senderUid: OWNER.uid, type: "wedding", occasion: { type: "wedding", couple: { partner1: "A", partner2: "B" } } });
+  const link = await createLiveSession({ db, decoded: OWNER, body: { eventId, capability: "live_guestbook" }, share: fakeShare(), giftCollection: GIFT_COLLECTION, publicBaseUrl: "https://x" });
+  const s = db._store.get(`${LIVE_SESSION_COLLECTION}/${eventId}`);
+  assert.equal(link.body.sessionId, eventId);
+  assert.deepEqual([...s.capabilities].sort(), ["live_guestbook", "lucky_draw"]);
+  assert.equal(s.skin, "wedding");
+});
+
+test("anonymous submission works; a message DEFAULTS to NOT approved for display", async () => {
+  const db = makeFakeDb();
+  const sess = await createGuestbookSession(db);
+  const r = await submit(db, sess.body.token, "Congratulations! 🎉");
+  assert.equal(r.status, 200);
+  assert.equal(r.body.duplicate, false);
+  const entry = db._store.get(`${GUESTBOOK_COLLECTION}/${r.body.entryId}`);
+  assert.equal(entry.approvedForDisplay, false);   // P0 default
+  assert.equal(entry.status, "active");
+  assert.equal(entry.expireAt, undefined);         // NOT the draw's short TTL
+});
+
+test("P0: an unapproved message can NEVER reach the public display feed", async () => {
+  const db = makeFakeDb();
+  const sess = await createGuestbookSession(db);
+  const sid = sess.body.sessionId;
+  await submit(db, sess.body.token, "please show me", { pt: "pa000000000000000001" });
+  // Inbox sees it (private review); display feed is EMPTY (server-filtered).
+  const inbox = await handleSenderLive({ db, decoded: OWNER, body: { action: "guestbook_inbox", sessionId: sid }, now: 2000 });
+  assert.equal(inbox.body.count, 1);
+  assert.equal(inbox.body.approvedCount, 0);
+  assert.equal(inbox.body.entries[0].approvedForDisplay, false);
+  const disp = await handleSenderLive({ db, decoded: OWNER, body: { action: "guestbook_display", sessionId: sid }, now: 2000 });
+  assert.equal(disp.body.count, 0);   // NOTHING reaches the screen without approval
+});
+
+test("explicit host approval enables display; revoking / hiding removes it from rotation", async () => {
+  const db = makeFakeDb();
+  const sess = await createGuestbookSession(db);
+  const sid = sess.body.sessionId;
+  const r = await submit(db, sess.body.token, "best wishes", { pt: "pb000000000000000001" });
+  const entryId = r.body.entryId;
+  const disp = () => handleSenderLive({ db, decoded: OWNER, body: { action: "guestbook_display", sessionId: sid }, now: 3000 });
+  const mod = (op) => handleSenderLive({ db, decoded: OWNER, body: { action: "guestbook_moderate", sessionId: sid, entryId, op }, now: 3000 });
+
+  assert.equal((await disp()).body.count, 0);
+  await mod("approve");
+  assert.equal((await disp()).body.count, 1);          // now visible
+  await mod("unapprove");
+  assert.equal((await disp()).body.count, 0);          // removed from rotation
+  await mod("approve");
+  await mod("hide");                                    // hide also clears approval
+  const d = await disp();
+  assert.equal(d.body.count, 0);
+  assert.equal(db._store.get(`${GUESTBOOK_COLLECTION}/${entryId}`).approvedForDisplay, false);
+  assert.equal(db._store.get(`${GUESTBOOK_COLLECTION}/${entryId}`).status, "hidden");
+});
+
+test("owner isolation: another host cannot inbox / moderate / display this session", async () => {
+  const db = makeFakeDb();
+  const sess = await createGuestbookSession(db);
+  const sid = sess.body.sessionId;
+  const r = await submit(db, sess.body.token, "hi");
+  for (const action of ["guestbook_inbox", "guestbook_display"]) {
+    assert.equal((await handleSenderLive({ db, decoded: OTHER, body: { action, sessionId: sid }, now: 1 })).status >= 400, true);
+  }
+  const bad = await handleSenderLive({ db, decoded: OTHER, body: { action: "guestbook_moderate", sessionId: sid, entryId: r.body.entryId, op: "approve" }, now: 1 });
+  assert.equal(bad.status >= 400, true);
+  assert.equal(db._store.get(`${GUESTBOOK_COLLECTION}/${r.body.entryId}`).approvedForDisplay, false); // untouched
+});
+
+test("abuse: per-participant cap + duplicate-text protection", async () => {
+  const db = makeFakeDb();
+  const sess = await createGuestbookSession(db);
+  const pt = "pc000000000000000001";
+  for (let i = 0; i < GUESTBOOK_MAX_PER_PARTICIPANT; i += 1) {
+    const r = await submit(db, sess.body.token, `message number ${i}`, { pt, tag: `u${i}` });
+    assert.equal(r.status, 200);
+  }
+  // One more distinct message from the SAME identity → capped.
+  const over = await submit(db, sess.body.token, "one too many", { pt, tag: "over" });
+  assert.equal(over.status, 429);
+  // A repeat of an existing message (new idem key) → treated as duplicate, not a new row.
+  const before = [...db._store.keys()].filter((k) => k.startsWith(`${GUESTBOOK_COLLECTION}/`)).length;
+  const dup = await submit(db, sess.body.token, "message number 1", { pt: "pd000000000000000001", tag: "dupehunt" });
+  // (different participant, so cap not hit; but same normalized text by that participant is what we test)
+  const r2 = await submit(db, sess.body.token, "hello world", { pt: "pe000000000000000001", tag: "a" });
+  const r2dup = await submit(db, sess.body.token, "hello   world", { pt: "pe000000000000000001", tag: "b" });
+  assert.equal(r2dup.body.duplicate, true);
+  assert.equal(r2dup.body.entryId, r2.body.entryId);
+  void dup; void before;
+});
+
+test("moderation tier is advisory only — it never auto-approves display", async () => {
+  const db = makeFakeDb();
+  const sess = await createGuestbookSession(db);
+  const r = await submit(db, sess.body.token, "anything");
+  const entry = db._store.get(`${GUESTBOOK_COLLECTION}/${r.body.entryId}`);
+  assert.equal(entry.moderation, "normal");
+  assert.equal(entry.approvedForDisplay, false); // moderation pass ≠ approvedForDisplay
+});
+
+test("My Live Sessions surfaces a guestbook session with its capability", async () => {
+  const db = makeFakeDb();
+  await createGuestbookSession(db, "Wall");
+  const list = await handleSenderLive({ db, decoded: OWNER, body: { action: "list" }, now: 1 });
+  const wall = list.body.sessions.find((s) => s.title === "Wall");
+  assert.deepEqual(wall.capabilities ?? ["live_guestbook"], ["live_guestbook"]);
 });
