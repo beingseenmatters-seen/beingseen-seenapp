@@ -57,7 +57,7 @@ export const PRIZE_COUNT_MAX = 50; // max winners per tier
  *                  Identity allocation + animation are NOT implemented here.
  */
 export const LUCKY_DRAW_MODES = ["lucky_number", "lucky_ball"];
-export const IMPLEMENTED_LUCKY_DRAW_MODES = ["lucky_number"];
+export const IMPLEMENTED_LUCKY_DRAW_MODES = ["lucky_number", "lucky_ball"];
 
 // --- Small primitives (kept module-local; event.mjs-style independence) ----
 const sha256Hex = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
@@ -76,6 +76,46 @@ export function pickUniqueLuckyCode(existingCodes, rand = crypto.randomInt) {
     if (!existingCodes.has(code)) return code;
   }
   return null; // pool ≤ hundreds vs 1e6 — practically unreachable
+}
+
+// --- Lucky Ball identity (mode: lucky_ball) --------------------------------
+// A Lucky Ball participant's identity is SIX unique integers 1–30. This is a
+// *presentation* identity only — the winner is still selected by the shared
+// engine over `luckyCode`, never derived from these numbers (not a lottery).
+export const LUCKY_BALL_COUNT = 6;
+export const LUCKY_BALL_MAX = 30;
+
+/** Two-digit display, e.g. 3 → "03". */
+export const formatLuckyBall = (n) => String(n).padStart(2, "0");
+
+/**
+ * Six distinct integers 1–30, returned in a STABLE random reveal order (the
+ * order the balls emerge in the ceremony). The canonical identity is the
+ * sorted set; reveal order is this array as stored. Injectable RNG for tests.
+ */
+export function drawLuckyBalls(rand = crypto.randomInt) {
+  const bag = Array.from({ length: LUCKY_BALL_MAX }, (_, i) => i + 1);
+  const picks = [];
+  for (let i = 0; i < LUCKY_BALL_COUNT; i += 1) {
+    picks.push(bag.splice(rand(0, bag.length), 1)[0]);
+  }
+  return picks;
+}
+
+/** Order-independent signature of a ball set — used to keep sets unique. */
+export const ballSignature = (balls) => [...balls].sort((a, b) => a - b).join("-");
+
+/**
+ * A ball set unique among existing participants. The set space is
+ * C(30,6)=593,775; venue events run to hundreds, so a fresh draw almost never
+ * collides and a dozen tries is ample. null only if the (tiny) space filled.
+ */
+export function pickUniqueLuckyBalls(existingSignatures, rand = crypto.randomInt) {
+  for (let i = 0; i < 12; i += 1) {
+    const balls = drawLuckyBalls(rand);
+    if (!existingSignatures.has(ballSignature(balls))) return balls;
+  }
+  return null;
 }
 
 /**
@@ -656,7 +696,11 @@ export async function drawWinner({ db, decoded, body, now = Date.now() }) {
           ...(isLast ? { expireAt: now + LOTTERY_LINGER_MS } : {}),
         });
       }
-      const newWinners = [...winners, ...picks.map((pk) => ({ tier, luckyCode: pk.e.luckyCode, at: now }))];
+      // The winner record carries the winner's identity so the reveal reproduces
+      // it exactly on refresh: luckyCode always; the six balls (stored order = the
+      // reveal order) when the entrant has a Lucky Ball identity. Selection above
+      // is unchanged — this only records who was already chosen.
+      const newWinners = [...winners, ...picks.map((pk) => ({ tier, luckyCode: pk.e.luckyCode, ...(pk.e.luckyBalls ? { luckyBalls: pk.e.luckyBalls } : {}), at: now }))];
       tx.update(drawRef, {
         winners: newWinners,
         status: isLast ? "completed" : "drawing",
@@ -791,7 +835,7 @@ export async function claimLuckyCode({ db, body, giftCollection, now = Date.now(
     const e = existing.data();
     return {
       status: 200,
-      body: { ok: true, luckyCode: e.luckyCode, alreadyClaimed: true, cutoffAt: draw.cutoffAt },
+      body: { ok: true, luckyCode: e.luckyCode, luckyBalls: e.luckyBalls ?? null, mode: draw.mode ?? "lucky_number", alreadyClaimed: true, cutoffAt: draw.cutoffAt },
     };
   }
 
@@ -820,12 +864,23 @@ export async function claimLuckyCode({ db, body, giftCollection, now = Date.now(
   const luckyCode = pickUniqueLuckyCode(new Set(pool.map(({ e }) => e.luckyCode)));
   if (!luckyCode) return { status: 503, body: { error: "code_exhausted" } };
 
+  // Lucky Ball mode ALSO assigns a six-number identity (1–30, unique set). The
+  // luckyCode above is still the engine's internal key — the balls are only the
+  // participant's presentation identity, never used to pick or match a winner.
+  let luckyBalls = null;
+  if (draw.mode === "lucky_ball") {
+    const sigs = new Set(pool.map(({ e }) => e.luckyBalls).filter(Boolean).map(ballSignature));
+    luckyBalls = pickUniqueLuckyBalls(sigs);
+    if (!luckyBalls) return { status: 503, body: { error: "balls_exhausted" } };
+  }
+
   const entrant = {
     schemaVersion: 1,
     eventId: rec.eventId,
     senderUid: rec.senderUid,
     participantIdHash,
     luckyCode,
+    ...(luckyBalls ? { luckyBalls } : {}),
     status: "eligible",
     prizeTier: null,
     createdAt: now,
@@ -841,14 +896,14 @@ export async function claimLuckyCode({ db, body, giftCollection, now = Date.now(
       const e = raced.data();
       return {
         status: 200,
-        body: { ok: true, luckyCode: e.luckyCode, alreadyClaimed: true, cutoffAt: draw.cutoffAt },
+        body: { ok: true, luckyCode: e.luckyCode, luckyBalls: e.luckyBalls ?? null, mode: draw.mode ?? "lucky_number", alreadyClaimed: true, cutoffAt: draw.cutoffAt },
       };
     }
     throw err;
   }
   return {
     status: 200,
-    body: { ok: true, luckyCode, alreadyClaimed: false, cutoffAt: draw.cutoffAt },
+    body: { ok: true, luckyCode, luckyBalls, mode: draw.mode ?? "lucky_number", alreadyClaimed: false, cutoffAt: draw.cutoffAt },
   };
 }
 

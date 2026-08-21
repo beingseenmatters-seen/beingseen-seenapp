@@ -125,6 +125,11 @@ export async function createLiveSession({
     presentation = fin.presentation;
   }
 
+  // Lucky Draw mode is the user's choice at create (Lucky Number vs Lucky Ball).
+  // The host control reads it back and configures the draw with it; the shared
+  // winner engine is identical for both — mode only steers identity + ceremony.
+  const mode = body?.mode === "lucky_ball" ? "lucky_ball" : "lucky_number";
+
   const session = {
     schemaVersion: 1,
     sessionId,
@@ -132,6 +137,7 @@ export async function createLiveSession({
     eventId: null,
     title,
     hostLabel,
+    mode,
     capabilities: LIVE_CAPABILITIES,
     skin: "neutral",
     participationGiftId: tokenHash,
@@ -190,6 +196,7 @@ export async function listLiveSessions({ db, decoded, now = Date.now() }) {
       title: s.title,
       hostLabel: s.hostLabel ?? null,
       eventId: s.eventId ?? null,
+      mode: s.mode ?? "lucky_number",
       skin: s.skin ?? "neutral",
       status: s.status ?? "active",
       createdAt: s.createdAt,
@@ -218,7 +225,8 @@ export async function liveSessionDetail({ db, decoded, body, now = Date.now() })
     body: {
       session: {
         sessionId: s.sessionId, title: s.title, hostLabel: s.hostLabel ?? null,
-        eventId: s.eventId ?? null, skin: s.skin ?? "neutral", status: s.status ?? "active",
+        eventId: s.eventId ?? null, mode: s.mode ?? "lucky_number",
+        skin: s.skin ?? "neutral", status: s.status ?? "active",
         capabilities: s.capabilities ?? LIVE_CAPABILITIES,
         participationGiftId: s.participationGiftId ?? null,
         createdAt: s.createdAt,

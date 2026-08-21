@@ -13,6 +13,7 @@ import {
 } from "./liveSession.mjs";
 import {
   configureDraw, drawWinner, claimLuckyCode, LIVE_SESSION_COLLECTION, DRAW_COLLECTION, ENTRANT_COLLECTION,
+  drawLuckyBalls, pickUniqueLuckyBalls, ballSignature, LUCKY_BALL_COUNT, LUCKY_BALL_MAX,
 } from "./onsite.mjs";
 import { GIFT_COLLECTION } from "./gift.mjs";
 import { EVENT_COLLECTION } from "./event.mjs";
@@ -179,7 +180,7 @@ test("boundaries: no Gift object, no Heart Key, only lucky_draw, no Lucky Balls"
 
 // --- Lucky Draw MODES: family with a shared winner engine (2026-08-20) --------
 
-test("Lucky Draw modes: lucky_number is the V1 mode; lucky_ball is reserved, not configurable", async () => {
+test("Lucky Draw modes: both lucky_number and lucky_ball are configurable; unknown refused", async () => {
   const db = makeFakeDb();
   const sess = await createStandalone(db);
   const sid = sess.body.sessionId;
@@ -190,18 +191,18 @@ test("Lucky Draw modes: lucky_number is the V1 mode; lucky_ball is reserved, not
   assert.equal(db._store.get(`${DRAW_COLLECTION}/${sid}`).mode, "lucky_number");
   assert.equal((await cfg("lucky_number")).status, 200);
 
-  // lucky_ball is reserved but NOT implemented → refused (no half-built game).
+  // lucky_ball is now implemented → configurable, stored on the draw doc.
   const ball = await cfg("lucky_ball");
-  assert.equal(ball.status, 400);
-  assert.equal(ball.body.error, "invalid_mode");
-  // An unknown mode is likewise refused.
+  assert.equal(ball.status, 200);
+  assert.equal(db._store.get(`${DRAW_COLLECTION}/${sid}`).mode, "lucky_ball");
+  // An unknown mode is still refused (no half-built game).
   assert.equal((await cfg("roulette")).body.error, "invalid_mode");
 
   // The winner engine is mode-agnostic: it selects from the pool regardless,
   // and never reads `mode` (proven by the unchanged drawWinner tests above).
   const { LUCKY_DRAW_MODES, IMPLEMENTED_LUCKY_DRAW_MODES } = await import("./onsite.mjs");
   assert.deepEqual([...LUCKY_DRAW_MODES], ["lucky_number", "lucky_ball"]);
-  assert.deepEqual([...IMPLEMENTED_LUCKY_DRAW_MODES], ["lucky_number"]);
+  assert.deepEqual([...IMPLEMENTED_LUCKY_DRAW_MODES], ["lucky_number", "lucky_ball"]);
 });
 
 // --- Multi-winner per tier (Founder, 2026-08-21) -----------------------------
@@ -291,4 +292,126 @@ test("prize count validates 1..MAX; a string prize stays one winner (Wedding bac
   await cfg({ third: "3rd", second: "2nd", first: "1st" });
   const prizes = db._store.get(`${DRAW_COLLECTION}/${sid}`).prizes;
   assert.deepEqual(prizes.map((p) => p.count), [1, 1, 1]);
+});
+
+// --- Lucky Ball (mode: lucky_ball) — identity allocation + shared engine -----
+
+const createBall = (db, title = "Ball Night") =>
+  createLiveSession({ db, decoded: OWNER, body: { title, mode: "lucky_ball" }, share: fakeShare(), giftCollection: GIFT_COLLECTION, publicBaseUrl: "https://x" });
+
+async function openBallDraw(db, sid, { prizes } = {}) {
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_configure", sessionId: sid, enabled: true, mode: "lucky_ball", startAt: 1000, cutoffAt: 9000,
+    prizes: prizes ?? { third: { label: "3rd", count: 1 }, second: { label: "2nd", count: 1 }, first: { label: "1st", count: 1 } } }, now: 500 });
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_open", sessionId: sid }, now: 1500 });
+}
+
+test("Lucky Ball allocator: six DISTINCT numbers, all 1–30, unique sets", () => {
+  for (let i = 0; i < 200; i += 1) {
+    const balls = drawLuckyBalls();
+    assert.equal(balls.length, LUCKY_BALL_COUNT);
+    assert.equal(new Set(balls).size, LUCKY_BALL_COUNT);           // no duplicate inside a set
+    for (const n of balls) assert.ok(n >= 1 && n <= LUCKY_BALL_MAX); // range 1–30
+  }
+  // pickUnique never returns a set whose sorted signature already exists.
+  const seen = new Set();
+  for (let i = 0; i < 300; i += 1) {
+    const balls = pickUniqueLuckyBalls(seen);
+    assert.ok(balls, "space is vast — never exhausted at this size");
+    assert.ok(!seen.has(ballSignature(balls)));
+    seen.add(ballSignature(balls));
+  }
+});
+
+test("Lucky Ball claim: participant gets six unique 1–30; retry returns the SAME set (cannot regenerate)", async () => {
+  const db = makeFakeDb();
+  const sess = await createBall(db);
+  const sid = sess.body.sessionId;
+  assert.equal(db._store.get(`${LIVE_SESSION_COLLECTION}/${sid}`).mode, "lucky_ball"); // stored at create
+  await openBallDraw(db, sid);
+
+  const claim = () => claimLuckyCode({ db, giftCollection: GIFT_COLLECTION, body: { token: sess.body.token, participantToken: "ballplayer000000001" }, now: 2000 });
+  const first = await claim();
+  assert.equal(first.body.mode, "lucky_ball");
+  assert.equal(first.body.luckyBalls.length, 6);
+  assert.equal(new Set(first.body.luckyBalls).size, 6);
+  for (const n of first.body.luckyBalls) assert.ok(n >= 1 && n <= 30);
+
+  // Retry / reopen: identical set + order, never regenerated (alreadyClaimed).
+  const again = await claim();
+  assert.equal(again.body.alreadyClaimed, true);
+  assert.deepEqual(again.body.luckyBalls, first.body.luckyBalls);
+});
+
+test("Lucky Ball uses the SAME winner engine; winner committed with its balls BEFORE any reveal; refresh reproduces winner + numbers + reveal order", async () => {
+  const db = makeFakeDb();
+  const sess = await createBall(db);
+  const sid = sess.body.sessionId;
+  await openBallDraw(db, sid);
+  for (let i = 0; i < 5; i += 1) {
+    await claimLuckyCode({ db, giftCollection: GIFT_COLLECTION, body: { token: sess.body.token, participantToken: `ballplayer${i}`.padEnd(20, "x") }, now: 2000 });
+  }
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_lock", sessionId: sid }, now: 9500 });
+
+  const w3 = await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_winner", sessionId: sid, tier: 3 }, now: 9600 });
+  assert.equal(w3.status, 200);
+  // The winner is chosen by the engine over luckyCode — the balls are only carried
+  // along as identity, never used to pick. The committed winner record has balls.
+  const drawDoc = db._store.get(`${DRAW_COLLECTION}/${sid}`);
+  const won = drawDoc.winners.find((x) => x.tier === 3);
+  assert.ok(won.luckyCode, "winner keyed by luckyCode (shared engine)");
+  assert.equal(won.luckyBalls.length, 6);
+  // That winner's balls MATCH the entrant the engine actually committed.
+  const wonEntrant = [...db._store.entries()].find(([k, v]) => k.startsWith(`${ENTRANT_COLLECTION}/`) && v.luckyCode === won.luckyCode && v.status === "won");
+  assert.deepEqual(won.luckyBalls, wonEntrant[1].luckyBalls); // reveal order == committed identity
+  const orderBefore = [...won.luckyBalls];
+
+  // Refresh (re-read detail): same winner, same numbers, same reveal order.
+  const detail = await handleSenderLive({ db, decoded: OWNER, body: { action: "detail", sessionId: sid }, now: 9700 });
+  const dw = detail.body.draw.winners.find((x) => x.tier === 3);
+  assert.equal(dw.luckyCode, won.luckyCode);
+  assert.deepEqual(dw.luckyBalls, orderBefore);
+  assert.equal(detail.body.session.mode, "lucky_ball");
+
+  // Idempotent re-draw returns the SAME committed winner (no new sequence).
+  const again = await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_winner", sessionId: sid, tier: 3 }, now: 9800 });
+  assert.equal(again.body.alreadyDrawn, true);
+  assert.equal(again.body.luckyCode, won.luckyCode);
+});
+
+test("Lucky Ball reuses the prize-quantity model unchanged (3rd×3, 2nd×2, 1st×1 → 6 distinct, one prize each)", async () => {
+  const db = makeFakeDb();
+  const sess = await createBall(db);
+  const sid = sess.body.sessionId;
+  await openBallDraw(db, sid, { prizes: { third: { label: "3rd", count: 3 }, second: { label: "2nd", count: 2 }, first: { label: "1st", count: 1 } } });
+  for (let i = 0; i < 8; i += 1) await claimLuckyCode({ db, giftCollection: GIFT_COLLECTION, body: { token: sess.body.token, participantToken: `bp${i}`.padEnd(20, "x") }, now: 2000 });
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_lock", sessionId: sid }, now: 9500 });
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_winner", sessionId: sid, tier: 3 }, now: 9600 });
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_winner", sessionId: sid, tier: 2 }, now: 9700 });
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_winner", sessionId: sid, tier: 1 }, now: 9800 });
+  const drawDoc = db._store.get(`${DRAW_COLLECTION}/${sid}`);
+  assert.equal(drawDoc.winners.length, 6);
+  assert.equal(new Set(drawDoc.winners.map((w) => w.luckyCode)).size, 6); // one participant one prize
+  for (const w of drawDoc.winners) assert.equal(w.luckyBalls.length, 6);  // every winner carries balls
+});
+
+test("Lucky Number is UNCHANGED by Lucky Ball: no balls assigned, no balls on winners", async () => {
+  const db = makeFakeDb();
+  const sess = await createStandalone(db); // default lucky_number
+  const sid = sess.body.sessionId;
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_configure", sessionId: sid, enabled: true, startAt: 1000, cutoffAt: 9000, prizes: { third: "3rd", second: "2nd", first: "1st" } }, now: 500 });
+  await handleSenderLive({ db, decoded: OWNER, body: { action: "draw_open", sessionId: sid }, now: 1500 });
+  const claim = await claimLuckyCode({ db, giftCollection: GIFT_COLLECTION, body: { token: sess.body.token, participantToken: "numplayer0000000001" }, now: 2000 });
+  assert.equal(claim.body.mode, "lucky_number");
+  assert.equal(claim.body.luckyBalls, null);                 // no balls in lucky_number
+  const entrant = [...db._store.entries()].find(([k]) => k.startsWith(`${ENTRANT_COLLECTION}/`))[1];
+  assert.equal(entrant.luckyBalls, undefined);               // not stored
+});
+
+test("My Live Sessions surfaces mode for both Lucky Number and Lucky Ball", async () => {
+  const db = makeFakeDb();
+  await createStandalone(db, "Number Night");
+  await createBall(db, "Ball Night");
+  const list = await handleSenderLive({ db, decoded: OWNER, body: { action: "list" }, now: 3000 });
+  const modes = list.body.sessions.map((s) => s.mode).sort();
+  assert.deepEqual(modes, ["lucky_ball", "lucky_number"]);
 });
