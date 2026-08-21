@@ -16,6 +16,8 @@ import {
   drawLuckyBalls, pickUniqueLuckyBalls, ballSignature, LUCKY_BALL_COUNT, LUCKY_BALL_MAX,
   submitBlessing, guestbookInbox, guestbookModerate, guestbookDisplay,
   GUESTBOOK_COLLECTION, GUESTBOOK_MAX_PER_PARTICIPANT,
+  quizGuestState, quizGuestAnswer, scoreQuizAnswer, normalizeQuizAnswer, quizRemainingMs, quizQuestionById,
+  QUIZ_COLLECTION, QUIZ_ANSWER_COLLECTION, QUIZ_QUESTIONS, QUIZ_BASE_POINTS, QUIZ_DEFAULT_DURATION_S,
 } from "./onsite.mjs";
 import { GIFT_COLLECTION } from "./gift.mjs";
 import { EVENT_COLLECTION } from "./event.mjs";
@@ -445,7 +447,7 @@ test("linked Wedding session carries BOTH capabilities + wedding skin; standalon
   const link = await createLiveSession({ db, decoded: OWNER, body: { eventId, capability: "live_guestbook" }, share: fakeShare(), giftCollection: GIFT_COLLECTION, publicBaseUrl: "https://x" });
   const s = db._store.get(`${LIVE_SESSION_COLLECTION}/${eventId}`);
   assert.equal(link.body.sessionId, eventId);
-  assert.deepEqual([...s.capabilities].sort(), ["live_guestbook", "lucky_draw"]);
+  assert.deepEqual([...s.capabilities].sort(), ["live_guestbook", "live_quiz", "lucky_draw"]);
   assert.equal(s.skin, "wedding");
 });
 
@@ -547,4 +549,185 @@ test("My Live Sessions surfaces a guestbook session with its capability", async 
   const list = await handleSenderLive({ db, decoded: OWNER, body: { action: "list" }, now: 1 });
   const wall = list.body.sessions.find((s) => s.title === "Wall");
   assert.deepEqual(wall.capabilities ?? ["live_guestbook"], ["live_guestbook"]);
+});
+
+// --- Live Quiz (capability: live_quiz) --------------------------------------
+
+const createQuiz = (db, title = "Party Quiz") =>
+  createLiveSession({ db, decoded: OWNER, body: { title, capability: "live_quiz" }, share: fakeShare(), giftCollection: GIFT_COLLECTION, publicBaseUrl: "https://x" });
+const qConfig = (db, sid, extra = {}) => handleSenderLive({ db, decoded: OWNER, body: { action: "quiz_configure", sessionId: sid, ...extra }, now: extra.now ?? 100 });
+const qCtl = (db, sid, op, now, extra = {}) => handleSenderLive({ db, decoded: OWNER, body: { action: "quiz_control", sessionId: sid, op, ...extra }, now });
+const qState = (db, sid, now) => handleSenderLive({ db, decoded: OWNER, body: { action: "quiz_state", sessionId: sid }, now });
+const gState = (db, token, pt, now) => quizGuestState({ db, giftCollection: GIFT_COLLECTION, body: { token, participantToken: pt }, now });
+const gAnswer = (db, token, pt, questionId, answer, now, nickname) => quizGuestAnswer({ db, giftCollection: GIFT_COLLECTION, body: { token, participantToken: pt, questionId, answer, nickname }, now });
+const pt = (n) => `quizplayer${n}`.padEnd(20, "z");
+
+test("Quiz create is a live_quiz LiveSession (no Event); pure scoring is deterministic, NO async/AI", () => {
+  // scoreQuizAnswer is a PURE SYNC function — never a Promise, never a model call.
+  const fq = QUIZ_QUESTIONS.find((q) => q.id === "q_en_1"); // free_text piano
+  const r1 = scoreQuizAnswer(fq, "A Piano!", 30000, 60000);
+  assert.equal(r1.correct, true);
+  assert.equal(typeof r1.then, "undefined");                  // not a Promise
+  assert.equal(scoreQuizAnswer(fq, "guitar", 30000, 60000).correct, false);
+  // Normalization: case/punctuation/articles-as-configured, exact accepted match.
+  assert.equal(normalizeQuizAnswer("The Piano.", "en"), "thepiano");
+  const mc = QUIZ_QUESTIONS.find((q) => q.id === "q_en_5"); // hexagon, correctIndex 1
+  assert.equal(scoreQuizAnswer(mc, 1, 60000, 60000).correct, true);
+  assert.equal(scoreQuizAnswer(mc, 0, 60000, 60000).correct, false);
+});
+
+test("standalone quiz create + configure returns estimated answering time (10×60 ≈ 600s)", async () => {
+  const db = makeFakeDb();
+  const sess = await createQuiz(db);
+  const s = db._store.get(`${LIVE_SESSION_COLLECTION}/${sess.body.sessionId}`);
+  assert.deepEqual(s.capabilities, ["live_quiz"]);
+  assert.equal(s.eventId, null);
+  const cfg = await qConfig(db, sess.body.sessionId, { locale: "en", questionCount: 6, answerDurationSeconds: 60 });
+  assert.equal(cfg.body.questionCount, 6);
+  assert.equal(cfg.body.answerDurationSeconds, 60);
+  assert.equal(cfg.body.estimatedAnswerSeconds, 360);         // 6 × 60
+  // The 10×60 = 600s figure the amendment calls out (clamped by pool ≤ 6, so test the math directly).
+  assert.equal(10 * 60, 600);
+});
+
+test("host-driven flow: correct answer HIDDEN before reveal; one answer/participant/question; server scoring", async () => {
+  const db = makeFakeDb();
+  const sess = await createQuiz(db);
+  const sid = sess.body.sessionId; const tok = sess.body.token;
+  await qConfig(db, sid, { locale: "en", questionCount: 3 });
+  const q0 = QUIZ_QUESTIONS.filter((q) => q.locale === "en")[0]; // q_en_1 piano free_text
+
+  // ready → participant sees no open question / no answer field yet.
+  await qCtl(db, sid, "open", 1000);
+  // Guest state during question_open: question present, NO correct answer.
+  const gs = await gState(db, tok, pt(1), 1500);
+  assert.equal(gs.body.phase, "question_open");
+  assert.equal(gs.body.question.correctAnswer, undefined);    // anti-cheat
+  assert.ok(gs.body.timer.remainingMs > 0);
+
+  // Two participants answer (one right, one wrong).
+  assert.equal((await gAnswer(db, tok, pt(1), q0.id, "the piano", 2000, "Ann")).body.received, true);
+  assert.equal((await gAnswer(db, tok, pt(2), q0.id, "guitar", 2500, "Bob")).body.received, true);
+  // Submit response NEVER reveals correctness.
+  const resub = await gAnswer(db, tok, pt(1), q0.id, "changed", 2600);
+  assert.equal(resub.body.duplicate, true);                   // one final answer; no change
+
+  // Still hidden while locked; revealed only after reveal.
+  await qCtl(db, sid, "lock", 3000);
+  assert.equal((await gState(db, tok, pt(1), 3100)).body.question.correctAnswer, undefined);
+  await qCtl(db, sid, "reveal", 3200);
+  const gr = await gState(db, tok, pt(1), 3300);
+  assert.equal(gr.body.question.correctAnswer, "piano");      // now visible
+  assert.equal(gr.body.mine.correct, true);
+  assert.ok(gr.body.mine.points >= QUIZ_BASE_POINTS);         // server-scored
+  const gr2 = await gState(db, tok, pt(2), 3300);
+  assert.equal(gr2.body.mine.correct, false);
+  assert.equal(gr2.body.mine.points, 0);
+});
+
+test("late answers refused: after Lock, and at timer zero (before Lock)", async () => {
+  const db = makeFakeDb();
+  const sess = await createQuiz(db);
+  const sid = sess.body.sessionId; const tok = sess.body.token;
+  await qConfig(db, sid, { locale: "en", questionCount: 2, answerDurationSeconds: 30 });
+  const q0 = QUIZ_QUESTIONS.filter((q) => q.locale === "en")[0];
+  await qCtl(db, sid, "open", 1000); // closesAt = 1000 + 30000
+  // Within the window: accepted.
+  assert.equal((await gAnswer(db, tok, pt(1), q0.id, "piano", 5000)).body.received, true);
+  // At/after zero but BEFORE the host Locks: refused server-side (time gate).
+  const late = await gAnswer(db, tok, pt(2), q0.id, "piano", 31001);
+  assert.equal(late.status, 409);
+  assert.equal(late.body.error, "answers_locked");
+  assert.equal(late.body.reason, "time");
+  // After explicit Lock: refused (phase gate).
+  await qCtl(db, sid, "lock", 6000);
+  assert.equal((await gAnswer(db, tok, pt(3), q0.id, "piano", 6100)).status, 409);
+});
+
+test("timer: pause FREEZES authoritative remaining; resume continues; refresh recovers same remaining", async () => {
+  const db = makeFakeDb();
+  const sess = await createQuiz(db);
+  const sid = sess.body.sessionId;
+  await qConfig(db, sid, { locale: "zh", questionCount: 2, answerDurationSeconds: 60 });
+  await qCtl(db, sid, "open", 0); // closesAt = 60000
+  // 20s in → ~40s left.
+  assert.equal(quizRemainingMs(db._store.get(`${QUIZ_COLLECTION}/${sid}`), 20000), 40000);
+  // Pause at 20s → freeze 40s. Time keeps passing but remaining stays 40s.
+  await qCtl(db, sid, "pause", 20000);
+  const paused = db._store.get(`${QUIZ_COLLECTION}/${sid}`);
+  assert.equal(paused.paused, true);
+  assert.equal(quizRemainingMs(paused, 20000), 40000);
+  assert.equal(quizRemainingMs(paused, 55000), 40000);       // frozen despite 35s elapsed
+  // A refresh (state read) reconstructs the SAME frozen remaining.
+  const st = await qState(db, sid, 55000);
+  assert.equal(st.body.timer.remainingMs, 40000);
+  assert.equal(st.body.timer.paused, true);
+  // Resume at 55s → closesAt = 55000 + 40000 = 95000.
+  await qCtl(db, sid, "resume", 55000);
+  const resumed = db._store.get(`${QUIZ_COLLECTION}/${sid}`);
+  assert.equal(resumed.paused, false);
+  assert.equal(quizRemainingMs(resumed, 55000), 40000);
+  assert.equal(quizRemainingMs(resumed, 75000), 20000);
+});
+
+test("per-question override at open; host controls rhythm — timer never auto-chains", async () => {
+  const db = makeFakeDb();
+  const sess = await createQuiz(db);
+  const sid = sess.body.sessionId;
+  await qConfig(db, sid, { locale: "zh", questionCount: 2, answerDurationSeconds: 60 });
+  await qCtl(db, sid, "open", 0, { durationSeconds: 15 });    // override this question to 15s
+  assert.equal(db._store.get(`${QUIZ_COLLECTION}/${sid}`).durationSeconds, 15);
+  // Even long after zero, the phase stays question_open until the host acts —
+  // NO automatic reveal/ranking/next.
+  const st = await qState(db, sid, 999999);
+  assert.equal(st.body.phase, "question_open");
+  assert.equal(st.body.timer.timeUp, true);
+  // Out-of-order host op is refused (server owns the sequence).
+  assert.equal((await qCtl(db, sid, "reveal", 999999)).status, 409); // must lock first
+});
+
+test("zh + en are the SAME engine; refresh recovers answer; deterministic tie; final leaderboard", async () => {
+  const db = makeFakeDb();
+  const sess = await createQuiz(db);
+  const sid = sess.body.sessionId; const tok = sess.body.token;
+  await qConfig(db, sid, { locale: "zh", questionCount: 1, answerDurationSeconds: 60 });
+  const q0 = QUIZ_QUESTIONS.filter((q) => q.locale === "zh")[0]; // q_zh_1 free_text 水
+  await qCtl(db, sid, "open", 0);
+  // Two correct at the SAME remaining → equal points → tie broken deterministically.
+  await gAnswer(db, tok, pt(1), q0.id, "水", 5000, "甲");
+  await gAnswer(db, tok, pt(2), q0.id, "清水", 5000, "乙");
+  // Refresh mid-round returns the same submitted answer.
+  const mid = await gState(db, tok, pt(1), 6000);
+  assert.equal(mid.body.mine.answered, true);
+  assert.equal(mid.body.mine.answer, "水");
+  // Drive to completion → final leaderboard snapshot.
+  await qCtl(db, sid, "lock", 7000);
+  await qCtl(db, sid, "reveal", 7100);
+  await qCtl(db, sid, "scores", 7200);
+  const done = await qCtl(db, sid, "next", 7300);
+  assert.equal(done.body.phase, "completed");
+  const lb = db._store.get(`${QUIZ_COLLECTION}/${sid}`).finalLeaderboard;
+  assert.equal(lb.length, 2);
+  assert.deepEqual(lb.map((r) => r.rank), [1, 2]);            // deterministic ranks, no random tie-break
+  assert.equal(lb[0].points, lb[1].points);                  // equal score
+  assert.ok(lb[0].participantIdHash < lb[1].participantIdHash); // stable hash tie-break
+  // Owner state hides participantIdHash from the public leaderboard.
+  const os = await qState(db, sid, 8000);
+  assert.equal(os.body.leaderboard[0].participantIdHash, undefined);
+  assert.ok("nickname" in os.body.leaderboard[0]);
+});
+
+test("no AI per answer: 300 submissions create 300 answer docs, zero model calls (pure DB path)", async () => {
+  const db = makeFakeDb();
+  const sess = await createQuiz(db);
+  const sid = sess.body.sessionId; const tok = sess.body.token;
+  await qConfig(db, sid, { locale: "en", questionCount: 1, answerDurationSeconds: 300 });
+  const q0 = QUIZ_QUESTIONS.filter((q) => q.locale === "en")[0];
+  await qCtl(db, sid, "open", 0);
+  for (let i = 0; i < 300; i += 1) {
+    await gAnswer(db, tok, pt(`n${i}`), q0.id, i % 2 ? "piano" : "wrong", 1000 + i);
+  }
+  const docs = [...db._store.keys()].filter((k) => k.startsWith(`${QUIZ_ANSWER_COLLECTION}/`));
+  assert.equal(docs.length, 300);                             // 300 answers = 300 DB rows, not 300 AI calls
+  assert.equal(db._store.get(`${QUIZ_COLLECTION}/${sid}`).answersSubmitted, 300);
 });

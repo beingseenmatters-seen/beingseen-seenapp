@@ -52,6 +52,8 @@ import {
   lockDraw,
   submitBlessing,
   claimLuckyCode,
+  quizGuestState,
+  quizGuestAnswer,
   listEntrants,
   drawWinner,
 } from "./onsite.mjs";
@@ -1033,6 +1035,16 @@ export const handler = async (event) => {
       body,
       giftCollection: GIFT_COLLECTION,
     });
+    return httpResponse(result.status, result.body);
+  }
+  // Live Quiz — guest side (app-key only, on_site token is the capability).
+  // ONE route, op-dispatched: `answer` submits, anything else reads state. The
+  // correct answer is never in the state response before reveal.
+  if (path === "/gift/onsite/quiz") {
+    const db = admin.firestore();
+    const result = body?.op === "answer"
+      ? await quizGuestAnswer({ db, body, giftCollection: GIFT_COLLECTION })
+      : await quizGuestState({ db, body, giftCollection: GIFT_COLLECTION });
     return httpResponse(result.status, result.body);
   }
   if (path === "/gift/revoke") {

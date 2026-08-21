@@ -488,6 +488,347 @@ export async function guestbookDisplay({ db, decoded, body, now = Date.now() }) 
   return { status: 200, body: { entries, count: entries.length } };
 }
 
+// ============================================================================
+// Live Quiz (capability: live_quiz) — ONE generic engine; zh + en are CONTENT
+// packs, never separate engines. Answer type is per-question (free_text |
+// multiple_choice). Scoring is server-authoritative and DETERMINISTIC — there
+// is NO model/LLM call per answer, ever (see scoreQuizAnswer / normalize).
+// ============================================================================
+export const QUIZ_COLLECTION = "eventQuiz";
+export const QUIZ_ANSWER_COLLECTION = "eventQuizAnswers";
+export const QUIZ_MAX_QUESTIONS = 20;
+export const QUIZ_NICKNAME_MAX = 16;
+export const QUIZ_ANSWER_MAX_LEN = 80;
+export const QUIZ_BASE_POINTS = 100;
+export const QUIZ_SPEED_BONUS_MAX = 50;
+export const QUIZ_ANSWER_TTL_MS = 7 * 24 * 60 * 60 * 1000; // operational, not permanent
+export const QUIZ_PHASES = ["ready", "question_open", "locked", "answer_reveal", "score_reveal", "completed"];
+// Host-controlled answer timing (server-authoritative). Presets 15/30/45/60/90.
+export const QUIZ_DURATION_PRESETS = [15, 30, 45, 60, 90];
+export const QUIZ_DEFAULT_DURATION_S = 60;
+export const QUIZ_DURATION_MIN_S = 5;
+export const QUIZ_DURATION_MAX_S = 300;
+
+// Curated V1 content — native zh wordplay + native en riddles (NOT translated).
+// One unambiguous answer each. Registry is extensible; future packs (Trivia,
+// Product Quiz, About Us, Custom) add rows/locales with NO engine change.
+export const QUIZ_QUESTIONS = [
+  { id: "q_zh_1", locale: "zh", mode: "字谜", answerType: "free_text", difficulty: "easy",
+    text: "什么东西越洗越脏？", canonical: "水", variants: ["水", "清水"], explanation: "洗东西的水会越用越脏。" },
+  { id: "q_zh_2", locale: "zh", mode: "脑筋急转弯", answerType: "free_text", difficulty: "medium",
+    text: "什么车寸步难行？", canonical: "风车", variants: ["风车"], explanation: "风车只会转，不会走。" },
+  { id: "q_zh_3", locale: "zh", mode: "趣味谜语", answerType: "free_text", difficulty: "medium",
+    text: "身穿绿衣裳，肚里水汪汪，客人来到家，先切它一块。（打一水果）", canonical: "西瓜", variants: ["西瓜"], explanation: "谜底是西瓜。" },
+  { id: "q_zh_4", locale: "zh", mode: "脑筋急转弯", answerType: "multiple_choice", difficulty: "easy",
+    text: "一年四季都盛开的花是什么花？", choices: ["水仙花", "塑料花", "玫瑰花", "昙花"], correctIndex: 1, explanation: "塑料花不受季节影响。" },
+  { id: "q_zh_5", locale: "zh", mode: "字谜", answerType: "multiple_choice", difficulty: "easy",
+    text: "“明”字去掉“日”是哪个字？", choices: ["月", "目", "朋", "门"], correctIndex: 0, explanation: "明＝日＋月，去掉日剩月。" },
+  { id: "q_zh_6", locale: "zh", mode: "脑筋急转弯", answerType: "free_text", difficulty: "harder",
+    text: "什么东西天气越热，它爬得越高？", canonical: "温度", variants: ["温度", "气温"], explanation: "温度计里的温度。" },
+  { id: "q_en_1", locale: "en", mode: "riddle", answerType: "free_text", difficulty: "easy",
+    text: "What has keys but can't open locks?", canonical: "piano", variants: ["piano", "a piano", "the piano"], explanation: "A piano has keys." },
+  { id: "q_en_2", locale: "en", mode: "brain_teaser", answerType: "free_text", difficulty: "easy",
+    text: "What gets wetter the more it dries?", canonical: "towel", variants: ["towel", "a towel", "the towel"], explanation: "A towel gets wet as it dries you." },
+  { id: "q_en_3", locale: "en", mode: "brain_teaser", answerType: "free_text", difficulty: "easy",
+    text: "What has to be broken before you can use it?", canonical: "egg", variants: ["egg", "an egg"], explanation: "You break an egg to use it." },
+  { id: "q_en_4", locale: "en", mode: "word_puzzle", answerType: "multiple_choice", difficulty: "medium",
+    text: "Which word is always spelled incorrectly?", choices: ["Wrong", "Incorrectly", "Rightly", "Never"], correctIndex: 1, explanation: "\"Incorrectly\" is spelled i-n-c-o-r-r-e-c-t-l-y." },
+  { id: "q_en_5", locale: "en", mode: "trivia", answerType: "multiple_choice", difficulty: "easy",
+    text: "How many sides does a hexagon have?", choices: ["5", "6", "7", "8"], correctIndex: 1, explanation: "A hexagon has six sides." },
+  { id: "q_en_6", locale: "en", mode: "riddle", answerType: "free_text", difficulty: "harder",
+    text: "What has a neck but no head?", canonical: "bottle", variants: ["bottle", "a bottle", "the bottle"], explanation: "A bottle has a neck." },
+];
+const quizPool = (locale) => QUIZ_QUESTIONS.filter((q) => q.locale === locale);
+export const quizQuestionById = (id) => QUIZ_QUESTIONS.find((q) => q.id === id) ?? null;
+const quizAnswerDocId = (eventId, questionId, hash) => sha256Hex(`qa:${eventId}:${questionId}:${hash}`);
+
+/** Deterministic answer normalization — NO AI. NFKC, trim, strip punctuation,
+ *  case-fold (en only), drop spaces. */
+export function normalizeQuizAnswer(s, locale) {
+  let t = String(s ?? "").normalize("NFKC").trim();
+  t = t.replace(/[.,!?;:'"“”‘’。，！？、；：·…—()（）【】\[\]{}\-]/g, "");
+  if (locale === "en") t = t.toLowerCase();
+  return t.replace(/\s+/g, "");
+}
+/** The accepted set for a free_text question — canonical + configured variants. */
+export function quizAcceptedSet(q) {
+  return new Set([q.canonical, ...(q.variants ?? [])].map((a) => normalizeQuizAnswer(a, q.locale)));
+}
+/** Server-authoritative remaining time for the open question (pause-aware). */
+export function quizRemainingMs(q, now) {
+  if (!q || q.phase !== "question_open") return 0;
+  if (q.paused) return Math.max(0, q.pausedRemainingMs ?? 0);
+  return Math.max(0, (q.closesAt ?? now) - now);
+}
+/** The synchronized timer clients render — remaining derived from server state,
+ *  so the Big Screen and every phone show the SAME countdown (pause-frozen). */
+const quizTimer = (q, now) => ({
+  remainingMs: quizRemainingMs(q, now),
+  durationSeconds: q.durationSeconds ?? q.answerDurationSeconds ?? QUIZ_DEFAULT_DURATION_S,
+  paused: q.paused === true && q.phase === "question_open",
+  timeUp: q.phase === "question_open" && quizRemainingMs(q, now) <= 0,
+});
+
+/**
+ * Pure, server-authoritative scoring — NO model calls, NO client clocks. The
+ * speed bonus is a deterministic fraction of the AUTHORITATIVE remaining time
+ * (so it is pause-safe and identical on refresh).
+ */
+export function scoreQuizAnswer(q, answer, remainingMs, windowMs) {
+  let correct;
+  if (q.answerType === "multiple_choice") {
+    correct = Number.isInteger(answer) && answer === q.correctIndex;
+  } else {
+    correct = quizAcceptedSet(q).has(normalizeQuizAnswer(answer, q.locale));
+  }
+  if (!correct) return { correct: false, points: 0 };
+  const frac = windowMs > 0 ? Math.max(0, Math.min(1, remainingMs / windowMs)) : 0;
+  return { correct: true, points: QUIZ_BASE_POINTS + Math.round(QUIZ_SPEED_BONUS_MAX * frac) };
+}
+/** A question as seen by clients — the correct answer is present ONLY once revealed. */
+function publicQuizQuestion(q, revealed) {
+  if (!q) return null;
+  const base = { id: q.id, mode: q.mode, answerType: q.answerType, text: q.text, difficulty: q.difficulty };
+  if (q.answerType === "multiple_choice") base.choices = q.choices;
+  if (revealed) {
+    base.correctAnswer = q.answerType === "multiple_choice" ? q.choices[q.correctIndex] : q.canonical;
+    if (q.answerType === "multiple_choice") base.correctIndex = q.correctIndex;
+    base.explanation = q.explanation ?? null;
+  }
+  return base;
+}
+/** Leaderboard from committed answers. Deterministic tie-break: points desc,
+ *  then more-correct, then finished-earlier, then hash asc (stable). */
+async function quizLeaderboard(db, eventId, now) {
+  const snap = await db.collection(QUIZ_ANSWER_COLLECTION).where("sessionId", "==", eventId).get();
+  const byP = new Map();
+  for (const d of snap.docs ?? []) {
+    const a = d.data();
+    if (!readGate(a, now)) continue;
+    const cur = byP.get(a.participantIdHash) ?? { participantIdHash: a.participantIdHash, nickname: null, points: 0, correct: 0, lastAt: 0 };
+    cur.points += a.points ?? 0;
+    if (a.correct) cur.correct += 1;
+    cur.lastAt = Math.max(cur.lastAt, a.submittedAt ?? 0);
+    if (a.nickname) cur.nickname = a.nickname;
+    byP.set(a.participantIdHash, cur);
+  }
+  return [...byP.values()]
+    .sort((x, y) => y.points - x.points || y.correct - x.correct || x.lastAt - y.lastAt || (x.participantIdHash < y.participantIdHash ? -1 : 1))
+    .map((r, i) => ({ rank: i + 1, participantIdHash: r.participantIdHash, nickname: r.nickname, points: r.points, correct: r.correct }));
+}
+const publicLeaderboard = (rows) => (rows ?? []).map((r) => ({ rank: r.rank, nickname: r.nickname, points: r.points, correct: r.correct }));
+
+/** Owner: configure the quiz (locale pack + question count). Only before start. */
+export async function quizConfigure({ db, decoded, body, now = Date.now() }) {
+  const eventId = typeof body?.eventId === "string" ? body.eventId.trim() : "";
+  const owned = await ownedDrawSession({ db, decoded, eventId });
+  if (owned.res) return owned.res;
+  const locale = body?.locale === "en" ? "en" : "zh";
+  const pool = quizPool(locale);
+  let count = Number.isInteger(body?.questionCount) ? body.questionCount : Math.min(5, pool.length);
+  count = Math.max(1, Math.min(count, pool.length, QUIZ_MAX_QUESTIONS));
+  let duration = Number.isInteger(body?.answerDurationSeconds) ? body.answerDurationSeconds : QUIZ_DEFAULT_DURATION_S;
+  duration = Math.max(QUIZ_DURATION_MIN_S, Math.min(duration, QUIZ_DURATION_MAX_S));
+  const ref = db.collection(QUIZ_COLLECTION).doc(eventId);
+  const existing = (await ref.get()).data();
+  if (existing && existing.phase && existing.phase !== "ready")
+    return { status: 409, body: { error: "quiz_in_progress", phase: existing.phase } };
+  const doc = {
+    schemaVersion: 1, sessionId: eventId, eventId, senderUid: decoded.uid, locale,
+    questionIds: pool.slice(0, count).map((q) => q.id), questionCount: count,
+    answerDurationSeconds: duration, // session default; a question may override at open
+    currentIndex: 0, phase: "ready", openedAt: null, durationSeconds: null, closesAt: null,
+    paused: false, pausedRemainingMs: null, answersSubmitted: 0,
+    finalLeaderboard: null, completedAt: null,
+    createdAt: existing?.createdAt ?? now, updatedAt: now,
+  };
+  await ref.set(doc);
+  // "Pure answering time" ≈ questions × duration — NOT total event time (reveals,
+  // rankings, host commentary and transitions add more).
+  return { status: 200, body: { ok: true, locale, questionCount: count, answerDurationSeconds: duration, estimatedAnswerSeconds: count * duration, phase: "ready" } };
+}
+
+/**
+ * Owner: drive the round state machine. Host controls the rhythm — the timer
+ * only bounds the answer WINDOW; it NEVER auto-chains to reveal/ranking/next.
+ * op ∈ open | pause | resume | lock | reveal | scores | next.
+ * Pause/resume alter AUTHORITATIVE server timing, not just the visual countdown.
+ */
+export async function quizControl({ db, decoded, body, now = Date.now() }) {
+  const eventId = typeof body?.eventId === "string" ? body.eventId.trim() : "";
+  const op = typeof body?.op === "string" ? body.op : "";
+  const owned = await ownedDrawSession({ db, decoded, eventId });
+  if (owned.res) return owned.res;
+  const ref = db.collection(QUIZ_COLLECTION).doc(eventId);
+  const q = (await ref.get()).data();
+  if (!q) return { status: 404, body: { error: "quiz_not_configured" } };
+  const total = q.questionIds.length;
+  const patch = { updatedAt: now };
+
+  if (op === "pause") {
+    if (q.phase !== "question_open" || q.paused) return { status: 409, body: { error: "wrong_phase", phase: q.phase } };
+    patch.paused = true; patch.pausedRemainingMs = quizRemainingMs(q, now); // freeze at the authoritative remaining
+  } else if (op === "resume") {
+    if (q.phase !== "question_open" || !q.paused) return { status: 409, body: { error: "wrong_phase", phase: q.phase } };
+    patch.paused = false; patch.closesAt = now + (q.pausedRemainingMs ?? 0); patch.pausedRemainingMs = null; // continue from frozen time
+  } else {
+    const need = { open: "ready", lock: "question_open", reveal: "locked", scores: "answer_reveal", next: "score_reveal" }[op];
+    if (!need) return { status: 400, body: { error: "invalid_request", field: "op" } };
+    if (q.phase !== need) return { status: 409, body: { error: "wrong_phase", phase: q.phase, need } };
+    if (op === "open") {
+      const question = quizQuestionById(q.questionIds[q.currentIndex]);
+      let dur = Number.isInteger(body?.durationSeconds) ? body.durationSeconds
+        : question?.durationSeconds ?? q.answerDurationSeconds ?? QUIZ_DEFAULT_DURATION_S; // per-question override → session default
+      dur = Math.max(QUIZ_DURATION_MIN_S, Math.min(dur, QUIZ_DURATION_MAX_S));
+      patch.phase = "question_open"; patch.openedAt = now; patch.durationSeconds = dur;
+      patch.closesAt = now + dur * 1000; patch.paused = false; patch.pausedRemainingMs = null;
+    } else if (op === "lock") { patch.phase = "locked"; } // "Lock Now" ends the window immediately
+    else if (op === "reveal") { patch.phase = "answer_reveal"; }
+    else if (op === "scores") { patch.phase = "score_reveal"; }
+    else if (op === "next") {
+      const nextIndex = q.currentIndex + 1;
+      if (nextIndex >= total) {
+        patch.phase = "completed"; patch.completedAt = now;
+        patch.finalLeaderboard = await quizLeaderboard(db, eventId, now); // snapshot survives answer TTL
+      } else { patch.currentIndex = nextIndex; patch.phase = "ready"; patch.openedAt = null; patch.durationSeconds = null; patch.closesAt = null; patch.paused = false; patch.pausedRemainingMs = null; }
+    }
+  }
+  await ref.update(patch);
+  return { status: 200, body: { ok: true, op, phase: patch.phase ?? q.phase, currentIndex: patch.currentIndex ?? q.currentIndex } };
+}
+
+/** Owner: full state for Host Control + Big Screen. The correct answer is
+ *  returned ONLY when the phase is at/after answer_reveal (defensive: the big
+ *  screen is projected publicly). */
+export async function quizOwnerState({ db, decoded, body, now = Date.now() }) {
+  const eventId = typeof body?.eventId === "string" ? body.eventId.trim() : "";
+  const owned = await ownedDrawSession({ db, decoded, eventId });
+  if (owned.res) return owned.res;
+  const q = (await db.collection(QUIZ_COLLECTION).doc(eventId).get()).data();
+  if (!q) return { status: 200, body: { configured: false } };
+  const revealed = ["answer_reveal", "score_reveal", "completed"].includes(q.phase);
+  const question = quizQuestionById(q.questionIds[q.currentIndex]);
+  const ansSnap = await db.collection(QUIZ_ANSWER_COLLECTION).where("sessionId", "==", eventId).get();
+  const answers = (ansSnap.docs ?? []).map((d) => d.data()).filter((a) => readGate(a, now));
+  const leaderboard = q.phase === "completed" ? q.finalLeaderboard
+    : q.phase === "score_reveal" ? await quizLeaderboard(db, eventId, now) : null;
+  return {
+    status: 200,
+    body: {
+      configured: true, phase: q.phase, locale: q.locale,
+      questionNumber: q.currentIndex + 1, questionTotal: q.questionIds.length,
+      question: publicQuizQuestion(question, revealed),
+      timer: quizTimer(q, now),
+      answerDurationSeconds: q.answerDurationSeconds ?? QUIZ_DEFAULT_DURATION_S,
+      estimatedAnswerSeconds: q.questionIds.length * (q.answerDurationSeconds ?? QUIZ_DEFAULT_DURATION_S),
+      answeredThis: answers.filter((a) => a.questionId === question?.id).length,
+      participants: new Set(answers.map((a) => a.participantIdHash)).size,
+      answersSubmitted: q.answersSubmitted ?? 0,
+      leaderboard: publicLeaderboard(leaderboard),
+    },
+  };
+}
+
+/** Guest (/gift/onsite/quiz op:state) — current question WITHOUT the answer
+ *  until reveal, plus this participant's own state (their answer; result only
+ *  once revealed). */
+export async function quizGuestState({ db, body, giftCollection, now = Date.now() }) {
+  const token = typeof body?.token === "string" ? body.token.trim() : "";
+  const found = await onsiteByToken({ db, giftCollection, token, now });
+  if (found.res) return found.res;
+  const { rec } = found;
+  const participantIdHash = typeof body?.participantToken === "string" && /^[A-Za-z0-9_-]{16,64}$/.test(body.participantToken.trim())
+    ? sha256Hex(body.participantToken.trim()) : null;
+  const q = (await db.collection(QUIZ_COLLECTION).doc(rec.eventId).get()).data();
+  if (!q) return { status: 200, body: { configured: false } };
+  const revealed = ["answer_reveal", "score_reveal", "completed"].includes(q.phase);
+  const question = quizQuestionById(q.questionIds[q.currentIndex]);
+  let mine = null;
+  if (participantIdHash && question) {
+    const aSnap = await db.collection(QUIZ_ANSWER_COLLECTION).doc(quizAnswerDocId(rec.eventId, question.id, participantIdHash)).get();
+    if (aSnap.exists) {
+      const a = aSnap.data();
+      mine = { answered: true, answer: a.answer, ...(revealed ? { correct: a.correct, points: a.points } : {}) };
+    } else mine = { answered: false };
+  }
+  let myScore = null;
+  if (participantIdHash && (q.phase === "score_reveal" || q.phase === "completed")) {
+    const rows = q.phase === "completed" ? (q.finalLeaderboard ?? []) : await quizLeaderboard(db, rec.eventId, now);
+    const row = rows.find((r) => r.participantIdHash === participantIdHash);
+    if (row) myScore = { rank: row.rank, points: row.points, correct: row.correct };
+  }
+  return {
+    status: 200,
+    body: {
+      configured: true, phase: q.phase,
+      questionNumber: q.currentIndex + 1, questionTotal: q.questionIds.length,
+      question: publicQuizQuestion(question, revealed),
+      timer: quizTimer(q, now),
+      mine, myScore,
+    },
+  };
+}
+
+/** Guest (/gift/onsite/quiz op:answer) — one final answer per participant per
+ *  question, idempotent, phase-gated. Scored deterministically server-side; the
+ *  result is WITHHELD from the response (revealed only via state at reveal). */
+export async function quizGuestAnswer({ db, body, giftCollection, now = Date.now() }) {
+  const token = typeof body?.token === "string" ? body.token.trim() : "";
+  const found = await onsiteByToken({ db, giftCollection, token, now });
+  if (found.res) return found.res;
+  const { rec } = found;
+  const participantToken = typeof body?.participantToken === "string" ? body.participantToken.trim() : "";
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(participantToken))
+    return { status: 400, body: { error: "invalid_participant" } };
+  const participantIdHash = sha256Hex(participantToken);
+  const questionId = typeof body?.questionId === "string" ? body.questionId.trim() : "";
+
+  const q = (await db.collection(QUIZ_COLLECTION).doc(rec.eventId).get()).data();
+  if (!q) return { status: 409, body: { error: "quiz_not_open" } };
+  const current = quizQuestionById(q.questionIds[q.currentIndex]);
+  if (!current || current.id !== questionId) return { status: 409, body: { error: "wrong_question" } };
+  if (q.phase !== "question_open") return { status: 409, body: { error: "answers_locked" } };
+  // Server-authoritative timer: at zero, late answers are refused even before the
+  // host taps Lock (pause freezes the clock, so a held round still accepts).
+  const remainingMs = quizRemainingMs(q, now);
+  if (remainingMs <= 0) return { status: 409, body: { error: "answers_locked", reason: "time" } };
+
+  let nickname = null;
+  if (body?.nickname !== undefined && body?.nickname !== null) {
+    nickname = String(body.nickname).trim().replace(/[ -]/g, "").slice(0, QUIZ_NICKNAME_MAX);
+    if (!nickname) nickname = null;
+  }
+  let answer = body?.answer;
+  if (current.answerType === "multiple_choice") {
+    if (!Number.isInteger(answer) || answer < 0 || answer >= (current.choices?.length ?? 0))
+      return { status: 400, body: { error: "invalid_answer" } };
+  } else {
+    answer = typeof answer === "string" ? answer.trim() : "";
+    if (!answer) return { status: 400, body: { error: "invalid_answer" } };
+    if (answer.length > QUIZ_ANSWER_MAX_LEN) return { status: 400, body: { error: "answer_too_long" } };
+  }
+
+  const ref = db.collection(QUIZ_ANSWER_COLLECTION).doc(quizAnswerDocId(rec.eventId, questionId, participantIdHash));
+  if ((await ref.get()).exists) return { status: 200, body: { ok: true, received: true, duplicate: true } };
+  // Deterministic scoring — pure function, NO model call. 5000 answers = 5000
+  // cheap DB writes, never 5000 LLM calls. Speed bonus from authoritative remaining.
+  const windowMs = (q.durationSeconds ?? QUIZ_DEFAULT_DURATION_S) * 1000;
+  const { correct, points } = scoreQuizAnswer(current, answer, remainingMs, windowMs);
+  try {
+    await ref.create({
+      schemaVersion: 1, sessionId: rec.eventId, questionId, participantIdHash, nickname,
+      answer, answerType: current.answerType, correct, points, submittedAt: now,
+      expireAt: now + QUIZ_ANSWER_TTL_MS, // operational lifecycle
+    });
+  } catch (err) {
+    if ((await ref.get()).exists) return { status: 200, body: { ok: true, received: true, duplicate: true } };
+    throw err;
+  }
+  await db.collection(QUIZ_COLLECTION).doc(rec.eventId).update({ answersSubmitted: (q.answersSubmitted ?? 0) + 1 }).catch(() => {});
+  // Correctness is intentionally NOT returned here (anti-cheat).
+  return { status: 200, body: { ok: true, received: true, duplicate: false } };
+}
+
 // --- Sender: draw configuration / state foundation -------------------------
 
 /** POST /sender/onsite/draw/configure — data contract only; no selection. */
