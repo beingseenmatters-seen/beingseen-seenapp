@@ -24,14 +24,32 @@ describe('Seen Connect → embedded Gift.Seen Send catalogue', () => {
     expect(en.express.catalogue_title).toBe('What do you want to tell them today?');
   });
 
-  it('renders EXACTLY the four Send families, routed into the CURRENT Gift.Seen product', () => {
+  it('renders EXACTLY the four Send families, routed into the CURRENT Gift.Seen product with source=seen', () => {
     const keys = [...gift.matchAll(/key: '([a-z]+)'/g)].map((m) => m[1]);
     expect(keys).toEqual(['love', 'wishes', 'care', 'write']);
     expect(gift.includes("GIFT_HOME = 'https://gift.beingseenmatters.com'")).toBe(true);
-    expect(gift.includes('`${GIFT_HOME}/c/love`')).toBe(true);
-    expect(gift.includes('`${GIFT_HOME}/c/wishes`')).toBe(true);
-    expect(gift.includes('`${GIFT_HOME}/c/care`')).toBe(true);
-    expect(gift.includes('`${GIFT_HOME}/compose/custom`')).toBe(true);
+    // Every family link carries the Seen entry context so Gift.Seen's first back returns here.
+    expect(gift.includes('`${GIFT_HOME}/c/love?source=seen`')).toBe(true);
+    expect(gift.includes('`${GIFT_HOME}/c/wishes?source=seen`')).toBe(true);
+    expect(gift.includes('`${GIFT_HOME}/c/care?source=seen`')).toBe(true);
+    expect(gift.includes('`${GIFT_HOME}/compose/custom?source=seen`')).toBe(true);
+  });
+
+  it('header stacks the three actions vertically (back / Seen Matters / GIFT.SEEN) — none beside another', () => {
+    const iB = gift.indexOf("aria-label={t('common.back')}");
+    const iSM = gift.indexOf('data-seen-matters-home');
+    const iGS = gift.indexOf('data-open-full-gift');
+    expect(iB).toBeGreaterThan(-1);
+    expect(iSM).toBeGreaterThan(iB); // Seen Matters BELOW back
+    expect(iGS).toBeGreaterThan(iSM); // GIFT.SEEN BELOW Seen Matters
+    // Vertical offsets (own lines), not a horizontal flex row of back+mark.
+    expect(gift.includes('mt-1 flex') && gift.includes('mt-1.5 inline-flex')).toBe(true);
+  });
+
+  it('the GIFT.SEEN escape hatch goes to the full product WITHOUT source (a deliberate full exit)', () => {
+    // Full-product link is the bare GIFT_HOME, never ?source=seen.
+    expect(gift.includes('href={GIFT_HOME}')).toBe(true);
+    expect(gift.includes('`${GIFT_HOME}`?source') || gift.includes('GIFT_HOME}?source')).toBe(false);
   });
 
   it('does NOT pull Events / Live Interaction / Seen.Tag into Seen Connect', () => {

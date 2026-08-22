@@ -15,10 +15,10 @@ const GIFT_HOME = 'https://gift.beingseenmatters.com';
  * continuity is Gift.Seen's own safe sign-in — no invented cross-origin token.
  */
 const SEND_ITEMS = [
-  { key: 'love', emoji: '❤️', href: `${GIFT_HOME}/c/love` },
-  { key: 'wishes', emoji: '🎉', href: `${GIFT_HOME}/c/wishes` },
-  { key: 'care', emoji: '🌿', href: `${GIFT_HOME}/c/care` },
-  { key: 'write', emoji: '✍️', href: `${GIFT_HOME}/compose/custom` },
+  { key: 'love', emoji: '❤️', href: `${GIFT_HOME}/c/love?source=seen` },
+  { key: 'wishes', emoji: '🎉', href: `${GIFT_HOME}/c/wishes?source=seen` },
+  { key: 'care', emoji: '🌿', href: `${GIFT_HOME}/c/care?source=seen` },
+  { key: 'write', emoji: '✍️', href: `${GIFT_HOME}/compose/custom?source=seen` },
 ] as const;
 
 /**
@@ -37,8 +37,10 @@ export default function ExpressGift() {
   return (
     <div className="flex flex-col h-full w-full bg-surface text-primary font-sans">
       <div className="flex flex-col h-full w-full max-w-md md:max-w-xl mx-auto bg-white">
-        {/* Header — back navigation + the Seen Matters ecosystem home link. */}
-        <div className="px-6 pt-12 pb-4 flex items-center gap-3 bg-white z-10 sticky top-0 shrink-0">
+        {/* Header — three DISTINCT actions stacked vertically so they can't be
+            mis-tapped or conflated: back (return through the Seen journey),
+            Seen Matters (ecosystem home), GIFT.SEEN (the full Gift.Seen product). */}
+        <div className="px-6 pt-12 pb-4 bg-white z-10 sticky top-0 shrink-0">
           <button
             onClick={() => navigate('/inbox')}
             className="p-2 -ml-2 text-secondary hover:text-primary transition-colors"
@@ -50,25 +52,24 @@ export default function ExpressGift() {
             href={SEEN_MATTERS_HOME}
             aria-label={P('seen_matters_home')}
             data-seen-matters-home
-            className="flex items-baseline gap-1 select-none leading-none transition-opacity hover:opacity-70"
+            className="mt-1 flex items-baseline gap-1 w-fit select-none leading-none transition-opacity hover:opacity-70"
           >
             <span className="text-sm font-bold tracking-tight text-[#F4685A]">seen</span>
             <span className="text-[9px] font-medium uppercase tracking-[0.22em] text-stone-500">Matters</span>
           </a>
+          <a
+            href={GIFT_HOME}
+            aria-label={P('open_full_gift')}
+            data-open-full-gift
+            className="mt-1.5 inline-flex items-center gap-1 w-fit text-[11px] font-medium tracking-[0.2em] text-[#F4685A] uppercase hover:opacity-70 transition-opacity"
+          >
+            GIFT.SEEN <ArrowUpRight size={12} strokeWidth={2} />
+          </a>
         </div>
 
         <div className="flex-1 overflow-y-auto no-scrollbar px-6 pb-12">
-          {/* Content header — GIFT.SEEN escape hatch to the full product, then the
-              current Gift.Seen Home title/copy. GIFT.SEEN is a real link, not decor. */}
+          {/* Content header — the current Gift.Seen Home title/copy. */}
           <div className="pt-4 space-y-2">
-            <a
-              href={GIFT_HOME}
-              aria-label={P('open_full_gift')}
-              data-open-full-gift
-              className="inline-flex items-center gap-1 text-[11px] font-medium tracking-[0.2em] text-[#F4685A] uppercase hover:opacity-70 transition-opacity"
-            >
-              GIFT.SEEN <ArrowUpRight size={12} strokeWidth={2} />
-            </a>
             <h1 className="text-2xl font-light text-primary leading-snug">{P('catalogue_title')}</h1>
             <p className="text-sm text-secondary font-light leading-relaxed">{P('catalogue_subtitle')}</p>
           </div>
