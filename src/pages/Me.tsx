@@ -54,45 +54,42 @@ export default function Me() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="shrink-0 px-5 pt-3 pb-1">
+      {/* Top bar — 我 on the left; the Moment.Seen entry (logo + wordmark, the
+          whole lockup is the link) top-right, aligned with the 我 label. */}
+      <div className="shrink-0 px-5 pt-3 pb-1 flex items-start justify-between">
         <span className="text-[11px] font-semibold tracking-[0.2em] text-gray-500 uppercase">
           {t('nav.me')}
         </span>
-      </div>
-      <div className={`flex-1 min-h-0 overflow-y-auto no-scrollbar ${isDesktop ? 'max-w-3xl mx-auto w-full px-8 pb-12' : 'px-6 pb-8'}`}>
-      {/* Page header — Me on the left, the Moment.Seen ecosystem entry on the
-          right (an ecosystem shortcut, deliberately NOT a profile card below).
-          On narrow layouts the entry stacks naturally beneath the header. */}
-      <div className="mb-10 pt-4 flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="flex items-baseline space-x-3 mb-4">
-            <span className="text-3xl font-light text-primary font-sans">Seen</span>
-            {t('me.title_sub') && (
-              <span className="text-xl font-light text-secondary font-serif">{t('me.title_sub')}</span>
-            )}
-          </div>
-          <p className="text-sm text-secondary font-light">{t('me.subtitle')}</p>
-        </div>
-
-        {/* Moment.Seen — sibling product. Founder decision: the LOGO ITSELF is
-            the link (no CTA button; the brand color lives in the icon). Plain
-            cross-origin link (no token handoff), URL via config/env. */}
         <a
           href={MOMENT_APP_URL}
           aria-label={`${t('me.momentseen_name')} — ${t('me.momentseen_sub')}`}
           title={`${t('me.momentseen_name')} — ${t('me.momentseen_sub')}`}
-          className="shrink-0 self-start rounded-2xl transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C64573]/50"
+          className="flex flex-col items-center gap-1 rounded-xl transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C64573]/50"
           data-testid="momentseen-entry"
         >
           <img
             src="/moment-seen-icon.png"
-            alt={t('me.momentseen_name')}
-            width={52}
-            height={52}
-            className="rounded-2xl shadow-sm ring-1 ring-stone-200/60"
+            alt=""
+            width={44}
+            height={44}
+            className="rounded-xl shadow-sm ring-1 ring-stone-200/60"
             draggable={false}
           />
+          <span className="text-[10px] font-semibold tracking-tight text-primary leading-none">
+            {t('me.momentseen_name')}
+          </span>
         </a>
+      </div>
+      <div className={`flex-1 min-h-0 overflow-y-auto no-scrollbar ${isDesktop ? 'max-w-3xl mx-auto w-full px-8 pb-12' : 'px-6 pb-8'}`}>
+      {/* Page header */}
+      <div className="mb-10 pt-4">
+        <div className="flex items-baseline space-x-3 mb-4">
+          <span className="text-3xl font-light text-primary font-sans">Seen</span>
+          {t('me.title_sub') && (
+            <span className="text-xl font-light text-secondary font-serif">{t('me.title_sub')}</span>
+          )}
+        </div>
+        <p className="text-sm text-secondary font-light">{t('me.subtitle')}</p>
       </div>
 
       <div className="space-y-8">
