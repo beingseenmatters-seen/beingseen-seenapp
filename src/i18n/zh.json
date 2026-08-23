@@ -533,7 +533,9 @@
       "q5_other_placeholder": "写一下你的方式…",
       "q6_title": "有没有一句话，或者一个人，让你在某一刻停下来想了很久？",
       "q6_helper": "可以是一句话、一个名字，或一个你一直记得的瞬间。"
-    }
+    },
+    "momentseen_name": "Moment.Seen",
+    "momentseen_sub": "把想分享的瞬间，准备得更好。"
   },
   "moments": {
     "header": "Seen 眼中的你",

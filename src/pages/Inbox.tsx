@@ -127,21 +127,28 @@ export default function Inbox() {
               <p className="text-secondary font-light text-sm">{t('inbox.subtitle')}</p>
             </div>
 
-            {/* 有句话，想送给 TA — Relationship Expression / QR Gift entry */}
+            {/* 有句话，想送给 TA — the bridge into Gift.Seen. Carries Gift.Seen's
+                established theme (coral #EC6A6E / rose #E0536E, heart gradient
+                #F5836F→#EE5D79 from the Gift.Seen tokens) in a restrained way:
+                tinted card + gradient heart + rose accents. Wording unchanged. */}
             <button
               onClick={() => navigate('/connect/express')}
-              className="w-full flex items-center justify-between p-5 mb-6 rounded-2xl bg-gray-50 border border-gray-100 hover:border-gray-300 transition-colors text-left group"
+              className="w-full flex items-center justify-between p-5 mb-6 rounded-2xl bg-[#FDF3F4] border border-[#F6DCE0] hover:border-[#EC6A6E]/60 transition-colors text-left group"
+              data-testid="giftseen-entry"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <span className="shrink-0 w-10 h-10 rounded-full bg-white border border-gray-100 flex items-center justify-center text-primary">
-                  <Heart size={18} strokeWidth={1.5} />
+                <span
+                  className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-white shadow-sm"
+                  style={{ background: 'linear-gradient(180deg, #F5836F 0%, #EE5D79 100%)' }}
+                >
+                  <Heart size={18} strokeWidth={1.8} fill="currentColor" />
                 </span>
                 <div className="min-w-0">
                   <p className="text-base font-medium text-primary truncate">{t('express.title')}</p>
-                  <p className="text-xs text-muted font-light truncate">{t('express.entry_sub')}</p>
+                  <p className="text-xs font-light truncate text-[#C7455F]">{t('express.entry_sub')}</p>
                 </div>
               </div>
-              <ChevronRight size={18} className="shrink-0 ml-3 text-gray-400 group-hover:text-primary transition-colors" />
+              <ChevronRight size={18} className="shrink-0 ml-3 text-[#E0536E]/70 group-hover:text-[#E0536E] transition-colors" />
             </button>
 
             {isLoading ? (

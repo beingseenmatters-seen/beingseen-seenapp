@@ -533,7 +533,9 @@
       "q5_other_placeholder": "Describe what helps…",
       "q6_title": "Was there ever a sentence, or someone, that made you stop and think for a long time?",
       "q6_helper": "It could be a line, a name, or even a moment that stayed with you."
-    }
+    },
+    "momentseen_name": "Moment.Seen",
+    "momentseen_sub": "Make a moment ready to share."
   },
   "moments": {
     "header": "How Seen Sees You",
