@@ -9,6 +9,7 @@ import {
   momentsClient,
   refreshMomentLibraryFromRemote,
 } from '../services/moments/momentsClient';
+import { MOMENT_APP_URL } from '../config/ecosystem';
 import type { MomentsOverview } from '../services/moments/momentsService';
 
 export default function Me() {
@@ -59,15 +60,39 @@ export default function Me() {
         </span>
       </div>
       <div className={`flex-1 min-h-0 overflow-y-auto no-scrollbar ${isDesktop ? 'max-w-3xl mx-auto w-full px-8 pb-12' : 'px-6 pb-8'}`}>
-      {/* Page header */}
-      <div className="mb-10 pt-4">
-        <div className="flex items-baseline space-x-3 mb-4">
-          <span className="text-3xl font-light text-primary font-sans">Seen</span>
-          {t('me.title_sub') && (
-            <span className="text-xl font-light text-secondary font-serif">{t('me.title_sub')}</span>
-          )}
+      {/* Page header — Me on the left, the Moment.Seen ecosystem entry on the
+          right (an ecosystem shortcut, deliberately NOT a profile card below).
+          On narrow layouts the entry stacks naturally beneath the header. */}
+      <div className="mb-10 pt-4 flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex items-baseline space-x-3 mb-4">
+            <span className="text-3xl font-light text-primary font-sans">Seen</span>
+            {t('me.title_sub') && (
+              <span className="text-xl font-light text-secondary font-serif">{t('me.title_sub')}</span>
+            )}
+          </div>
+          <p className="text-sm text-secondary font-light">{t('me.subtitle')}</p>
         </div>
-        <p className="text-sm text-secondary font-light">{t('me.subtitle')}</p>
+
+        {/* Moment.Seen — sibling product. Founder decision: the LOGO ITSELF is
+            the link (no CTA button; the brand color lives in the icon). Plain
+            cross-origin link (no token handoff), URL via config/env. */}
+        <a
+          href={MOMENT_APP_URL}
+          aria-label={`${t('me.momentseen_name')} — ${t('me.momentseen_sub')}`}
+          title={`${t('me.momentseen_name')} — ${t('me.momentseen_sub')}`}
+          className="shrink-0 self-start rounded-2xl transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C64573]/50"
+          data-testid="momentseen-entry"
+        >
+          <img
+            src="/moment-seen-icon.png"
+            alt={t('me.momentseen_name')}
+            width={52}
+            height={52}
+            className="rounded-2xl shadow-sm ring-1 ring-stone-200/60"
+            draggable={false}
+          />
+        </a>
       </div>
 
       <div className="space-y-8">
@@ -129,7 +154,7 @@ export default function Me() {
                   ? navigate(`/moments/session/${moments!.activeSession!.id}`)
                   : handleStartMoments()
               }
-              className="w-full py-3 rounded-xl bg-primary text-white text-sm font-medium hover:bg-black transition-colors"
+              className="w-full py-3 rounded-xl text-white text-sm font-medium bg-gradient-to-r from-[#C64573] to-[#6B4FD8] hover:from-[#B93E68] hover:to-[#5F45C4] transition-colors"
             >
               {hasActive ? t('me.moments_progress_cta') : t('me.moments_empty_cta')}
             </button>

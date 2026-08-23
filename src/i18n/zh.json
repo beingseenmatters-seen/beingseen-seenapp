@@ -3,6 +3,18 @@
     "header": "心意",
     "title": "有句话，想送给 TA",
     "entry_sub": "写下来，做成一枚只有 TA 能打开的心意",
+    "catalogue_title": "今天，你想对 TA 说什么？",
+    "catalogue_subtitle": "选一类心意，把心里的话，做成一枚只有 TA 能打开的心意。",
+    "seen_matters_home": "返回 Seen Matters 首页",
+    "open_full_gift": "打开完整 Gift.Seen",
+    "send_love": "爱",
+    "send_love_sub": "爱要说出口",
+    "send_wishes": "祝福",
+    "send_wishes_sub": "大日子与节日的心意",
+    "send_care": "感谢与陪伴",
+    "send_care_sub": "谢意、歉意与支持",
+    "send_write": "自己写",
+    "send_write_sub": "直接写下想说的话",
     "subtitle": "描述你们之间的情境，Seen 会帮你把话说得更好。",
     "situation_label": "此刻的情境",
     "situation_placeholder": "想对谁说？发生了什么？你想表达什么？",
@@ -521,7 +533,9 @@
       "q5_other_placeholder": "写一下你的方式…",
       "q6_title": "有没有一句话，或者一个人，让你在某一刻停下来想了很久？",
       "q6_helper": "可以是一句话、一个名字，或一个你一直记得的瞬间。"
-    }
+    },
+    "momentseen_name": "Moment.Seen",
+    "momentseen_sub": "把想分享的瞬间，准备得更好。"
   },
   "moments": {
     "header": "Seen 眼中的你",
