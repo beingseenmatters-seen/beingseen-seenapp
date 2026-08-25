@@ -192,7 +192,13 @@ test("scanner plane can NEVER mutate a Tag — only resolve + contact exist", as
     // resolve path: succeeds as a read, or 400/404 — but NEVER changes the tag.
     assert.ok(r.status === 200 || r.status === 400 || r.status === 404);
   }
-  assert.deepEqual(db._store.get(`${TAG_COLLECTION}/${tagId}`), before); // unchanged
+  // The ONLY field the public plane may touch is the scan-event throttle
+  // timestamp (engine telemetry, not scanner-controlled data). Every
+  // configuration field is byte-identical.
+  const after = db._store.get(`${TAG_COLLECTION}/${tagId}`);
+  const scrub = ({ lastScanEventAt, ...rest }) => rest;
+  assert.deepEqual(scrub(after), scrub(before));
+  assert.ok(after.lastScanEventAt === 6000 || after.lastScanEventAt === undefined);
   // The public door carries NO owner-mutation capability at all.
   assert.equal(before.status, "active");
 });
@@ -354,7 +360,7 @@ test("Seen.Pet: anonymous scanner sees pet name + note + the five pet reasons", 
   assert.equal(r.body.type, "pet");
   assert.equal(r.body.ownerMessage, DEFAULT_OWNER_MESSAGE.pet.zh);
   assert.deepEqual(r.body.reasons, ["found", "safe_with_me", "seen_nearby", "injured", "danger", "other"]);
-  assert.deepEqual(r.body.profile, { name: "旺财", petType: "dog", safetyNote: "怕陌生人，请不要强行抱它。", photo: null });
+  assert.deepEqual(r.body.profile, { name: "旺财", petType: "dog", safetyNote: "怕陌生人，请不要强行抱它。" }); // null fields stripped from the public payload
   // Public surface still never leaks owner identity.
   for (const k of ["ownerUid", "displayLabel", "shareTokenSealed", "publicQrHash", "callbackPhone"]) assert.equal(k in r.body, false, k);
 });
@@ -377,14 +383,20 @@ test("Seen.Pet: all reasons submit; location + optional contact reach the owner 
   for (const k of ["scannerIdHash", "ipHash"]) assert.equal(k in c, false);
 });
 
-test("Seen.Luggage: default message, five status options; NO public profile", async () => {
+test("Seen.Luggage: default message, spec quick messages; public profile (name/colour/description/photo)", async () => {
   const db = makeFakeDb();
-  const { token, body } = await makeLuggage(db);
+  const { token, body, tagId } = await makeLuggage(db);
   assert.equal(body.ownerMessage, DEFAULT_OWNER_MESSAGE.luggage.zh);
-  const r = await S(db, { op: "resolve", token });
+  let r = await S(db, { op: "resolve", token });
   assert.equal(r.body.type, "luggage");
-  assert.deepEqual(r.body.reasons, ["found", "handed_to_staff", "left_safe", "at_transit", "other"]);
-  assert.equal("profile" in r.body, false); // luggage carries no public structured profile
+  assert.deepEqual(r.body.reasons, ["found", "safe_with_me", "seen_here", "handed_to_staff", "other"]);
+  // Freshly made luggage has an empty profile → nothing public yet.
+  assert.equal("profile" in r.body, false);
+  // The owner names it and the finder can now confirm the match.
+  await M(db, { action: "update", tagId, profile: { name: "My Blue Suitcase", colour: "blue" } });
+  r = await S(db, { op: "resolve", token });
+  assert.equal(r.body.profile.name, "My Blue Suitcase");
+  assert.equal(r.body.profile.colour, "blue");
 });
 
 test("Seen.Luggage: handed_to_staff exposes a Lost & Found field; it is owner-only and luggage-only", async () => {
@@ -403,7 +415,7 @@ test("Seen.Luggage: handed_to_staff exposes a Lost & Found field; it is owner-on
   assert.equal(cc.handedTo, null);
 });
 
-test("owner can edit the pet profile; car/luggage have no editable profile", async () => {
+test("owner can edit the pet + luggage public profiles; car's profile edit is a no-op", async () => {
   const db = makeFakeDb();
   const { tagId, token } = await makePet(db);
   const up = await M(db, { action: "update", tagId, profile: { name: "小白", petType: "cat" } });
@@ -412,22 +424,27 @@ test("owner can edit the pet profile; car/luggage have no editable profile", asy
   assert.equal(up.body.profile.petType, "cat");
   // The scanner now sees the new profile.
   assert.equal((await S(db, { op: "resolve", token })).body.profile.name, "小白");
-  // A luggage profile edit is a no-op (no public profile for luggage).
+  // Luggage edits its own public shape (validated fields only).
   const lug = await makeLuggage(db);
-  const lu = await M(db, { action: "update", tagId: lug.tagId, profile: { name: "hack" } });
-  assert.deepEqual(lu.body.profile, {});
+  const lu = await M(db, { action: "update", tagId: lug.tagId, profile: { name: "Blue Case", petType: "dog" } });
+  assert.equal(lu.body.profile.name, "Blue Case");
+  assert.equal("petType" in lu.body.profile, false); // pet fields can't leak into luggage
+  // Car has NO public profile — an attempted edit changes nothing.
+  const car = await makeCar(db);
+  const cu = await M(db, { action: "update", tagId: car.tagId, profile: { name: "hack" } });
+  assert.deepEqual(cu.body.profile, {});
 });
 
-test("REGRESSION: Seen.Car is byte/behaviour unchanged (no profile, no location coupling)", async () => {
+test("Seen.Car public surface: spec quick messages, NEVER a profile, no handedTo coupling", async () => {
   const db = makeFakeDb();
   const { tagId, token, body } = await makeCar(db);
-  assert.deepEqual(body.profile, {});                       // car profile is empty
+  assert.deepEqual(body.profile, {});                       // car public profile is empty
   const r = await S(db, { op: "resolve", token });
   assert.equal("profile" in r.body, false);                 // car resolve has no profile
-  assert.deepEqual(r.body.reasons, ["blocking", "access", "anomaly", "other"]);
-  await S(db, { op: "contact", token, reason: "blocking", idempotencyKey: "idem-carreg", scannerToken: SCAN });
+  assert.deepEqual(r.body.reasons, ["blocking", "lights_on", "window_open", "anomaly", "access", "other"]);
+  await S(db, { op: "contact", token, reason: "lights_on", idempotencyKey: "idem-carreg", scannerToken: SCAN });
   const c = (await M(db, { action: "contacts", tagId })).body.contacts[0];
-  assert.equal(c.location, null);
+  assert.equal(c.reason, "lights_on");
   assert.equal(c.handedTo, null);
 });
 
@@ -710,4 +727,113 @@ test("FULL SPEC FLOW: provision → scan invites → activate → profile → fi
   // 15-16. Found again; the public page returns to normal.
   await M(db, { action: "mark_found", tagId }, OWNER);
   assert.equal((await S(db, { op: "resolve", token: "TESTPET001" })).body.status, "active");
+});
+
+// ===========================================================================
+// Car + Luggage pre-manufactured parity (spec 2026-08-25): private car profile,
+// luggage missing mode, car missing refusal, TAG_SCANNED throttle.
+// ===========================================================================
+
+test("car ownerProfile is PRIVATE: owner sees it, the public surface never does", async () => {
+  const db = makeFakeDb();
+  await M(db, { action: "provision", type: "car", code: "TESTCAR001" }, ADMIN);
+  const act = await M(db, { action: "activate", token: "TESTCAR001", locale: "en" }, OWNER);
+  const tagId = act.body.tagId;
+  const up = await M(db, { action: "update", tagId, ownerProfile: { name: "White Tesla", make: "Tesla", model: "Model Y", colour: "white", registrationHint: "…X882" } }, OWNER);
+  assert.equal(up.status, 200);
+  assert.equal(up.body.ownerProfile.name, "White Tesla");
+  const det = await M(db, { action: "detail", tagId }, OWNER);
+  assert.equal(det.body.ownerProfile.registrationHint, "…X882");
+  // The scanner learns NOTHING about the vehicle.
+  const pub = await S(db, { op: "resolve", token: "TESTCAR001" });
+  assert.equal("ownerProfile" in pub.body, false);
+  assert.equal("profile" in pub.body, false);
+  assert.equal(JSON.stringify(pub.body).includes("Tesla"), false);
+  // Pet fields can't sneak into a car ownerProfile / luggage can't get one.
+  const lug = await makeLuggage(db);
+  const lu = await M(db, { action: "update", tagId: lug.tagId, ownerProfile: { name: "x" } });
+  assert.deepEqual(lu.body.ownerProfile, {});
+});
+
+test("car cannot be marked missing (spec §15); luggage can", async () => {
+  const db = makeFakeDb();
+  await M(db, { action: "provision", type: "car", code: "TESTCAR001" }, ADMIN);
+  const car = await M(db, { action: "activate", token: "TESTCAR001" }, OWNER);
+  const r = await M(db, { action: "mark_missing", tagId: car.body.tagId }, OWNER);
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error, "missing_not_supported");
+  await M(db, { action: "provision", type: "luggage", code: "TESTLUG001" }, ADMIN);
+  const lug = await M(db, { action: "activate", token: "TESTLUG001" }, OWNER);
+  const ok = await M(db, { action: "mark_missing", tagId: lug.body.tagId }, OWNER, 5000);
+  assert.equal(ok.body.status, "missing");
+  const pub = await S(db, { op: "resolve", token: "TESTLUG001" });
+  assert.equal(pub.body.status, "missing");
+});
+
+test("TAG_SCANNED: emitted on active resolve, throttled to one per hour, silent for unactivated", async () => {
+  const db = makeFakeDb();
+  await M(db, { action: "provision", type: "pet", code: "TESTPET001" }, ADMIN);
+  // Unactivated resolve → NO scan event (nobody owns it yet).
+  await S(db, { op: "resolve", token: "TESTPET001" });
+  const countScans = () => [...db._store.values()].filter((v) => v.eventType === "TAG_SCANNED").length;
+  assert.equal(countScans(), 0);
+  await M(db, { action: "activate", token: "TESTPET001" }, OWNER);
+  await S(db, { op: "resolve", token: "TESTPET001" });          // now=1000 → emits
+  assert.equal(countScans(), 1);
+  await S(db, { op: "resolve", token: "TESTPET001" });          // same hour → throttled
+  assert.equal(countScans(), 1);
+  const later = await handleTagScan({ db, body: { op: "resolve", token: "TESTPET001" }, share: fakeShare(), publicBaseUrl: PUB, now: 1000 + 61 * 60 * 1000 });
+  assert.equal(later.status, 200);
+  assert.equal(countScans(), 2);                                 // next hour → emits again
+  const evt = [...db._store.values()].find((v) => v.eventType === "TAG_SCANNED");
+  assert.equal(evt.recipientUid, OWNER.uid);
+});
+
+test("FULL SPEC FLOW — Car §17: provision → activate → White Tesla → anonymous quick message → inbox", async () => {
+  const db = makeFakeDb();
+  await M(db, { action: "provision", type: "car", code: "TESTCAR001" }, ADMIN);
+  assert.equal((await S(db, { op: "resolve", token: "TESTCAR001" })).body.status, "unactivated");
+  const act = await M(db, { action: "activate", token: "TESTCAR001", locale: "en" }, OWNER);
+  const tagId = act.body.tagId;
+  await M(db, { action: "update", tagId, ownerProfile: { name: "White Tesla" } }, OWNER);
+  assert.equal((await M(db, { action: "detail", tagId }, OWNER)).body.status, "active");
+  // Anonymous scan: no activation screen, spec quick messages offered.
+  const pub = await S(db, { op: "resolve", token: "TESTCAR001" });
+  assert.equal(pub.body.status, "active");
+  assert.ok(pub.body.reasons.includes("blocking") && pub.body.reasons.includes("lights_on"));
+  const sent = await S(db, { op: "contact", token: "TESTCAR001", reason: "blocking", idempotencyKey: "idem-car17", scannerToken: SCAN });
+  assert.equal(sent.body.ok, true);
+  const inbox = await M(db, { action: "contacts", tagId }, OWNER);
+  assert.equal(inbox.body.contacts[0].reason, "blocking");
+  assert.equal(inbox.body.contacts[0].read, false);
+});
+
+test("FULL SPEC FLOW — Luggage §18: provision → activate → My Blue Suitcase → found+GPS → inbox → missing → found", async () => {
+  const db = makeFakeDb();
+  await M(db, { action: "provision", type: "luggage", code: "TESTLUG001" }, ADMIN);
+  assert.equal((await S(db, { op: "resolve", token: "TESTLUG001" })).body.status, "unactivated");
+  const act = await M(db, { action: "activate", token: "TESTLUG001", locale: "en" }, OWNER);
+  const tagId = act.body.tagId;
+  await M(db, { action: "update", tagId, profile: { name: "My Blue Suitcase" } }, OWNER);
+  const pub = await S(db, { op: "resolve", token: "TESTLUG001" });
+  assert.equal(pub.body.status, "active");
+  assert.equal(pub.body.profile.name, "My Blue Suitcase");
+  assert.ok(pub.body.reasons.includes("found") && pub.body.reasons.includes("safe_with_me"));
+  const sent = await S(db, { op: "contact", token: "TESTLUG001", reason: "found", idempotencyKey: "idem-lug18", scannerToken: SCAN, finderLat: 1.29, finderLng: 103.85 });
+  assert.equal(sent.body.ok, true);
+  const inbox = await M(db, { action: "contacts", tagId }, OWNER);
+  assert.equal(inbox.body.contacts[0].finderLat, 1.29);
+  await M(db, { action: "mark_missing", tagId }, OWNER);
+  assert.equal((await S(db, { op: "resolve", token: "TESTLUG001" })).body.status, "missing");
+  await M(db, { action: "mark_found", tagId }, OWNER);
+  assert.equal((await S(db, { op: "resolve", token: "TESTLUG001" })).body.status, "active");
+});
+
+test("luggage handed_to_staff (relabeled 'at lost property') still carries the handedTo desk", async () => {
+  const db = makeFakeDb();
+  await M(db, { action: "provision", type: "luggage", code: "TESTLUG001" }, ADMIN);
+  const act = await M(db, { action: "activate", token: "TESTLUG001" }, OWNER);
+  await S(db, { op: "contact", token: "TESTLUG001", reason: "handed_to_staff", handedTo: "T2 失物招领处", idempotencyKey: "idem-lugdesk", scannerToken: SCAN });
+  const inbox = await M(db, { action: "contacts", tagId: act.body.tagId }, OWNER);
+  assert.equal(inbox.body.contacts[0].handedTo, "T2 失物招领处");
 });

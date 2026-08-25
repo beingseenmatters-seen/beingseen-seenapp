@@ -51,10 +51,12 @@ const mintPrintCode = () => Array.from(crypto.randomBytes(10), (b) => PRINT_ALPH
 // `active:false` types are reserved: their schema/reasons exist so the engine
 // never has to change, but they cannot be created until turned on.
 export const TAG_TYPES = {
-  car:     { active: true, reasons: ["blocking", "access", "anomaly", "other"] },
+  car:     { active: true, reasons: ["blocking", "lights_on", "window_open", "anomaly", "access", "other"] },
   pet:     { active: true, reasons: ["found", "safe_with_me", "seen_nearby", "injured", "danger", "other"] },
-  luggage: { active: true, reasons: ["found", "handed_to_staff", "left_safe", "at_transit", "other"] },
+  luggage: { active: true, reasons: ["found", "safe_with_me", "seen_here", "handed_to_staff", "other"] },
 };
+/** Types that support the owner-declared MISSING state (spec: car does not). */
+export const MISSING_CAPABLE_TYPES = ["pet", "luggage"];
 /** Further future concepts — data only, never rendered, never creatable yet. */
 export const RESERVED_TAG_TYPES = ["key", "bag", "bike", "item"];
 export const PET_TYPES = ["dog", "cat", "other"];
@@ -64,6 +66,11 @@ const OWNER_MESSAGE_MAX = 300;
 const DETAILS_MAX = 200;
 const PHONE_MAX = 32;
 const PET_NAME_MAX = 40;
+const LUGGAGE_NAME_MAX = 60;
+const LUGGAGE_DESC_MAX = 200;
+const COLOUR_MAX = 40;
+const REG_HINT_MAX = 16;
+const SCAN_EVENT_THROTTLE_MS = 60 * 60 * 1000; // TAG_SCANNED at most 1/hour/tag
 const SAFETY_NOTE_MAX = 200;
 const LOCATION_MAX = 200;   // scanner "where I saw/found it"
 const HANDED_TO_MAX = 120;  // luggage Lost & Found / staff desk
@@ -129,10 +136,10 @@ function validPhotoDataUrl(v) {
 
 /**
  * Validated type-specific PUBLIC profile facts (schema discipline: ONE Tag, a
- * common shape + a small validated `profile`). Only `pet` carries public
- * structured facts (name + type + photo + a safety note the finder should see).
- * `car` and `luggage` keep the common shape — their label is the private
- * displayLabel and their public voice is the ownerMessage.
+ * common shape + a small validated `profile`). Pet and Luggage carry public
+ * structured facts the finder should see (name/photo, pet safety note, luggage
+ * colour+description). Car carries NONE publicly — its private vehicle facts
+ * live in ownerProfile below, and its public voice is only the ownerMessage.
  */
 function buildProfile(type, raw) {
   if (type === "pet") {
@@ -143,7 +150,32 @@ function buildProfile(type, raw) {
       photo: validPhotoDataUrl(raw?.photo) || null,
     };
   }
-  return {}; // car, luggage — no public structured profile
+  if (type === "luggage") {
+    return {
+      name: clean(raw?.name, LUGGAGE_NAME_MAX) || null,
+      colour: clean(raw?.colour, COLOUR_MAX) || null,
+      description: cleanText(raw?.description, LUGGAGE_DESC_MAX) || null,
+      photo: validPhotoDataUrl(raw?.photo) || null,
+    };
+  }
+  return {}; // car — no public structured profile (a car never introduces itself)
+}
+
+/**
+ * PRIVATE owner-side profile (car only): which vehicle this tag lives on.
+ * Never enters the public resolve payload — a scanner learns NOTHING about
+ * the car beyond the owner's chosen message. Registration is a short HINT,
+ * and even that stays owner-only in V1.
+ */
+function buildOwnerProfile(type, raw) {
+  if (type !== "car") return {};
+  return {
+    name: clean(raw?.name, DISPLAY_LABEL_MAX) || null,
+    make: clean(raw?.make, COLOUR_MAX) || null,
+    model: clean(raw?.model, COLOUR_MAX) || null,
+    colour: clean(raw?.colour, COLOUR_MAX) || null,
+    registrationHint: clean(raw?.registrationHint, REG_HINT_MAX) || null,
+  };
 }
 
 const clean = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -212,7 +244,8 @@ async function ownedTag({ db, decoded, tagId }) {
 const ownerTagView = (t) => ({
   tagId: t.tagId, type: t.type, status: t.status,
   displayLabel: t.displayLabel ?? null, ownerMessage: t.ownerMessage,
-  profile: t.profile ?? {}, permissions: buildPermissions(null, t.permissions),
+  profile: t.profile ?? {}, ownerProfile: t.ownerProfile ?? {},
+  permissions: buildPermissions(null, t.permissions),
   createdAt: t.createdAt, activatedAt: t.activatedAt ?? null, missingSince: t.missingSince ?? null,
 });
 
@@ -227,6 +260,7 @@ async function createTag({ db, decoded, body, share, publicBaseUrl, now }) {
   const displayLabel = clean(body?.displayLabel, DISPLAY_LABEL_MAX) || null;
   const ownerMessage = cleanText(body?.ownerMessage, OWNER_MESSAGE_MAX) || DEFAULT_OWNER_MESSAGE[type]?.[locale] || "";
   const profile = buildProfile(type, body?.profile);
+  const ownerProfile = buildOwnerProfile(type, body?.ownerProfile);
   const permissions = buildPermissions(body?.permissions);
 
   const token = mintToken();
@@ -250,7 +284,8 @@ async function createTag({ db, decoded, body, share, publicBaseUrl, now }) {
     shareTokenSealed,      // KMS-sealed token so the owner can reprint the QR
     displayLabel,          // PRIVATE — owner management only, never public
     ownerMessage,          // PUBLIC — shown to the scanner first
-    profile,               // PUBLIC type-specific facts (pet: name/type/note/photo)
+    profile,               // PUBLIC type-specific facts (pet/luggage)
+    ownerProfile,          // PRIVATE type-specific facts (car) — never public
     permissions,           // finder-permission switches (server-enforced)
     meta: {},              // reserved
     createdAt: now,
@@ -321,6 +356,7 @@ async function provisionTags({ db, decoded, body, share, publicBaseUrl, now }) {
       displayLabel: null,
       ownerMessage: "",        // filled with the locale default at activation
       profile: {},
+      ownerProfile: {},
       permissions: buildPermissions(null),
       provision: { by: decoded.uid, at: now },
       meta: {},
@@ -419,13 +455,24 @@ async function updateTag({ db, decoded, body, now }) {
     if (!msg) return { status: 400, body: { error: "invalid_message" } };
     patch.ownerMessage = msg;
   }
-  // Type-specific profile edits (pet name/type/safety note/photo). Merged over
-  // the existing profile then re-validated; car/luggage have no editable profile.
-  if (body?.profile !== undefined && owned.tag.type === "pet") {
+  // Type-specific PUBLIC profile edits (pet, luggage). Merged over the existing
+  // profile then re-validated. Car has no public profile to edit.
+  if (body?.profile !== undefined && (owned.tag.type === "pet" || owned.tag.type === "luggage")) {
     if (body.profile?.photo !== undefined && body.profile.photo !== null && !validPhotoDataUrl(body.profile.photo)) {
       return { status: 400, body: { error: "invalid_photo" } };
     }
-    patch.profile = buildProfile("pet", { ...(owned.tag.profile ?? {}), ...body.profile });
+    patch.profile = buildProfile(owned.tag.type, { ...(owned.tag.profile ?? {}), ...body.profile });
+  }
+  // PRIVATE owner profile edits (car vehicle facts) — merged, never public.
+  if (body?.ownerProfile !== undefined && owned.tag.type === "car") {
+    patch.ownerProfile = buildOwnerProfile("car", { ...(owned.tag.ownerProfile ?? {}), ...body.ownerProfile });
+    // Mirror the vehicle name into the private displayLabel so owner-side
+    // listings name the tag without a payload change.
+    if (patch.ownerProfile.name && body?.displayLabel === undefined) patch.displayLabel = patch.ownerProfile.name;
+  }
+  // Same mirror for the luggage name (its profile is public; the label is not).
+  if (patch.profile?.name && owned.tag.type === "luggage" && body?.displayLabel === undefined) {
+    patch.displayLabel = patch.profile.name;
   }
   // Finder-permission switches (any type) — merged over existing, booleans only.
   if (body?.permissions !== undefined) {
@@ -433,7 +480,7 @@ async function updateTag({ db, decoded, body, now }) {
   }
   await db.collection(TAG_COLLECTION).doc(owned.id).update(patch);
   const t = { ...owned.tag, ...patch };
-  return { status: 200, body: { tagId: t.tagId, displayLabel: t.displayLabel ?? null, ownerMessage: t.ownerMessage, profile: t.profile ?? {}, permissions: buildPermissions(null, t.permissions) } };
+  return { status: 200, body: { tagId: t.tagId, displayLabel: t.displayLabel ?? null, ownerMessage: t.ownerMessage, profile: t.profile ?? {}, ownerProfile: t.ownerProfile ?? {}, permissions: buildPermissions(null, t.permissions) } };
 }
 
 /** pause/reactivate (existing) + missing-mode transitions, all owner-gated. */
@@ -444,6 +491,9 @@ async function setTagStatus({ db, decoded, body, status, now }) {
   if (cur === status) return { status: 200, body: { tagId: owned.id, status } }; // idempotent echo
   // Guard rails: missing only from active; found only from missing. Pause is
   // allowed from active or missing (a paused tag always reactivates to active).
+  if (status === "missing" && !MISSING_CAPABLE_TYPES.includes(owned.tag.type)) {
+    return { status: 409, body: { error: "missing_not_supported", type: owned.tag.type } };
+  }
   if (status === "missing" && cur !== "active") return { status: 409, body: { error: "invalid_transition", from: cur } };
   if (status === "active" && body?.__fromFound && cur !== "missing") return { status: 409, body: { error: "invalid_transition", from: cur } };
   const patch = { status, updatedAt: now };
@@ -569,7 +619,22 @@ async function resolveTag({ db, body, now }) {
     // Activation invitation — nothing to leak: the tag has no owner yet.
     return { status: 200, body: { status: "unactivated", type: tag.type } };
   }
-  const profile = tag.profile && Object.keys(tag.profile).length ? tag.profile : null;
+  // TAG_SCANNED — the owner deserves to know the tag was seen, even if the
+  // scanner never submits. Throttled per tag so the PUBLIC endpoint can never
+  // be turned into a write hose; failures never break the read.
+  try {
+    const last = typeof tag.lastScanEventAt === "number" ? tag.lastScanEventAt : null;
+    if (last === null || now - last >= SCAN_EVENT_THROTTLE_MS) {
+      await db.collection(TAG_COLLECTION).doc(tag.tagId).update({ lastScanEventAt: now });
+      await emitTagEvent(db, { eventType: "TAG_SCANNED", tagId: tag.tagId, recipientUid: tag.ownerUid, data: { type: tag.type, status: tag.status }, now });
+    }
+  } catch (err) {
+    console.warn("[tag] scan event skipped:", err?.message);
+  }
+  // Public profile: only the facts the owner actually set — null fields are
+  // stripped, and an all-empty profile is omitted entirely.
+  const profileEntries = Object.entries(tag.profile ?? {}).filter(([, v]) => v !== null && v !== undefined);
+  const profile = profileEntries.length ? Object.fromEntries(profileEntries) : null;
   const permissions = buildPermissions(null, tag.permissions);
   return {
     status: 200,
