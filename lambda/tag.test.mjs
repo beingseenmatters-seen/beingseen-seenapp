@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import {
   handleTagManage, handleTagScan, TAG_TYPES, RESERVED_TAG_TYPES, DEFAULT_OWNER_MESSAGE,
   TAG_COLLECTION, TAG_CONTACT_COLLECTION, TAG_EVENT_COLLECTION, TAG_CONTACT_PHOTO_COLLECTION,
+  TAG_CODE_COLLECTION, TAG_BATCH_COLLECTION,
 } from "./tag.mjs";
 
 const OWNER = { uid: "owner-1" };
@@ -24,6 +25,10 @@ function makeFakeDb() {
   const doc = (path) => ({
     _key: path,
     get: async () => ({ exists: store.has(path), data: () => store.get(path), id: path.split("/").pop() }),
+    create: async (v) => {
+      if (store.has(path)) { const e = new Error("6 ALREADY_EXISTS"); e.code = 6; throw e; }
+      store.set(path, v);
+    },
     set: async (v) => { store.set(path, v); },
     update: async (v) => { store.set(path, { ...store.get(path), ...v }); },
     delete: async () => { store.delete(path); },
@@ -836,4 +841,111 @@ test("luggage handed_to_staff (relabeled 'at lost property') still carries the h
   await S(db, { op: "contact", token: "TESTLUG001", reason: "handed_to_staff", handedTo: "T2 失物招领处", idempotencyKey: "idem-lugdesk", scannerToken: SCAN });
   const inbox = await M(db, { action: "contacts", tagId: act.body.tagId }, OWNER);
   assert.equal(inbox.body.contacts[0].handedTo, "T2 失物招领处");
+});
+
+// ===========================================================================
+// Master Admin phase: custom-claim authority, bootstrap grant, atomic code
+// reservation (race-proof), minimal TagBatch.
+// ===========================================================================
+
+/** Fake Firebase Admin auth — records claims per uid, resolves known emails. */
+function makeFakeAuth(users = {}) {
+  const claims = {};
+  return {
+    _claims: claims,
+    getUserByEmail: async (email) => {
+      const hit = Object.entries(users).find(([, u]) => u.email === email);
+      if (!hit) { const e = new Error("user not found"); e.code = "auth/user-not-found"; throw e; }
+      return { uid: hit[0], email, customClaims: claims[hit[0]] ?? {} };
+    },
+    setCustomUserClaims: async (uid, c) => { claims[uid] = c; },
+  };
+}
+const CLAIMED = { uid: "admin-2", email: "seen-admin@example.com", email_verified: true, master_admin: true };
+
+test("provision authorizes by master_admin CLAIM — no email string in the request path", async () => {
+  const db = makeFakeDb();
+  // A user whose email is NOT on any whitelist but who carries the claim: allowed.
+  const r = await M(db, { action: "provision", type: "pet" }, CLAIMED);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.tags.length, 1);
+  // Same user WITHOUT the claim: refused.
+  const { master_admin, ...noClaim } = CLAIMED;
+  assert.equal((await M(db, { action: "provision", type: "pet" }, noClaim)).status, 403);
+  // Bootstrap fallback (founder email) still works — marked temporary.
+  assert.equal((await M(db, { action: "provision", type: "pet" }, ADMIN)).status, 200);
+});
+
+test("grant_master_admin: bootstrap-gated, binds the claim to the resolved UID, honest on unknown alias emails", async () => {
+  const db = makeFakeDb();
+  const auth = makeFakeAuth({ "uid-alan": { email: "alan@spotontechnologies.com.au" } });
+  const G = (body, decoded) => handleTagManage({ db, decoded, body, share: fakeShare(), publicBaseUrl: PUB, auth, now: 1000 });
+  // Non-admin cannot grant.
+  assert.equal((await G({ action: "grant_master_admin", email: "alan@spotontechnologies.com.au" }, OWNER)).status, 403);
+  // An alias that never signed in does not resolve — reported, not guessed.
+  const miss = await G({ action: "grant_master_admin", email: "seen@spotontechnologies.com.au" }, ADMIN);
+  assert.equal(miss.status, 404);
+  assert.equal(miss.body.error, "user_not_found");
+  // The real signed-in account resolves; the claim lands on the UID.
+  const ok = await G({ action: "grant_master_admin", email: "alan@spotontechnologies.com.au" }, ADMIN);
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.uid, "uid-alan");
+  assert.deepEqual(auth._claims["uid-alan"], { master_admin: true });
+  // From then on that UID provisions BY CLAIM (email is irrelevant).
+  const asAlan = { uid: "uid-alan", email: "whatever@else.com", email_verified: true, master_admin: true };
+  assert.equal((await M(db, { action: "provision", type: "car" }, asAlan)).status, 200);
+  // Existing master admins can grant further admins (post-bootstrap path).
+  const auth2 = makeFakeAuth({ "uid-x": { email: "x@example.com" } });
+  const G2 = (body, decoded) => handleTagManage({ db, decoded, body, share: fakeShare(), publicBaseUrl: PUB, auth: auth2, now: 1000 });
+  assert.equal((await G2({ action: "grant_master_admin", email: "x@example.com" }, CLAIMED)).status, 200);
+  // No auth dependency injected → honest 503, never a silent grant.
+  const noAuth = await handleTagManage({ db, decoded: ADMIN, body: { action: "grant_master_admin", email: "x@example.com" }, share: fakeShare(), publicBaseUrl: PUB, now: 1000 });
+  assert.equal(noAuth.status, 503);
+});
+
+test("RACE: two concurrent provisions of the same custom code — exactly one tag, loser fails cleanly", async () => {
+  const db = makeFakeDb();
+  const [a, b] = await Promise.all([
+    M(db, { action: "provision", type: "pet", code: "RACEPET01" }, ADMIN),
+    M(db, { action: "provision", type: "pet", code: "RACEPET01" }, ADMIN),
+  ]);
+  const outcomes = [a, b].map((r) => r.status).sort();
+  assert.deepEqual(outcomes, [200, 409]); // one wins, one fails cleanly
+  const tags = [...db._store.keys()].filter((k) => k.startsWith(`${TAG_COLLECTION}/`));
+  assert.equal(tags.length, 1); // NO duplicate public identity
+  const reservations = [...db._store.keys()].filter((k) => k.startsWith(`${TAG_CODE_COLLECTION}/`));
+  assert.equal(reservations.length, 1); // one reservation, keyed by the QR hash
+});
+
+test("reservation ledger: legacy tags without reservations still block re-use of their code", async () => {
+  const db = makeFakeDb();
+  await M(db, { action: "provision", type: "pet", code: "LEGACY01" }, ADMIN);
+  // Simulate a pre-ledger world: drop the reservation, keep the tag + ACTIVATE it.
+  const resKey = [...db._store.keys()].find((k) => k.startsWith(`${TAG_CODE_COLLECTION}/`));
+  db._store.delete(resKey);
+  await M(db, { action: "activate", token: "LEGACY01" }, OWNER);
+  const again = await M(db, { action: "provision", type: "pet", code: "LEGACY01" }, ADMIN);
+  assert.equal(again.status, 409); // legacy query guard holds
+});
+
+test("TagBatch: every creating provision writes one batch; tags reference provision.batchId", async () => {
+  const db = makeFakeDb();
+  const r = await M(db, { action: "provision", type: "luggage", count: 3, notes: "first factory sample" }, ADMIN);
+  assert.equal(r.status, 200);
+  assert.ok(r.body.batchId?.startsWith("tb_"));
+  const batch = db._store.get(`${TAG_BATCH_COLLECTION}/${r.body.batchId}`);
+  assert.equal(batch.quantity, 3);
+  assert.equal(batch.type, "luggage");
+  assert.equal(batch.createdBy, ADMIN.uid);
+  assert.equal(batch.status, "generated");
+  assert.equal(batch.notes, "first factory sample");
+  const tags = [...db._store.values()].filter((v) => v.publicQrHash && v.provision);
+  assert.ok(tags.every((t) => t.provision.batchId === r.body.batchId && t.provision.by === ADMIN.uid));
+  // Idempotent re-provision of an existing custom code creates NO new batch.
+  await M(db, { action: "provision", type: "pet", code: "IDEMBATCH1" }, ADMIN);
+  const batchesBefore = [...db._store.keys()].filter((k) => k.startsWith(`${TAG_BATCH_COLLECTION}/`)).length;
+  const again = await M(db, { action: "provision", type: "pet", code: "IDEMBATCH1" }, ADMIN);
+  assert.equal(again.body.batchId, null);
+  const batchesAfter = [...db._store.keys()].filter((k) => k.startsWith(`${TAG_BATCH_COLLECTION}/`)).length;
+  assert.equal(batchesAfter, batchesBefore);
 });

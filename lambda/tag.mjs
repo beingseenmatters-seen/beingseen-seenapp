@@ -38,10 +38,16 @@ export const TAG_COLLECTION = "tags";
 export const TAG_CONTACT_COLLECTION = "tagContacts";
 export const TAG_CONTACT_PHOTO_COLLECTION = "tagContactPhotos";
 export const TAG_EVENT_COLLECTION = "tagEvents";
+/** Atomic code-uniqueness reservations: doc id = publicQrHash, created with
+ *  create() so two concurrent provisions can never both claim one code. */
+export const TAG_CODE_COLLECTION = "tagCodes";
+/** Minimal manufacturing-traceability entity (one per provision call). */
+export const TAG_BATCH_COLLECTION = "tagBatches";
 
 const sha256Hex = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 const mintToken = () => crypto.randomBytes(18).toString("base64url"); // ~24 chars, unguessable
 const mintTagId = () => `tg_${crypto.randomBytes(12).toString("base64url")}`;
+const mintBatchId = () => `tb_${crypto.randomBytes(9).toString("base64url")}`;
 // Printed claim codes: unambiguous uppercase alphabet (no 0/O/1/I/L), 10 chars
 // ≈ 48 bits — non-sequential and impractical to guess online.
 const PRINT_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -81,10 +87,50 @@ const PROVISION_BATCH_MAX = 50;          // codes minted per provision call
 const PHOTO_DATAURL_MAX = 200_000;       // ~150KB binary — collar-tag scale, not albums
 const TAG_STATUSES = ["unactivated", "active", "missing", "paused"];
 
-// Pre-manufactured provisioning is founder-gated: verified email allowlist,
-// checked against the Firebase token server-side. Nobody else can pre-register
-// printable codes (guessable-code squatting is the attack this closes).
+// Master Admin authority = Firebase custom claim `master_admin: true`,
+// attached to a UID (never a string comparison at request time).
+//
+// TEMPORARY BOOTSTRAP — REMOVE AFTER CLAIMS ARE LIVE: because no role system
+// existed before this phase, the founder's verified email may still (a) act as
+// master admin and (b) grant the first claims. Once the intended admin account
+// carries the claim, delete this list and the fallback below.
 export const PROVISION_ADMIN_EMAILS = ["beingseenmatters@gmail.com"];
+
+/** Claim check (server-side, on the verified token) with the temporary
+ *  bootstrap fallback. UI checks are cosmetic; THIS is the gate. */
+function isMasterAdmin(decoded) {
+  if (decoded?.master_admin === true) return true;
+  const email = typeof decoded?.email === "string" ? decoded.email.toLowerCase() : "";
+  return decoded?.email_verified === true && PROVISION_ADMIN_EMAILS.includes(email); // TEMPORARY BOOTSTRAP
+}
+
+/**
+ * grant_master_admin — one-time/tightly-restricted: grants `master_admin: true`
+ * to the Firebase UID resolved from the target email (or the caller when no
+ * email is given). Callable only by an existing master admin or the bootstrap
+ * list. The claim lands on the UID; alias addresses that have never signed in
+ * do not resolve (getUserByEmail fails) — the returned uid+email report which
+ * real account received it.
+ */
+async function grantMasterAdmin({ auth, decoded, body }) {
+  if (!isMasterAdmin(decoded)) return { status: 403, body: { error: "forbidden" } };
+  if (!auth) return { status: 503, body: { error: "auth_unavailable" } };
+  const targetEmail = clean(body?.email, 120).toLowerCase() || (decoded.email ?? "").toLowerCase();
+  if (!targetEmail) return { status: 400, body: { error: "invalid_request", field: "email" } };
+  let user;
+  try {
+    user = await auth.getUserByEmail(targetEmail);
+  } catch (err) {
+    return { status: 404, body: { error: "user_not_found", email: targetEmail } };
+  }
+  try {
+    await auth.setCustomUserClaims(user.uid, { ...(user.customClaims ?? {}), master_admin: true });
+  } catch (err) {
+    console.error("[tag] grant claim failed:", err?.message);
+    return { status: 503, body: { error: "claim_set_failed" } };
+  }
+  return { status: 200, body: { ok: true, uid: user.uid, email: user.email ?? targetEmail } };
+}
 
 // Default owner-facing PUBLIC message per type/locale (owner may edit it).
 export const DEFAULT_OWNER_MESSAGE = {
@@ -306,10 +352,7 @@ async function createTag({ db, decoded, body, share, publicBaseUrl, now }) {
  */
 async function provisionTags({ db, decoded, body, share, publicBaseUrl, now }) {
   if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
-  const email = typeof decoded.email === "string" ? decoded.email.toLowerCase() : "";
-  if (!decoded.email_verified || !PROVISION_ADMIN_EMAILS.includes(email)) {
-    return { status: 403, body: { error: "forbidden" } };
-  }
+  if (!isMasterAdmin(decoded)) return { status: 403, body: { error: "forbidden" } };
   const type = clean(body?.type, 16);
   if (!TAG_TYPES[type]) return { status: 400, body: { error: "invalid_type" } };
   if (!TAG_TYPES[type].active) return { status: 403, body: { error: "type_not_available", type } };
@@ -319,13 +362,15 @@ async function provisionTags({ db, decoded, body, share, publicBaseUrl, now }) {
     ? String(body.code).trim().toUpperCase() : null;
   if (customCode && !CUSTOM_CODE_OK.test(customCode)) return { status: 400, body: { error: "invalid_code" } };
   const count = customCode ? 1 : Math.min(Math.max(Number(body?.count) || 1, 1), PROVISION_BATCH_MAX);
+  const batchId = mintBatchId();
+  const notes = cleanText(body?.notes, 200) || null;
 
   const minted = [];
   for (let i = 0; i < count; i += 1) {
     const code = customCode ?? mintPrintCode();
     const publicQrHash = sha256Hex(code);
-    // A printed code must be globally unique — refuse collisions (idempotent
-    // for custom codes: re-provisioning the same unactivated code re-returns it).
+    // Legacy guard: tags minted before the reservation ledger existed (and
+    // self-print tags) hold no reservation doc — a query still finds them.
     const dupSnap = await db.collection(TAG_COLLECTION).where("publicQrHash", "==", publicQrHash).get();
     const dup = (dupSnap.docs ?? [])[0];
     if (dup) {
@@ -337,14 +382,25 @@ async function provisionTags({ db, decoded, body, share, publicBaseUrl, now }) {
       if (customCode) return { status: 409, body: { error: "code_taken" } };
       i -= 1; continue; // random collision (astronomically rare) — re-mint
     }
+    // ATOMIC uniqueness: reserve the code with create() on a deterministic doc
+    // id (the public QR hash). Two concurrent provisions of one code can never
+    // both succeed — the loser's create() throws ALREADY_EXISTS and fails clean.
+    const tagId = mintTagId();
+    const reservationRef = db.collection(TAG_CODE_COLLECTION).doc(publicQrHash);
+    try {
+      await reservationRef.create({ tagId, batchId, createdAt: now });
+    } catch (err) {
+      if (customCode) return { status: 409, body: { error: "code_taken" } };
+      i -= 1; continue; // random code lost a race — re-mint another
+    }
     let shareTokenSealed;
     try {
       shareTokenSealed = await share.seal(code, publicQrHash);
     } catch (err) {
       console.error("[tag] provision seal failed:", err?.message);
+      try { await reservationRef.delete(); } catch { /* orphan guard */ }
       return { status: 503, body: { error: "share_seal_failed" } };
     }
-    const tagId = mintTagId();
     await db.collection(TAG_COLLECTION).doc(tagId).set({
       schemaVersion: 1,
       tagId,
@@ -358,14 +414,24 @@ async function provisionTags({ db, decoded, body, share, publicBaseUrl, now }) {
       profile: {},
       ownerProfile: {},
       permissions: buildPermissions(null),
-      provision: { by: decoded.uid, at: now },
+      provision: { by: decoded.uid, at: now, batchId },
       meta: {},
       createdAt: now,
       updatedAt: now,
     });
     minted.push({ code, tagId, url: `${publicBaseUrl}/t/${code}`, existing: false });
   }
-  return { status: 200, body: { type, tags: minted } };
+  // Minimal batch record — factory traceability foundation. Only written when
+  // this call actually created inventory.
+  const created = minted.filter((m) => !m.existing).length;
+  if (created > 0) {
+    await db.collection(TAG_BATCH_COLLECTION).doc(batchId).set({
+      schemaVersion: 1, batchId, type, quantity: created,
+      createdBy: decoded.uid, createdAt: now,
+      status: "generated", exportedAt: null, notes,
+    });
+  }
+  return { status: 200, body: { type, batchId: created > 0 ? batchId : null, status: "unactivated", tags: minted } };
 }
 
 /**
@@ -561,12 +627,13 @@ async function contactPhoto({ db, decoded, body }) {
   return { status: 200, body: { contactId, photo: p.photo } };
 }
 
-export async function handleTagManage({ db, decoded, body, share, publicBaseUrl, now = Date.now() }) {
+export async function handleTagManage({ db, decoded, body, share, publicBaseUrl, auth = null, now = Date.now() }) {
   if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
   const action = typeof body?.action === "string" ? body.action : "";
   switch (action) {
     case "create": return createTag({ db, decoded, body, share, publicBaseUrl, now });
     case "provision": return provisionTags({ db, decoded, body, share, publicBaseUrl, now });
+    case "grant_master_admin": return grantMasterAdmin({ auth, decoded, body });
     case "activate": return activateTag({ db, decoded, body, now });
     case "list": return listTags({ db, decoded, now });
     case "detail": return detailTag({ db, decoded, body, share, publicBaseUrl });

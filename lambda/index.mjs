@@ -58,6 +58,14 @@ import {
   drawWinner,
 } from "./onsite.mjs";
 import { handleSenderLive } from "./liveSession.mjs";
+import {
+  buildMomentMessages,
+  parseMomentResponse,
+  normalizeCaptionRequest,
+  maxTokensForLength,
+  MOMENT_CAPTION_TEMPERATURE,
+} from "./momentCaption.mjs";
+import { handleTagManage, handleTagScan } from "./tag.mjs";
 import { distributeInvitations } from "./distribute.mjs";
 import { validateOccasion } from "./occasion.mjs";
 import { makeKmsShareCrypto } from "./shareCrypto.mjs";
@@ -306,6 +314,60 @@ async function handleExpressDraft(body) {
   } catch (e) {
     console.error("[Express] draft error", e);
     return httpResponse(502, { error: "draft_failed" });
+  }
+}
+
+/**
+ * Moment.Seen Smart Expression assistant (POST /moment/caption). App-key gated,
+ * no auth token — an account-less user preparing photos to share can ask for
+ * expression help. v2 is vision-backed: the request may carry 0–9 LOW-RES
+ * analysis copies of the photos plus optional user context. The images are used
+ * ONLY inside this live OpenAI call — never written to Firestore/S3/logs, and
+ * no cloud photo library exists. momentCaption.mjs owns prompt + validation +
+ * parsing; this owns the key + HTTP, mirroring the Expression seam above.
+ * Returns the typed contract { observations, overlaySuggestions, captions }.
+ */
+async function handleMomentCaption(body) {
+  const norm = normalizeCaptionRequest(body);
+  if (!norm.ok) return httpResponse(norm.status || 400, { error: norm.error });
+  const req = norm.value;
+  const hasImages = req.images.length > 0;
+
+  let apiKey;
+  try {
+    apiKey = await getOpenAIKey();
+  } catch (e) {
+    console.error("[Moment] key error", e);
+    return httpResponse(500, { error: "openai_key_error" });
+  }
+
+  try {
+    const { system, userContent } = buildMomentMessages(req);
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: process.env.MOMENT_VISION_MODEL || MODEL,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: userContent },
+        ],
+        temperature: MOMENT_CAPTION_TEMPERATURE,
+        max_tokens: maxTokensForLength(req.length),
+        response_format: { type: "json_object" },
+      }),
+    });
+    if (!r.ok) {
+      // Never log image data — only the status and the (image-free) error text.
+      console.error("[Moment] OpenAI error", r.status, (await r.text()).slice(0, 500));
+      return httpResponse(502, { error: hasImages ? "vision_failed" : "caption_failed" });
+    }
+    const data = await r.json();
+    const result = parseMomentResponse(data.choices?.[0]?.message?.content || "");
+    return httpResponse(200, result);
+  } catch (e) {
+    console.error("[Moment] error", e?.message || e);
+    return httpResponse(502, { error: hasImages ? "vision_failed" : "caption_failed" });
   }
 }
 
@@ -1131,6 +1193,34 @@ export const handler = async (event) => {
     });
     return httpResponse(result.status, result.body);
   }
+
+  // ---- Seen.Tag (physical object → public QR → anonymous scanner → owner) --
+  // Owner plane: authenticated; verifies ownerUid on every touched record.
+  if (path === "/tag/manage") {
+    const decoded = await verifyAuthToken(event);
+    const result = await handleTagManage({
+      db: admin.firestore(),
+      decoded,
+      body,
+      share: giftShareCrypto,
+      publicBaseUrl: GIFT_PUBLIC_BASE_URL,
+      auth: admin.auth(),   // grant_master_admin (custom-claim role management)
+    });
+    return httpResponse(result.status, result.body);
+  }
+  // Public plane: app-key only, NO login. op:resolve reads the contact surface;
+  // op:contact submits one message. It can never mutate a Tag or read owner data.
+  if (path === "/tag/scan") {
+    const result = await handleTagScan({
+      db: admin.firestore(),
+      body,
+      share: giftShareCrypto,
+      publicBaseUrl: GIFT_PUBLIC_BASE_URL,
+      sourceIp: event.requestContext?.http?.sourceIp || null,
+    });
+    return httpResponse(result.status, result.body);
+  }
+
   if (path === "/sender/onsite/create") {
     const decoded = await verifyAuthToken(event);
     const result = await createOnsite({
@@ -1218,6 +1308,12 @@ export const handler = async (event) => {
       return httpResponse(result.status, result.body);
     }
     return await handleExpressDraft(body);
+  }
+
+  // Moment.Seen caption assistant — app-key only (no account needed to prepare
+  // a photo to share). Text in, captions out; the photo stays in the browser.
+  if (path === "/moment/caption") {
+    return await handleMomentCaption(body);
   }
 
   // ---- MATTERS SSO handoff (Phase 1 Rev.2) --------------------------------
