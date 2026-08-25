@@ -483,13 +483,23 @@ async function activateTag({ db, decoded, body, now }) {
   return outcome;
 }
 
-async function listTags({ db, decoded, now }) {
+async function listTags({ db, decoded, share, now }) {
   if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
   const snap = await db.collection(TAG_COLLECTION).where("ownerUid", "==", decoded.uid).get();
-  const tags = (snap.docs ?? [])
+  const rows = (snap.docs ?? [])
     .map((d) => d.data())
-    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
-    .map((t) => ({ tagId: t.tagId, type: t.type, status: t.status, displayLabel: t.displayLabel ?? null, ownerMessage: t.ownerMessage, profile: t.profile ?? {}, createdAt: t.createdAt }));
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  const tags = [];
+  for (const t of rows) {
+    // The owner's own listing shows each tag's PUBLIC code (what's printed on
+    // the object) so two "Milo"s are never confused again. Recovery is a KMS
+    // decrypt per row — fine at personal-tag scale; never fails the list.
+    let publicCode = null;
+    try {
+      if (share && t.shareTokenSealed) publicCode = await share.open(t.shareTokenSealed, t.publicQrHash);
+    } catch { /* row simply carries no code */ }
+    tags.push({ tagId: t.tagId, type: t.type, status: t.status, displayLabel: t.displayLabel ?? null, ownerMessage: t.ownerMessage, profile: t.profile ?? {}, publicCode, createdAt: t.createdAt });
+  }
   return { status: 200, body: { tags } };
 }
 
@@ -635,7 +645,7 @@ export async function handleTagManage({ db, decoded, body, share, publicBaseUrl,
     case "provision": return provisionTags({ db, decoded, body, share, publicBaseUrl, now });
     case "grant_master_admin": return grantMasterAdmin({ auth, decoded, body });
     case "activate": return activateTag({ db, decoded, body, now });
-    case "list": return listTags({ db, decoded, now });
+    case "list": return listTags({ db, decoded, share, now });
     case "detail": return detailTag({ db, decoded, body, share, publicBaseUrl });
     case "update": return updateTag({ db, decoded, body, now });
     case "pause": return setTagStatus({ db, decoded, body, status: "paused", now });

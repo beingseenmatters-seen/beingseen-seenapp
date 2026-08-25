@@ -949,3 +949,14 @@ test("TagBatch: every creating provision writes one batch; tags reference provis
   const batchesAfter = [...db._store.keys()].filter((k) => k.startsWith(`${TAG_BATCH_COLLECTION}/`)).length;
   assert.equal(batchesAfter, batchesBefore);
 });
+
+test("owner list carries each tag's PUBLIC code (never internal ids beyond tagId)", async () => {
+  const db = makeFakeDb();
+  await M(db, { action: "provision", type: "pet", code: "COCOCODE01" }, ADMIN);
+  await M(db, { action: "activate", token: "COCOCODE01" }, OWNER);
+  const list = await M(db, { action: "list" }, OWNER);
+  assert.equal(list.status, 200);
+  assert.equal(list.body.tags[0].publicCode, "COCOCODE01");
+  assert.equal("publicQrHash" in list.body.tags[0], false);
+  assert.equal("shareTokenSealed" in list.body.tags[0], false);
+});
