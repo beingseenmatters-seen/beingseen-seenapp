@@ -960,3 +960,88 @@ test("owner list carries each tag's PUBLIC code (never internal ids beyond tagId
   assert.equal("publicQrHash" in list.body.tags[0], false);
   assert.equal("shareTokenSealed" in list.body.tags[0], false);
 });
+
+// ===========================================================================
+// Factory XLSX export contract: read-only, validated, deterministic, audited.
+// ===========================================================================
+
+test("batch reference: TYPE-YYYYMMDD-NNN, per-day sequence increments", async () => {
+  const db = makeFakeDb();
+  const NOW = Date.UTC(2026, 7, 25, 12, 0, 0); // 2026-08-25
+  const r1 = await handleTagManage({ db, decoded: ADMIN, body: { action: "provision", type: "pet", count: 2 }, share: fakeShare(), publicBaseUrl: PUB, now: NOW });
+  const r2 = await handleTagManage({ db, decoded: ADMIN, body: { action: "provision", type: "pet", count: 1 }, share: fakeShare(), publicBaseUrl: PUB, now: NOW });
+  assert.equal(r1.body.reference, "PET-20260825-001");
+  assert.equal(r2.body.reference, "PET-20260825-002");
+});
+
+test("export_batch: 10 rows, exact columns, canonical domain, deterministic re-export, audit counter", async () => {
+  const db = makeFakeDb();
+  const NOW = Date.UTC(2026, 7, 25, 12, 0, 0);
+  const gen = await handleTagManage({ db, decoded: ADMIN, body: { action: "provision", type: "pet", count: 10 }, share: fakeShare(), publicBaseUrl: PUB, now: NOW });
+  assert.equal(gen.body.tags.length, 10);
+  const X = (body) => handleTagManage({ db, decoded: ADMIN, body, share: fakeShare(), publicBaseUrl: PUB, scanBaseUrl: "https://gift.beingseenmatters.com", now: NOW + 1000 });
+  const e1 = await X({ action: "export_batch", batchId: gen.body.batchId });
+  assert.equal(e1.status, 200);
+  assert.equal(e1.body.rows.length, 10);
+  assert.equal(e1.body.exportCount, 1);
+  assert.equal(e1.body.alreadyExported, false);
+  assert.equal(e1.body.filename, "SeenTag_PET_PET-20260825-001_10.xlsx");
+  e1.body.rows.forEach((r, i) => {
+    assert.deepEqual(Object.keys(r), ["sequence", "batchReference", "tagType", "publicTagId", "qrUrl"]);
+    assert.equal(r.sequence, i + 1);
+    assert.equal(r.batchReference, "PET-20260825-001");
+    assert.equal(r.tagType, "PET");
+    assert.ok(r.qrUrl === `https://gift.beingseenmatters.com/t/${r.publicTagId}`);
+  });
+  assert.equal(new Set(e1.body.rows.map((r) => r.publicTagId)).size, 10);
+  // Export NEVER creates tags.
+  const tagCount = [...db._store.keys()].filter((k) => k.startsWith(`${TAG_COLLECTION}/`)).length;
+  assert.equal(tagCount, 10);
+  // Re-export: identical identity rows, audit increments, warning flag set.
+  const e2 = await X({ action: "export_batch", batchId: gen.body.batchId });
+  assert.equal(e2.body.exportCount, 2);
+  assert.equal(e2.body.alreadyExported, true);
+  assert.deepEqual(e2.body.rows, e1.body.rows);
+  // Activating one tag between exports changes NOTHING in the rows (anonymous inventory).
+  await M(db, { action: "activate", token: e1.body.rows[0].publicTagId }, OWNER);
+  const e3 = await X({ action: "export_batch", batchId: gen.body.batchId });
+  assert.deepEqual(e3.body.rows, e1.body.rows);
+  assert.equal(JSON.stringify(e3.body.rows).includes(OWNER.uid), false);
+});
+
+test("export_batch: validation failures BLOCK the export (missing tag, type tamper, non-admin)", async () => {
+  const db = makeFakeDb();
+  const NOW = Date.UTC(2026, 7, 25, 12, 0, 0);
+  const gen = await handleTagManage({ db, decoded: ADMIN, body: { action: "provision", type: "car", count: 3 }, share: fakeShare(), publicBaseUrl: PUB, now: NOW });
+  const X = (decoded) => handleTagManage({ db, decoded, body: { action: "export_batch", batchId: gen.body.batchId }, share: fakeShare(), publicBaseUrl: PUB, now: NOW });
+  assert.equal((await X(OWNER)).status, 403);                       // non-admin
+  // tamper: flip one tag's type → blocked
+  const key = [...db._store.keys()].find((k) => k.startsWith(`${TAG_COLLECTION}/`));
+  const tag = db._store.get(key);
+  db._store.set(key, { ...tag, type: "pet" });
+  let r = await X(ADMIN);
+  assert.equal(r.status, 422);
+  assert.ok(r.body.failures.some((f) => f.includes("type")));
+  db._store.set(key, tag);                                          // restore
+  // omit: delete one tag → row-count mismatch blocks
+  db._store.delete(key);
+  r = await X(ADMIN);
+  assert.equal(r.status, 422);
+  assert.ok(r.body.failures.some((f) => f.includes("row_count")));
+  // audit untouched by failed exports
+  assert.equal(db._store.get(`${TAG_BATCH_COLLECTION}/${gen.body.batchId}`).exportCount, 0);
+  assert.equal((await handleTagManage({ db, decoded: ADMIN, body: { action: "export_batch", batchId: "tb_nope" }, share: fakeShare(), publicBaseUrl: PUB, now: NOW })).status, 404);
+});
+
+test("list_batches: admin-only recency list with reference + export audit", async () => {
+  const db = makeFakeDb();
+  const NOW = Date.UTC(2026, 7, 25, 12, 0, 0);
+  await handleTagManage({ db, decoded: ADMIN, body: { action: "provision", type: "pet", count: 2 }, share: fakeShare(), publicBaseUrl: PUB, now: NOW });
+  await handleTagManage({ db, decoded: ADMIN, body: { action: "provision", type: "luggage", count: 1 }, share: fakeShare(), publicBaseUrl: PUB, now: NOW + 5000 });
+  assert.equal((await M(db, { action: "list_batches" }, OWNER)).status, 403);
+  const r = await M(db, { action: "list_batches" }, ADMIN);
+  assert.equal(r.body.batches.length, 2);
+  assert.equal(r.body.batches[0].type, "luggage"); // newest first
+  assert.equal(r.body.batches[1].reference, "PET-20260825-001");
+  assert.equal(r.body.batches[0].exportCount, 0);
+});

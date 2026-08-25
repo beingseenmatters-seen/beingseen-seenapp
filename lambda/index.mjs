@@ -1205,6 +1205,9 @@ export const handler = async (event) => {
       share: giftShareCrypto,
       publicBaseUrl: GIFT_PUBLIC_BASE_URL,
       auth: admin.auth(),   // grant_master_admin (custom-claim role management)
+      // Factory exports carry the CANONICAL /t/ origin (env-overridable) —
+      // never the /s/ base above, which has no /t/ route.
+      scanBaseUrl: process.env.TAG_SCAN_BASE_URL || undefined,
     });
     return httpResponse(result.status, result.body);
   }

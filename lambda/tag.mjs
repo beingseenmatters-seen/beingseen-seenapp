@@ -43,11 +43,37 @@ export const TAG_EVENT_COLLECTION = "tagEvents";
 export const TAG_CODE_COLLECTION = "tagCodes";
 /** Minimal manufacturing-traceability entity (one per provision call). */
 export const TAG_BATCH_COLLECTION = "tagBatches";
+/** Per-day per-type counters for human-readable batch references. */
+export const TAG_BATCH_COUNTER_COLLECTION = "tagBatchCounters";
+
+/**
+ * CANONICAL scanner origin for /t/ URLs — where the scan page is actually
+ * served. Deliberately NOT the gift /s/ base (GIFT_PUBLIC_BASE_URL points at
+ * the app origin, which has no /t/ route — the "/welcome dead end" incident).
+ * Factory exports MUST carry this base; validation #6 enforces it.
+ */
+export const TAG_SCAN_BASE_DEFAULT = "https://gift.beingseenmatters.com";
 
 const sha256Hex = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 const mintToken = () => crypto.randomBytes(18).toString("base64url"); // ~24 chars, unguessable
 const mintTagId = () => `tg_${crypto.randomBytes(12).toString("base64url")}`;
 const mintBatchId = () => `tb_${crypto.randomBytes(9).toString("base64url")}`;
+const utcDateStamp = (ms) => {
+  const d = new Date(ms);
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
+};
+/** PET-20260825-001 — per-type per-UTC-day sequence, transaction-safe. */
+async function mintBatchReference(db, type, now) {
+  const key = `${type.toUpperCase()}-${utcDateStamp(now)}`;
+  const ref = db.collection(TAG_BATCH_COUNTER_COLLECTION).doc(key);
+  let seq = 1;
+  await db.runTransaction(async (tx) => {
+    const cur = await tx.get(ref);
+    seq = (cur.exists ? (cur.data().count ?? 0) : 0) + 1;
+    tx.set(ref, { count: seq, updatedAt: now });
+  });
+  return `${key}-${String(seq).padStart(3, "0")}`;
+}
 // Printed claim codes: unambiguous uppercase alphabet (no 0/O/1/I/L), 10 chars
 // ≈ 48 bits — non-sequential and impractical to guess online.
 const PRINT_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -363,6 +389,7 @@ async function provisionTags({ db, decoded, body, share, publicBaseUrl, now }) {
   if (customCode && !CUSTOM_CODE_OK.test(customCode)) return { status: 400, body: { error: "invalid_code" } };
   const count = customCode ? 1 : Math.min(Math.max(Number(body?.count) || 1, 1), PROVISION_BATCH_MAX);
   const batchId = mintBatchId();
+  const reference = await mintBatchReference(db, type, now);
   const notes = cleanText(body?.notes, 200) || null;
 
   const minted = [];
@@ -414,7 +441,8 @@ async function provisionTags({ db, decoded, body, share, publicBaseUrl, now }) {
       profile: {},
       ownerProfile: {},
       permissions: buildPermissions(null),
-      provision: { by: decoded.uid, at: now, batchId },
+      batchId,               // top-level for the export query
+      provision: { by: decoded.uid, at: now, batchId, seq: minted.filter((m) => !m.existing).length + 1 },
       meta: {},
       createdAt: now,
       updatedAt: now,
@@ -426,12 +454,96 @@ async function provisionTags({ db, decoded, body, share, publicBaseUrl, now }) {
   const created = minted.filter((m) => !m.existing).length;
   if (created > 0) {
     await db.collection(TAG_BATCH_COLLECTION).doc(batchId).set({
-      schemaVersion: 1, batchId, type, quantity: created,
+      schemaVersion: 1, batchId, reference, type, quantity: created,
       createdBy: decoded.uid, createdAt: now,
-      status: "generated", exportedAt: null, notes,
+      status: "generated", exportedAt: null, exportCount: 0, notes,
     });
   }
-  return { status: 200, body: { type, batchId: created > 0 ? batchId : null, status: "unactivated", tags: minted } };
+  return { status: 200, body: { type, batchId: created > 0 ? batchId : null, reference: created > 0 ? reference : null, status: "unactivated", tags: minted } };
+}
+
+/**
+ * export_batch — the FACTORY handoff (XLSX rows). READS ONLY: exporting can
+ * never mint a Tag. Server-side validations run before a single row leaves;
+ * any failure blocks the export with an admin-visible error. Re-export of a
+ * batch returns byte-identical rows and increments the audit counter.
+ * Rows carry ONLY anonymous inventory: sequence, batch reference, type, public
+ * code, canonical /t/ URL — never owner/customer/internal data.
+ */
+async function exportBatch({ db, decoded, body, share, scanBaseUrl, now }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  if (!isMasterAdmin(decoded)) return { status: 403, body: { error: "forbidden" } };
+  if (!share) return { status: 503, body: { error: "share_unavailable" } };
+  const batchId = clean(body?.batchId, 64);
+  if (!batchId) return { status: 400, body: { error: "invalid_request", field: "batchId" } };
+  const base = scanBaseUrl || TAG_SCAN_BASE_DEFAULT;
+
+  const batchSnap = await db.collection(TAG_BATCH_COLLECTION).doc(batchId).get();
+  if (!batchSnap.exists) return { status: 404, body: { error: "batch_not_found" } };
+  const batch = batchSnap.data();
+
+  const tagSnap = await db.collection(TAG_COLLECTION).where("batchId", "==", batchId).get();
+  const tags = (tagSnap.docs ?? []).map((d) => d.data())
+    .sort((a, b) => (a.provision?.seq ?? 0) - (b.provision?.seq ?? 0));
+
+  const failures = [];
+  if (tags.length !== batch.quantity) failures.push(`row_count ${tags.length} != quantity ${batch.quantity}`);
+  const rows = [];
+  const seenCodes = new Set();
+  for (let i = 0; i < tags.length; i += 1) {
+    const t = tags[i];
+    if (t.type !== batch.type) failures.push(`tag ${t.tagId} type ${t.type} != batch type ${batch.type}`);
+    if ((t.provision?.seq ?? 0) !== i + 1) failures.push(`sequence gap at row ${i + 1}`);
+    let code = null;
+    try { code = await share.open(t.shareTokenSealed, t.publicQrHash); } catch { /* handled below */ }
+    if (!code) { failures.push(`code recovery failed for ${t.tagId}`); continue; }
+    if (seenCodes.has(code)) failures.push(`duplicate public id ${code}`);
+    seenCodes.add(code);
+    rows.push({
+      sequence: i + 1,
+      batchReference: batch.reference ?? batch.batchId,
+      tagType: String(batch.type).toUpperCase(),
+      publicTagId: code,
+      qrUrl: `${base}/t/${code}`,
+    });
+  }
+  // Approved-domain + anonymity are structural (we build the rows), but verify
+  // anyway — a validator that trusts its own construction validates nothing.
+  for (const r of rows) {
+    if (!r.qrUrl.startsWith(`${base}/t/`)) failures.push(`off-domain url for ${r.publicTagId}`);
+    if (Object.keys(r).length !== 5) failures.push(`unexpected column in row ${r.sequence}`);
+  }
+  if (new Set(rows.map((r) => r.qrUrl)).size !== rows.length) failures.push("duplicate qr_url");
+
+  if (failures.length > 0) {
+    return { status: 422, body: { error: "export_validation_failed", failures: failures.slice(0, 20) } };
+  }
+
+  const exportCount = (batch.exportCount ?? 0) + 1;
+  await db.collection(TAG_BATCH_COLLECTION).doc(batchId).update({
+    exportCount, exportedAt: now, status: "exported",
+  });
+  return {
+    status: 200,
+    body: {
+      batchId, reference: batch.reference ?? batch.batchId, type: batch.type,
+      quantity: batch.quantity, exportCount, alreadyExported: exportCount > 1,
+      filename: `SeenTag_${String(batch.type).toUpperCase()}_${batch.reference ?? batch.batchId}_${batch.quantity}.xlsx`,
+      rows,
+    },
+  };
+}
+
+/** Recent batches for the admin surface (re-export needs to find a batch). */
+async function listBatches({ db, decoded }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  if (!isMasterAdmin(decoded)) return { status: 403, body: { error: "forbidden" } };
+  const snap = await db.collection(TAG_BATCH_COLLECTION).get();
+  const batches = (snap.docs ?? []).map((d) => d.data())
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    .slice(0, 20)
+    .map((b) => ({ batchId: b.batchId, reference: b.reference ?? null, type: b.type, quantity: b.quantity, status: b.status, exportCount: b.exportCount ?? 0, createdAt: b.createdAt }));
+  return { status: 200, body: { batches } };
 }
 
 /**
@@ -637,13 +749,15 @@ async function contactPhoto({ db, decoded, body }) {
   return { status: 200, body: { contactId, photo: p.photo } };
 }
 
-export async function handleTagManage({ db, decoded, body, share, publicBaseUrl, auth = null, now = Date.now() }) {
+export async function handleTagManage({ db, decoded, body, share, publicBaseUrl, auth = null, scanBaseUrl = null, now = Date.now() }) {
   if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
   const action = typeof body?.action === "string" ? body.action : "";
   switch (action) {
     case "create": return createTag({ db, decoded, body, share, publicBaseUrl, now });
     case "provision": return provisionTags({ db, decoded, body, share, publicBaseUrl, now });
     case "grant_master_admin": return grantMasterAdmin({ auth, decoded, body });
+    case "export_batch": return exportBatch({ db, decoded, body, share, scanBaseUrl, now });
+    case "list_batches": return listBatches({ db, decoded });
     case "activate": return activateTag({ db, decoded, body, now });
     case "list": return listTags({ db, decoded, share, now });
     case "detail": return detailTag({ db, decoded, body, share, publicBaseUrl });
