@@ -54,7 +54,15 @@ export const HANDOFF_AUD_ORIGINS = {
   gift: ["https://gift.beingseenmatters.com"],
   // Reserved before the product shipped; the real domain is the SINGULAR
   // moment.beingseenmatters.com (launched 2026-08-23).
-  moments: ["https://moment.beingseenmatters.com"],
+  // The two localhost forms are the Moment.Seen MOBILE APP's webview origins
+  // (iOS capacitor://localhost, Android https://localhost) — the app redeems
+  // codes minted by the product's own web page during in-app sign-in (M1).
+  // Codes stay one-time, 256-bit, short-TTL; the app-key gate still applies.
+  moments: [
+    "https://moment.beingseenmatters.com",
+    "capacitor://localhost",
+    "https://localhost",
+  ],
 };
 function devOrigins() {
   const raw = process.env.HANDOFF_DEV_ORIGINS || "";
@@ -87,9 +95,13 @@ export function allHandoffOrigins() {
   ];
 }
 
-function originAllowedForCreate(origin) {
+function originAllowedForCreate(origin, aud) {
   if (!origin) return true; // non-browser callers: app key still required
-  return [...HANDOFF_WWW_ORIGINS, ...devOrigins()].includes(origin);
+  // A product may mint for ITS OWN audience (the mobile-app sign-in bounce:
+  // moment web mints aud "moments" for the Moment.Seen app). Cross-audience
+  // minting stays a www-only privilege.
+  const selfMint = HANDOFF_AUD_ORIGINS[aud] || [];
+  return [...HANDOFF_WWW_ORIGINS, ...selfMint, ...devOrigins()].includes(origin);
 }
 
 function originAllowedForAud(origin, aud) {
@@ -168,7 +180,7 @@ export async function createHandoff({ db, decoded, body, origin, now = Date.now(
   if (!enabledCreateAudiences().includes(aud)) {
     return { status: 403, body: { error: "aud_not_enabled" } };
   }
-  if (!originAllowedForCreate(origin)) {
+  if (!originAllowedForCreate(origin, aud)) {
     return { status: 403, body: { error: "origin_mismatch" } };
   }
 
