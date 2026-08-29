@@ -132,12 +132,12 @@ export async function distributeInvitations({
     }
 
     // Variant resolution (Founder §5): the guest's relationship wording when
-    // one is saved, otherwise the Birthday Event's "general" wording. A row
-    // only fails when NEITHER exists. Wedding keeps its strict per-
-    // relationship contract unchanged.
+    // one is saved, otherwise the Event's "general" wording (Birthday /
+    // Business / Casual). A row only fails when NEITHER exists. Wedding keeps
+    // its strict per-relationship contract unchanged.
     const variant =
       variants[guest.relationshipType] ??
-      (ev.type === "birthday" || ev.type === "business_event" ? variants.general : undefined);
+      (ev.type === "birthday" || ev.type === "business_event" || ev.type === "casual" ? variants.general : undefined);
     if (!variant?.message) { fail("missing_variant", { relationshipType: guest.relationshipType }); continue; }
 
     // Presentation for this row: reuse the source when one exists, else seed

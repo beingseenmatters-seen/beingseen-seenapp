@@ -72,7 +72,15 @@ export const OCCASION_TYPE_BIRTHDAY = "birthday";
  */
 export const OCCASION_TYPE_BUSINESS = "business_event";
 
-export const INVITATION_EVENT_TYPES = [OCCASION_TYPE_WEDDING, OCCASION_TYPE_BIRTHDAY, OCCASION_TYPE_BUSINESS];
+/**
+ * Casual Gathering (轻松相聚) — the LIGHTEST Occasion: three everyday contexts
+ * (聚一聚 / 一起吃饭 / 一起喝一杯) over the SAME Event engine. Deliberately no
+ * dress code, no materials, no culture axis, no AI-draft runner (the composer
+ * never calls /express/draft with a casual occasion; the door fails closed).
+ */
+export const OCCASION_TYPE_CASUAL = "casual";
+
+export const INVITATION_EVENT_TYPES = [OCCASION_TYPE_WEDDING, OCCASION_TYPE_BIRTHDAY, OCCASION_TYPE_BUSINESS, OCCASION_TYPE_CASUAL];
 
 /**
  * Birthday relationship vocabulary — ITS OWN list, not Wedding's. 长辈 and
@@ -96,6 +104,7 @@ export const BIRTHDAY_VARIANT_KEYS = [BIRTHDAY_GENERAL_AUDIENCE, ...BIRTHDAY_AUD
 export function variantKeysForEventType(type) {
   if (type === OCCASION_TYPE_BIRTHDAY) return BIRTHDAY_VARIANT_KEYS;
   if (type === OCCASION_TYPE_BUSINESS) return BUSINESS_VARIANT_KEYS;
+  if (type === OCCASION_TYPE_CASUAL) return CASUAL_VARIANT_KEYS;
   return WEDDING_AUDIENCES;
 }
 
@@ -128,10 +137,21 @@ export const BUSINESS_CONTEXT_CAPABILITIES = {
   other:               { dressCode: true,  dietary: true,  materials: false },
 };
 
+/**
+ * Casual Gathering vocabulary — ITS OWN small lists (everyday relationships,
+ * not wedding household grammar). "general" is the wording every anonymous
+ * shared-link audience receives, same contract as Birthday/Business.
+ */
+export const CASUAL_CONTEXTS = ["get_together", "meal", "drinks"];
+export const CASUAL_AUDIENCES = ["friends", "family", "colleagues", "classmates"];
+export const CASUAL_GENERAL_AUDIENCE = "general";
+export const CASUAL_VARIANT_KEYS = [CASUAL_GENERAL_AUDIENCE, ...CASUAL_AUDIENCES];
+
 /** Relationship vocabulary for an EVENT type — guests/variants validate here. */
 export function audiencesForEventType(type) {
   if (type === OCCASION_TYPE_BIRTHDAY) return BIRTHDAY_AUDIENCES;
   if (type === OCCASION_TYPE_BUSINESS) return BUSINESS_AUDIENCES;
+  if (type === OCCASION_TYPE_CASUAL) return CASUAL_AUDIENCES;
   return WEDDING_AUDIENCES;
 }
 
@@ -596,6 +616,84 @@ export function validateBirthdayOccasion(raw) {
   return { ok: true, occasion: { type: OCCASION_TYPE_BIRTHDAY, version: BIRTHDAY_OCCASION_VERSION, ...res.facts } };
 }
 
+export const CASUAL_OCCASION_VERSION = 1;
+const CASUAL_LIMITS = { eventTitle: 60, venueName: 80, address: 160, inviter: 40, note: 300 };
+
+/**
+ * Casual facts — even SMALLER than Birthday (Founder: quick, warm, informal,
+ * creatable in under a minute). A context, a title, when, where — and three
+ * optional lines. No dress code, no materials, no culture, no RSVP deadline,
+ * no couple/person axis at all.
+ */
+export function validateCasualFacts(raw) {
+  if (!raw || typeof raw !== "object") return { ok: false, field: "facts" };
+  if (!CASUAL_CONTEXTS.includes(raw.context)) return { ok: false, field: "context" };
+
+  const eventTitle = cleanString(raw.eventTitle, CASUAL_LIMITS.eventTitle);
+  if (!eventTitle) return { ok: false, field: "eventTitle" };
+
+  if (!isValidIsoDate(raw.date)) return { ok: false, field: "date" };
+  const time = raw.time;
+  if (!time || typeof time !== "object") return { ok: false, field: "time" };
+  if (typeof time.start !== "string" || !TIME_RE.test(time.start)) return { ok: false, field: "time.start" };
+  let end = null;
+  if (time.end !== undefined && time.end !== null && time.end !== "") {
+    if (typeof time.end !== "string" || !TIME_RE.test(time.end)) return { ok: false, field: "time.end" };
+    end = time.end;
+  }
+
+  const venue = raw.venue;
+  if (!venue || typeof venue !== "object") return { ok: false, field: "venue" };
+  const displayName = cleanString(venue.displayName, CASUAL_LIMITS.venueName);
+  if (!displayName) return { ok: false, field: "venue.displayName" };
+  let formattedAddress = null;
+  if (venue.formattedAddress !== undefined && venue.formattedAddress !== null && venue.formattedAddress !== "") {
+    formattedAddress = cleanString(venue.formattedAddress, CASUAL_LIMITS.address);
+    if (!formattedAddress) return { ok: false, field: "venue.formattedAddress" };
+  }
+
+  // Host/inviter is OPTIONAL (Birthday semantics): most casual invitations come
+  // from the sender themself; display falls back to senderName.
+  let inviter = null;
+  if (raw.inviter !== undefined && raw.inviter !== null && raw.inviter !== "") {
+    inviter = cleanString(raw.inviter, CASUAL_LIMITS.inviter);
+    if (!inviter) return { ok: false, field: "inviter" };
+  }
+
+  // A free note (地点备注 / anything else) — optional, display-only.
+  let note = null;
+  if (raw.note !== undefined && raw.note !== null && raw.note !== "") {
+    note = cleanString(raw.note, CASUAL_LIMITS.note);
+    if (!note) return { ok: false, field: "note" };
+  }
+
+  if (!CASUAL_VARIANT_KEYS.includes(raw.audienceType)) return { ok: false, field: "audienceType" };
+
+  return {
+    ok: true,
+    facts: {
+      context: raw.context,
+      eventTitle,
+      date: raw.date,
+      time: { start: time.start, end },
+      venue: { displayName, formattedAddress },
+      inviter,
+      note,
+      audienceType: raw.audienceType,
+    },
+  };
+}
+
+export function validateCasualOccasion(raw) {
+  if (!raw || typeof raw !== "object") return { ok: false, field: "occasion" };
+  if (raw.type !== OCCASION_TYPE_CASUAL) return { ok: false, field: "type" };
+  if (raw.version !== CASUAL_OCCASION_VERSION) return { ok: false, field: "version" };
+  const { type: _t, version: _v, ...facts } = raw;
+  const res = validateCasualFacts(facts);
+  if (!res.ok) return res;
+  return { ok: true, occasion: { type: OCCASION_TYPE_CASUAL, version: CASUAL_OCCASION_VERSION, ...res.facts } };
+}
+
 /**
  * ONE seal-door validator, dispatching on the declared type. Unknown types
  * fail closed — which is also the deployment-order story: a backend without
@@ -606,6 +704,7 @@ export function validateOccasion(raw) {
   if (!raw || typeof raw !== "object") return { ok: false, field: "occasion" };
   if (raw.type === OCCASION_TYPE_BIRTHDAY) return validateBirthdayOccasion(raw);
   if (raw.type === OCCASION_TYPE_BUSINESS) return validateBusinessOccasion(raw);
+  if (raw.type === OCCASION_TYPE_CASUAL) return validateCasualOccasion(raw);
   return validateWeddingOccasion(raw);
 }
 

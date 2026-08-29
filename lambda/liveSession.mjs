@@ -30,6 +30,7 @@ import {
   openDraw,
   lockDraw,
   listEntrants,
+  drawPresentationCount,
   drawWinner,
   guestbookInbox,
   guestbookModerate,
@@ -57,6 +58,155 @@ const capabilityFor = (raw) =>
 export const LIVE_SKINS = ["neutral", "wedding"];
 
 const clean = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+
+// --- Presentation plane (Big Screen) — read-only scoped credential ----------
+// The Big Screen must NEVER carry owner mutation authority. The owner mints a
+// short-lived presentation token; the Screen (even on a second computer, with
+// no owner login) sends that token to READ display state only. Every mutation
+// door refuses it. The stored side is only the token HASH + expiry — the raw
+// token lives in the Big Screen URL, exactly like a guest join link.
+const PRESENTATION_TTL_MS = 12 * 60 * 60 * 1000; // 12h — covers a full event day
+const PRESENTATION_TOKENS_MAX = 5;               // a few concurrent screens/devices
+const PRESENTATION_MODE_MAX = 32;
+const PRESENTATION_PIN_MAX = 128;
+const mintPresentationValue = () => crypto.randomBytes(24).toString("base64url");
+
+/** True iff `token` matches a stored, unexpired presentation-token hash. */
+function verifyPresentationToken(session, token, now) {
+  if (!token || typeof token !== "string") return false;
+  const h = sha256Hex(token);
+  const list = Array.isArray(session?.presentationTokens) ? session.presentationTokens : [];
+  return list.some((t) => t && t.hash === h && typeof t.exp === "number" && t.exp > now);
+}
+
+/**
+ * Owner action `presentation_token` — mint a read-only Big Screen credential.
+ * Appends a fresh hash+exp (pruning expired, capped), so re-minting for another
+ * device never invalidates a screen that is already open.
+ */
+async function mintPresentationToken({ db, decoded, body, now }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  const sessionId = clean(body?.sessionId, 128);
+  if (!sessionId) return { status: 400, body: { error: "invalid_request", field: "sessionId" } };
+  const ref = db.collection(LIVE_SESSION_COLLECTION).doc(sessionId);
+  const snap = await ref.get();
+  if (!snap.exists) return { status: 404, body: { error: "session_not_found" } };
+  const s = snap.data();
+  if (s.ownerUid !== decoded.uid) return { status: 403, body: { error: "forbidden" } };
+  const token = mintPresentationValue();
+  const exp = now + PRESENTATION_TTL_MS;
+  const kept = (Array.isArray(s.presentationTokens) ? s.presentationTokens : [])
+    .filter((t) => t && typeof t.exp === "number" && t.exp > now)
+    .slice(-(PRESENTATION_TOKENS_MAX - 1));
+  await ref.update({ presentationTokens: [...kept, { hash: sha256Hex(token), exp }], updatedAt: now });
+  return { status: 200, body: { presentationToken: token, expiresAt: exp, ttlMs: PRESENTATION_TTL_MS } };
+}
+
+/**
+ * Owner action `presentation_set` — write the presentation cursor (show-control
+ * state ONLY). It holds no winner/score/approval truth; it is safe to lose. A
+ * `pinnedEntryId` here is honoured by the Screen ONLY if that id is still in the
+ * server-filtered approved feed, so it can never surface unapproved content.
+ */
+async function setPresentationCursor({ db, decoded, body, now }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  const sessionId = clean(body?.sessionId, 128);
+  if (!sessionId) return { status: 400, body: { error: "invalid_request", field: "sessionId" } };
+  const ref = db.collection(LIVE_SESSION_COLLECTION).doc(sessionId);
+  const snap = await ref.get();
+  if (!snap.exists) return { status: 404, body: { error: "session_not_found" } };
+  const s = snap.data();
+  if (s.ownerUid !== decoded.uid) return { status: 403, body: { error: "forbidden" } };
+  const prev = s.presentationCursor && typeof s.presentationCursor === "object" ? s.presentationCursor : {};
+  const patch = body?.cursor && typeof body.cursor === "object" ? body.cursor : {};
+  const next = { ...prev };
+  if (typeof patch.paused === "boolean") next.paused = patch.paused;
+  if (typeof patch.showWelcome === "boolean") next.showWelcome = patch.showWelcome;
+  if (typeof patch.showResults === "boolean") next.showResults = patch.showResults;
+  if (typeof patch.mode === "string") next.mode = patch.mode.slice(0, PRESENTATION_MODE_MAX);
+  if (patch.pinnedEntryId === null) next.pinnedEntryId = null;
+  else if (typeof patch.pinnedEntryId === "string") next.pinnedEntryId = patch.pinnedEntryId.slice(0, PRESENTATION_PIN_MAX);
+  if (patch.skip === true) next.skipSeq = (typeof prev.skipSeq === "number" ? prev.skipSeq : 0) + 1;
+  next.updatedAt = now;
+  await ref.update({ presentationCursor: next });
+  return { status: 200, body: { cursor: next } };
+}
+
+/** Resolve the public join URL (the venue QR link) for a presentation reader. */
+async function resolvePresentationJoinUrl({ db, share, giftCollection, publicBaseUrl, participationGiftId, now }) {
+  try {
+    if (!share || !participationGiftId) return null;
+    const gsnap = await db.collection(giftCollection).doc(participationGiftId).get();
+    if (!gsnap.exists) return null;
+    const rec = gsnap.data();
+    if (rec.revoked || (typeof rec.expiresAt === "number" && now > rec.expiresAt) || !rec.shareTokenSealed) return null;
+    const token = await share.open(rec.shareTokenSealed, participationGiftId);
+    return `${publicBaseUrl}/s/${token}`;
+  } catch (err) {
+    console.warn("[live] presentation joinUrl resolve failed:", err?.message);
+    return null;
+  }
+}
+
+/**
+ * The PRESENTATION dispatcher — reached whenever a request carries a
+ * presentationToken. It authenticates by that token, resolves the owner from the
+ * session, then serves ONLY whitelisted read actions by reusing the existing
+ * (already answer-safe) owner read projections with a synthetic decoded. Every
+ * other action — draw/lock/configure/moderate/quiz-control/mint/cursor-write —
+ * is refused. Possession of the token confers reads, never mutations.
+ */
+const PRESENTATION_READ_ACTIONS = new Set(["detail", "draw_entrants", "guestbook_display", "quiz_state", "cursor"]);
+async function handlePresentationRead({ db, body, share, giftCollection, publicBaseUrl, now }) {
+  const action = typeof body?.action === "string" ? body.action : "";
+  // Refuse ANY non-read action up front — a presentation credential can never
+  // mutate, regardless of which other fields the caller supplies.
+  if (!PRESENTATION_READ_ACTIONS.has(action)) {
+    return { status: 403, body: { error: "presentation_forbidden", action } };
+  }
+  const sessionId = clean(body?.sessionId, 128);
+  const token = typeof body?.presentationToken === "string" ? body.presentationToken : "";
+  if (!sessionId) return { status: 400, body: { error: "invalid_request", field: "sessionId" } };
+  const snap = await db.collection(LIVE_SESSION_COLLECTION).doc(sessionId).get();
+  if (!snap.exists) return { status: 404, body: { error: "session_not_found" } };
+  const s = snap.data();
+  if (!verifyPresentationToken(s, token, now)) return { status: 401, body: { error: "invalid_presentation" } };
+  // Synthetic owner identity — used ONLY for the read projections below.
+  const owner = { uid: s.ownerUid };
+  const withKey = { ...body, eventId: sessionId };
+  const cursor = s.presentationCursor && typeof s.presentationCursor === "object" ? s.presentationCursor : null;
+  switch (action) {
+    case "detail": {
+      const res = await liveSessionDetail({ db, decoded: owner, body, now });
+      if (res.status === 200) {
+        res.body.cursor = cursor;
+        res.body.joinUrl = await resolvePresentationJoinUrl({ db, share, giftCollection, publicBaseUrl, participationGiftId: s.participationGiftId, now });
+      }
+      return res;
+    }
+    case "draw_entrants": {
+      const res = await drawPresentationCount({ db, eventId: sessionId, now });
+      if (res.status === 200) res.body.cursor = cursor;
+      return res;
+    }
+    case "guestbook_display": {
+      const res = await guestbookDisplay({ db, decoded: owner, body: withKey, now });
+      if (res.status === 200) res.body.cursor = cursor;
+      return res;
+    }
+    case "quiz_state": {
+      const res = await quizOwnerState({ db, decoded: owner, body: withKey, now });
+      if (res.status === 200) res.body.cursor = cursor;
+      return res;
+    }
+    case "cursor":
+      return { status: 200, body: { cursor } };
+    default:
+      // create / draw_* / guestbook_moderate / quiz_configure / quiz_control /
+      // presentation_token / presentation_set / list / … — never for a Screen.
+      return { status: 403, body: { error: "presentation_forbidden", action } };
+  }
+}
 
 /**
  * POST /sender/live (action:"create") — create a Live Session.
@@ -258,11 +408,25 @@ export async function liveSessionDetail({ db, decoded, body, now = Date.now() })
  * SHARED onsite engine with the session key passed as `eventId`.
  */
 export async function handleSenderLive({ db, decoded, body, share, media, giftCollection, publicBaseUrl, now = Date.now() }) {
+  // PRESENTATION PLANE: a request bearing a presentationToken is a Big Screen
+  // read — resolved by the token, NOT by owner auth, and refused for every
+  // mutation. Checked FIRST so that possessing the token can only ever downgrade
+  // to read-only (fail-closed), never escalate. The owner's Host client never
+  // sends a presentationToken, so owner control is unaffected.
+  if (typeof body?.presentationToken === "string" && body.presentationToken) {
+    return handlePresentationRead({ db, body, share, giftCollection, publicBaseUrl, now });
+  }
   const action = typeof body?.action === "string" ? body.action : "";
   const withKey = { ...body, eventId: body?.sessionId ?? body?.eventId };
   switch (action) {
     case "create":
       return createLiveSession({ db, decoded, body, share, media, giftCollection, publicBaseUrl, now });
+    // Presentation-plane control (owner only): mint a read-only Big Screen token
+    // and set the show-control cursor. Neither touches game/approval truth.
+    case "presentation_token":
+      return mintPresentationToken({ db, decoded, body, now });
+    case "presentation_set":
+      return setPresentationCursor({ db, decoded, body, now });
     case "list":
       return listLiveSessions({ db, decoded, now });
     case "detail":

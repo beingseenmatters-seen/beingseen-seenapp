@@ -1198,6 +1198,24 @@ export async function listEntrants({ db, decoded, body, now = Date.now() }) {
 }
 
 /**
+ * Read-only entrant tally for the PRESENTATION plane (Big Screen). Unlike
+ * `listEntrants`, it NEVER lazy-freezes the pool — a presentation read must not
+ * mutate. The Host's own polling performs the cutoff lock; the Screen only
+ * observes. Returns count + status + locked, and never the raw codes.
+ */
+export async function drawPresentationCount({ db, eventId, now = Date.now() }) {
+  const snap = await db.collection(DRAW_COLLECTION).doc(eventId).get();
+  if (!snap.exists) return { status: 404, body: { error: "draw_not_found" } };
+  const draw = readGate(snap.data(), now);
+  if (!draw || draw.enabled !== true) return { status: 404, body: { error: "draw_not_found" } };
+  const locked = ["locked", "drawing", "completed"].includes(draw.status);
+  const count = locked && typeof draw.entrantCount === "number"
+    ? draw.entrantCount
+    : (await eventEntrants({ db, eventId, now })).length;
+  return { status: 200, body: { count, status: draw.status, locked, cutoffAt: draw.cutoffAt } };
+}
+
+/**
  * POST /sender/onsite/draw/winner — WD-3B server-authoritative selection.
  *
  * Fairness contract (Founder):

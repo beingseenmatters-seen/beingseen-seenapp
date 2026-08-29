@@ -857,3 +857,168 @@ test("refresh recovers tie-break state; a tie OUTSIDE top-3 never triggers a tie
   await qCtl(db2, sid2, "lock", 61000); await qCtl(db2, sid2, "reveal", 61100); await qCtl(db2, sid2, "scores", 61200);
   assert.equal((await qCtl(db2, sid2, "next", 61300)).body.phase, "completed"); // 4/5 tie is non-prize
 });
+
+// ===========================================================================
+// Presentation plane — read-only Big Screen credential + show-control cursor
+// The Big Screen must NEVER carry owner mutation authority (visual separation
+// is NOT authorization separation). Prove it server-side.
+// ===========================================================================
+const H = (db, body, decoded = OWNER, now = 3000) =>
+  handleSenderLive({ db, decoded, body, share: fakeShare(), giftCollection: GIFT_COLLECTION, publicBaseUrl: "https://x", now });
+// A SECOND computer that never signed in as the owner: decoded is null.
+const Screen = (db, body, now = 3100) =>
+  handleSenderLive({ db, decoded: null, body, share: fakeShare(), giftCollection: GIFT_COLLECTION, publicBaseUrl: "https://x", now });
+
+async function draftDraw(db) {
+  const sess = await createStandalone(db);
+  const sid = sess.body.sessionId;
+  await H(db, { action: "draw_configure", sessionId: sid, enabled: true, startAt: 1000, cutoffAt: 5000, prizes: { third: "3rd", second: "2nd", first: "1st" } }, OWNER, 500);
+  await H(db, { action: "draw_open", sessionId: sid }, OWNER, 1500);
+  for (const p of ["alice", "bob", "carol"]) await claimLuckyCode({ db, giftCollection: GIFT_COLLECTION, body: { token: sess.body.token, participantToken: p.padEnd(20, "x") }, now: 2000 });
+  return { sess, sid };
+}
+const mintScreen = (db, sid) => H(db, { action: "presentation_token", sessionId: sid }).then((r) => r.body.presentationToken);
+
+test("presentation_token: owner mints a read-only Big Screen credential (stored as a HASH)", async () => {
+  const db = makeFakeDb();
+  const { sid } = await draftDraw(db);
+  const mint = await H(db, { action: "presentation_token", sessionId: sid });
+  assert.equal(mint.status, 200);
+  assert.ok(typeof mint.body.presentationToken === "string" && mint.body.presentationToken.length > 20);
+  assert.ok(mint.body.expiresAt > 3000 && mint.body.ttlMs === 12 * 60 * 60 * 1000);
+  const s = db._store.get(`${LIVE_SESSION_COLLECTION}/${sid}`);
+  assert.equal(s.presentationTokens.length, 1);
+  assert.ok(s.presentationTokens[0].hash && s.presentationTokens[0].hash !== mint.body.presentationToken); // hash, not raw
+  // Re-minting keeps prior (unexpired) tokens valid — a 2nd screen never kills the 1st.
+  await H(db, { action: "presentation_token", sessionId: sid });
+  assert.equal(db._store.get(`${LIVE_SESSION_COLLECTION}/${sid}`).presentationTokens.length, 2);
+  // Non-owner cannot mint.
+  assert.equal((await H(db, { action: "presentation_token", sessionId: sid }, OTHER)).status, 403);
+});
+
+test("presentation token reads display state WITHOUT owner login (second device)", async () => {
+  const db = makeFakeDb();
+  const { sid } = await draftDraw(db);
+  const tok = await mintScreen(db, sid);
+  const detail = await Screen(db, { action: "detail", sessionId: sid, presentationToken: tok });
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.session.sessionId, sid);
+  assert.ok(detail.body.joinUrl && detail.body.joinUrl.startsWith("https://x/s/")); // QR resolvable server-side
+  assert.ok("cursor" in detail.body);
+  const ent = await Screen(db, { action: "draw_entrants", sessionId: sid, presentationToken: tok });
+  assert.equal(ent.status, 200);
+  assert.equal(ent.body.count, 3);
+  assert.equal("codes" in ent.body, false); // raw entrant codes are NEVER exposed to the Screen
+});
+
+test("presentation token is REFUSED for EVERY mutation door (fail-closed)", async () => {
+  const db = makeFakeDb();
+  const { sid } = await draftDraw(db);
+  await H(db, { action: "draw_lock", sessionId: sid }, OWNER, 6000);
+  const tok = await mintScreen(db, sid);
+  const mutations = [
+    { action: "draw_winner", sessionId: sid, tier: 3 },
+    { action: "draw_open", sessionId: sid },
+    { action: "draw_lock", sessionId: sid },
+    { action: "draw_configure", sessionId: sid, enabled: true, startAt: 1, cutoffAt: 2, prizes: { third: "x", second: "y", first: "z" } },
+    { action: "guestbook_moderate", sessionId: sid, entryId: "e1", op: "approve" },
+    { action: "quiz_control", sessionId: sid, op: "open" },
+    { action: "quiz_configure", sessionId: sid, locale: "en", questionCount: 3, answerDurationSeconds: 30 },
+    { action: "presentation_set", sessionId: sid, cursor: { paused: true } },
+    { action: "presentation_token", sessionId: sid },
+    { action: "create", title: "hijack" },
+    { action: "list" },
+  ];
+  for (const m of mutations) {
+    const res = await Screen(db, { ...m, presentationToken: tok }, 6100);
+    assert.equal(res.status, 403, `${m.action} must be refused`);
+    assert.equal(res.body.error, "presentation_forbidden");
+  }
+  // Even with a VALID owner token present, the presentationToken downgrades to read-only.
+  const withOwner = await H(db, { action: "draw_winner", sessionId: sid, tier: 3, presentationToken: tok }, OWNER, 6100);
+  assert.equal(withOwner.status, 403);
+  // No winner was ever committed via the Screen path.
+  assert.equal((db._store.get(`${DRAW_COLLECTION}/${sid}`).winners ?? []).length, 0);
+});
+
+test("presentation token bogus / cross-session / expired is rejected", async () => {
+  const db = makeFakeDb();
+  const a = await draftDraw(db);
+  const b = await draftDraw(db);
+  const tok = await mintScreen(db, a.sid);
+  assert.equal((await Screen(db, { action: "detail", sessionId: a.sid, presentationToken: "garbage" })).status, 401);
+  assert.equal((await Screen(db, { action: "detail", sessionId: b.sid, presentationToken: tok })).status, 401); // wrong session
+  assert.equal((await Screen(db, { action: "detail", sessionId: a.sid, presentationToken: tok }, 3000 + 13 * 60 * 60 * 1000)).status, 401); // expired
+});
+
+test("owner Host mutations still work after presentation hardening", async () => {
+  const db = makeFakeDb();
+  const { sid } = await draftDraw(db);
+  await mintScreen(db, sid); // minting does not disturb ownership
+  await H(db, { action: "draw_lock", sessionId: sid }, OWNER, 6000);
+  const w3 = await H(db, { action: "draw_winner", sessionId: sid, tier: 3 }, OWNER, 6100);
+  assert.equal(w3.status, 200);
+  assert.ok(w3.body.luckyCode);
+});
+
+test("presentation read NEVER mutates: a read past cutoff does not freeze the pool", async () => {
+  const db = makeFakeDb();
+  const { sid } = await draftDraw(db);
+  const tok = await mintScreen(db, sid);
+  const ent = await Screen(db, { action: "draw_entrants", sessionId: sid, presentationToken: tok }, 9000); // past cutoff 5000
+  assert.equal(ent.status, 200);
+  assert.equal(db._store.get(`${DRAW_COLLECTION}/${sid}`).status, "open"); // Screen did not lock — only the Host poll does
+});
+
+test("presentation cursor: owner sets show-control state; Screen reads it; holds no game truth", async () => {
+  const db = makeFakeDb();
+  const sess = await createGuestbookSession(db, "Guestbook Party");
+  const sid = sess.body.sessionId;
+  const tok = await mintScreen(db, sid);
+  const set1 = await H(db, { action: "presentation_set", sessionId: sid, cursor: { paused: true, pinnedEntryId: "entry-x", skip: true } });
+  assert.equal(set1.status, 200);
+  assert.equal(set1.body.cursor.paused, true);
+  assert.equal(set1.body.cursor.pinnedEntryId, "entry-x");
+  assert.equal(set1.body.cursor.skipSeq, 1);
+  const set2 = await H(db, { action: "presentation_set", sessionId: sid, cursor: { skip: true } });
+  assert.equal(set2.body.cursor.skipSeq, 2); // monotonic signal, not winner truth
+  const cur = await Screen(db, { action: "cursor", sessionId: sid, presentationToken: tok }, 3300);
+  assert.equal(cur.status, 200);
+  assert.equal(cur.body.cursor.paused, true);
+  assert.equal((await H(db, { action: "presentation_set", sessionId: sid, cursor: { paused: false } }, OTHER)).status, 403); // non-owner cannot write
+  // The cursor carries NO approval/winner/score truth.
+  const cursor = db._store.get(`${LIVE_SESSION_COLLECTION}/${sid}`).presentationCursor;
+  for (const k of ["approvedForDisplay", "winners", "leaderboard", "luckyCode", "points"]) assert.equal(k in cursor, false);
+});
+
+test("P0 preserved: presentation guestbook_display returns ONLY approved messages", async () => {
+  const db = makeFakeDb();
+  const sess = await createGuestbookSession(db);
+  const sid = sess.body.sessionId;
+  const r1 = await submit(db, sess.body.token, "Congrats A", { pt: "gbuser0000000000001", tag: "a" });
+  await submit(db, sess.body.token, "Congrats B", { pt: "gbuser0000000000002", tag: "b" });
+  await H(db, { action: "guestbook_moderate", sessionId: sid, entryId: r1.body.entryId, op: "approve" }, OWNER, 2000);
+  const tok = await mintScreen(db, sid);
+  const disp = await Screen(db, { action: "guestbook_display", sessionId: sid, presentationToken: tok }, 3400);
+  assert.equal(disp.status, 200);
+  assert.equal(disp.body.entries.length, 1);            // ONLY the approved one — Screen cannot widen the feed
+  assert.equal(disp.body.entries[0].text, "Congrats A");
+  assert.ok("cursor" in disp.body);
+});
+
+test("presentation quiz_state is public+answer-safe and exposes answered/joined counts", async () => {
+  const db = makeFakeDb();
+  const sess = await createQuiz(db);
+  const sid = sess.body.sessionId;
+  await qConfig(db, sid, { locale: "en", questionCount: 3, answerDurationSeconds: 60, now: 100 });
+  await qCtl(db, sid, "open", 200);
+  const tok = await mintScreen(db, sid);
+  const st = await Screen(db, { action: "quiz_state", sessionId: sid, presentationToken: tok }, 300);
+  assert.equal(st.status, 200);
+  assert.equal(st.body.configured, true);
+  assert.equal(st.body.phase, "question_open");
+  assert.equal(st.body.question.correctAnswer, undefined);   // answer NEVER before reveal
+  assert.equal(typeof st.body.participants, "number");        // "joined" proxy
+  assert.equal(typeof st.body.answeredThis, "number");        // "answered"
+  assert.ok("cursor" in st.body);
+});

@@ -119,11 +119,23 @@ test("create: unknown aud → 400 invalid_aud", async () => {
   assert.equal(res.body.error, "invalid_aud");
 });
 
-test("create: moments reserved but NOT enabled → 403 aud_not_enabled", async () => {
+test("create: moments ENABLED (Founder decision 2026-08-23) → code minted", async () => {
   const db = makeFakeDb();
   const res = await createHandoff({ db, decoded: { uid: UID_A }, body: { aud: "moments" }, now: NOW });
-  assert.equal(res.status, 403);
-  assert.equal(res.body.error, "aud_not_enabled");
+  assert.equal(res.status, 200);
+  assert.ok(res.body.code);
+});
+
+test("create: an env override can still disable moments", async () => {
+  process.env.HANDOFF_CREATE_AUDIENCES = "seen,gift";
+  try {
+    const db = makeFakeDb();
+    const res = await createHandoff({ db, decoded: { uid: UID_A }, body: { aud: "moments" }, now: NOW });
+    assert.equal(res.status, 403);
+    assert.equal(res.body.error, "aud_not_enabled");
+  } finally {
+    delete process.env.HANDOFF_CREATE_AUDIENCES;
+  }
 });
 
 test("create: browser origin must be a MATTERS www origin", async () => {

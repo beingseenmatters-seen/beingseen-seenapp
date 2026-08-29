@@ -105,6 +105,9 @@ export async function submitSharedRsvpForRecord({ db, body, rec, tokenHash, now 
   const prevSnap = await ref.get();
   const prev = prevSnap.exists ? prevSnap.data() : null;
 
+  // Binary contract (Founder, 2026-08-27): 'maybe' is no longer accepted —
+  // legacy stored maybes stay readable in old records but count 0 attendance
+  // (the aggregate below has always counted only accepted/declined).
   const status =
     body?.status === "accepted" || body?.status === "declined" ? body.status : null;
   const messageOnly = !status && body?.recipientMessage !== undefined;

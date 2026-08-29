@@ -37,9 +37,10 @@ export const HANDOFF_MAX_INSPECTS = 5;
 /** All audiences known to the architecture ('moments' reserved). */
 export const HANDOFF_KNOWN_AUDIENCES = ["seen", "gift", "moments"];
 
-/** Audiences enabled for production create. Moments requires a Founder decision. */
+/** Audiences enabled for production create. Moments ENABLED by Founder
+ *  decision 2026-08-23 (Moment.Seen shared-account integration). */
 export function enabledCreateAudiences() {
-  const raw = process.env.HANDOFF_CREATE_AUDIENCES || "seen,gift";
+  const raw = process.env.HANDOFF_CREATE_AUDIENCES || "seen,gift,moments";
   return raw.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
@@ -51,7 +52,9 @@ export const HANDOFF_WWW_ORIGINS = [
 export const HANDOFF_AUD_ORIGINS = {
   seen: ["https://app.beingseenmatters.com"],
   gift: ["https://gift.beingseenmatters.com"],
-  moments: ["https://moments.beingseenmatters.com"],
+  // Reserved before the product shipped; the real domain is the SINGULAR
+  // moment.beingseenmatters.com (launched 2026-08-23).
+  moments: ["https://moment.beingseenmatters.com"],
 };
 function devOrigins() {
   const raw = process.env.HANDOFF_DEV_ORIGINS || "";

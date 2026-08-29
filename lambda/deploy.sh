@@ -70,10 +70,12 @@ zip -r "$PACKAGE" \
   event.mjs \
   onsite.mjs \
   liveSession.mjs \
+  tag.mjs \
   distribute.mjs \
   shareCrypto.mjs \
   sharedRsvp.mjs \
   occasion.mjs \
+  momentCaption.mjs \
   giftMedia.mjs \
   authHandoff.mjs \
   reflect-handler.mjs \

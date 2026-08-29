@@ -747,17 +747,10 @@ test("media: wedding gift seals a staged photo immutably; staging is promoted", 
   });
 });
 
-test("media: requires an occasion, rejects foreign/nonexistent assets, never writes a corrupt record", async () => {
+test("media: rejects foreign/nonexistent assets, never writes a corrupt record", async () => {
   const db = makeFakeDb();
   const media = makeMediaStore();
   const assetId = await stageTestPhoto(media);
-
-  const noOccasion = await createGift({
-    db, decoded: AUTHOR, media,
-    body: { message: "hi", openingMedia: { type: "photo", assetId } }, now: 1000,
-  });
-  assert.equal(noOccasion.status, 400);
-  assert.equal(noOccasion.body.field, "occasion");
 
   const foreignId = await stageTestPhoto(media, "someone-else");
   const foreign = await createGift({
@@ -775,6 +768,53 @@ test("media: requires an occasion, rejects foreign/nonexistent assets, never wri
   assert.equal(copyFail.status, 502);
   assert.equal(copyFail.body.error, "media_seal_failed");
   assert.equal(db._store.size, 0); // no gift record ever written on any failure
+});
+
+test("media (self-print Gift.Tag): an ORDINARY gift carries full rich presentation — no occasion, no event, Direct + Heart Key", async () => {
+  const db = makeFakeDb();
+  const media = makeMediaStore();
+  const photoId = await stageTestPhoto(media);
+  const voiceId = await stageTestVoice(media);
+
+  // The self-print Gift.Tag path: an ordinary gift (NO occasion) now seals the
+  // full rich presentation — photo story + voice + music — over the same pipeline.
+  const rich = await createGift({
+    db, decoded: AUTHOR, media, now: 1000,
+    body: {
+      message: "给你的一份心意",
+      accessMode: "direct",
+      presentation: {
+        photos: [{ assetId: photoId }],
+        voice: { assetId: voiceId },
+        musicThemeId: "wedding_warm_piano_v1",
+      },
+    },
+  });
+  assert.equal(rich.status, 200);
+  const rec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(rich.body.token)}`);
+  assert.ok(rec.presentation);                        // rich media stored
+  assert.equal(rec.presentation.musicThemeId, "wedding_warm_piano_v1");
+  assert.equal(Array.isArray(rec.presentation.photos), true);
+  assert.ok(rec.presentation.voice);
+  assert.equal("occasion" in rec, false);             // still an ordinary gift — no occasion
+  assert.equal(rec.eventId ?? null, null);            // and NO Event was created
+  assert.equal(rec.accessMode, "direct");
+
+  // Retrieve stays occasion-agnostic — a Direct ordinary rich gift opens fine.
+  const opened = await retrieveGift({ db, media, body: { token: rich.body.token }, now: 2000 });
+  assert.equal(opened.status, 200);
+
+  // Heart Key works identically on an ordinary rich gift.
+  const photoId2 = await stageTestPhoto(media);
+  const hk = await createGift({
+    db, decoded: AUTHOR, media, now: 1000,
+    body: { message: "第二份", accessMode: "heart_key", presentation: { photos: [{ assetId: photoId2 }] } },
+  });
+  assert.equal(hk.status, 200);
+  const hkRec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(hk.body.token)}`);
+  assert.equal(hkRec.accessMode, "heart_key");
+  assert.ok(hkRec.keyHash);                            // Heart Key hashed + present
+  assert.ok(hkRec.presentation);                       // rich media on a Heart Key gift too
 });
 
 test("media: Firestore write failure compensates by deleting the sealed object", async () => {
@@ -1404,4 +1444,65 @@ test("hide is owner-authorized: another sender cannot hide/unhide, and bad input
   assert.equal((await setGiftHidden({ db, decoded: null, body: { giftId, hidden: true } })).status, 401);
   assert.equal((await setGiftHidden({ db, decoded: AUTHOR, body: { giftId } })).status, 400); // no boolean
   assert.equal((await setGiftHidden({ db, decoded: AUTHOR, body: { giftId: "nope", hidden: true } })).status, 404);
+});
+
+// --- Ordinary-gift salutation (TA 的称呼) — optional recipientLabel ----------
+
+test("salutation: an ordinary gift stores and returns the optional recipientLabel", async () => {
+  const db = makeFakeDb();
+
+  // Direct gift with a salutation — stored on the record, returned on open.
+  const g = await createGift({
+    db, decoded: AUTHOR,
+    body: { message: "hi", accessMode: "direct", recipientLabel: "小C测试" }, now: 1000,
+  });
+  assert.equal(g.status, 200);
+  const rec = db._store.get(`${GIFT_COLLECTION}/${sha256Hex(g.body.token)}`);
+  assert.equal(rec.recipientLabel, "小C测试");
+  assert.equal("eventId" in rec, false); // still an ordinary gift — no Event was created
+  const opened = await retrieveGift({ db, body: { token: g.body.token }, now: 2000 });
+  assert.equal(opened.status, 200);
+  assert.equal(opened.body.recipientLabel, "小C测试");
+
+  // Heart-key gift too; the shared normalizer trims.
+  const hk = await createGift({
+    db, decoded: AUTHOR, body: { message: "hi", recipientLabel: "  小C  " }, now: 1000,
+  });
+  assert.equal(hk.status, 200);
+  assert.equal(db._store.get(`${GIFT_COLLECTION}/${sha256Hex(hk.body.token)}`).recipientLabel, "小C");
+  const hkOpen = await retrieveGift({ db, body: { token: hk.body.token, key: hk.body.retrievalKey }, now: 2000 });
+  assert.equal(hkOpen.status, 200);
+  assert.equal(hkOpen.body.recipientLabel, "小C");
+});
+
+test("salutation: absent/empty stays NO salutation (no error, nothing stored, null on open)", async () => {
+  const db = makeFakeDb();
+  for (const extra of [{}, { recipientLabel: "" }, { recipientLabel: null }, { recipientLabel: "   " }]) {
+    const r = await createGift({
+      db, decoded: AUTHOR, body: { message: "a", accessMode: "direct", ...extra }, now: 1000,
+    });
+    assert.equal(r.status, 200);
+    assert.equal("recipientLabel" in db._store.get(`${GIFT_COLLECTION}/${sha256Hex(r.body.token)}`), false);
+    const ro = await retrieveGift({ db, body: { token: r.body.token }, now: 1500 });
+    assert.equal(ro.body.recipientLabel, null);
+  }
+});
+
+test("salutation: junk is still rejected by the SHARED normalizer; event semantics unchanged", async () => {
+  const db = makeFakeDb();
+  // Over-long label → same 400 as the Event path (shared cap).
+  const long = await createGift({
+    db, decoded: AUTHOR,
+    body: { message: "a", accessMode: "direct", recipientLabel: "x".repeat(41) }, now: 1000,
+  });
+  assert.equal(long.status, 400);
+  assert.equal(long.body.error, "invalid_recipient_label");
+  assert.equal(db._store.size, 0);
+  // Event path untouched: eventCreate still demands occasion facts first
+  // (full required-label coverage lives in event.test.mjs).
+  const ev = await createGift({
+    db, decoded: AUTHOR, body: { message: "a", eventCreate: true, recipientLabel: "张先生全家" }, now: 1000,
+  });
+  assert.equal(ev.status, 400);
+  assert.equal(ev.body.error, "invalid_event");
 });

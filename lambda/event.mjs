@@ -409,6 +409,22 @@ export async function eventDetail({ db, decoded, body, giftCollection, sharedRes
         aggregate: { replies: 0, adultTotal: 0, childTotal: 0, attendingTotal: 0, accepted: 0, declined: 0 },
       };
 
+  // CASUAL ATTENDANCE RULE (Founder, 2026-08-23): a casual gathering has no
+  // party sizes — each independent response with status ACCEPTED counts as
+  // exactly 1 attendee; maybe/declined/pending count 0. Casual one-tap RSVPs
+  // store NULL counts, so the count-summing arithmetic below would otherwise
+  // report 0 attending for a fully-attended gathering (production bug).
+  // Scoped strictly to ev.type === "casual": Wedding/Birthday/Business keep
+  // their adult/children/party-size semantics byte-identically.
+  if (ev.type === "casual") {
+    aggregate.adultTotal = 0;
+    aggregate.childTotal = 0;
+    aggregate.attendingTotal = aggregate.acceptedGroups;
+    shared.aggregate.adultTotal = 0;
+    shared.aggregate.childTotal = 0;
+    shared.aggregate.attendingTotal = shared.aggregate.accepted;
+  }
+
   // EVENT attendance combines BOTH channels (founder rule, 2026-08-19): the
   // couple's expected headcount includes self-reported shared-link replies.
   // The SOURCES are never merged — managed households keep their own

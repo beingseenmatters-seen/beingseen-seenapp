@@ -251,13 +251,18 @@ test("event-based create validates label and intent", async () => {
   });
   assert.equal(noOccasion.status, 400);
   assert.equal(noOccasion.body.error, "invalid_event");
+  // Ordinary-salutation contract (TA 的称呼): a label WITHOUT an event is no
+  // longer rejected — it is the optional salutation, stored on the record.
+  // It still never creates an Event, and Event creates still REQUIRE a label.
   const labelWithoutEvent = await createGift({
     db,
     decoded: A,
     body: { message: "hi", occasion: FACTS, recipientLabel: "张先生全家" },
     share,
   });
-  assert.equal(labelWithoutEvent.status, 400);
+  assert.equal(labelWithoutEvent.status, 200);
+  const saluted = [...db._store.values()].find((v) => v.recipientLabel === "张先生全家" && !v.eventId);
+  assert.ok(saluted, "salutation stored on the standalone record");
   assert.equal(eventDocs(db).length, 0); // nothing above may leave an event behind
 });
 

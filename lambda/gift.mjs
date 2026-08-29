@@ -189,9 +189,19 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
     const lab = normalizeRecipientLabel(body?.recipientLabel);
     if (!lab.ok) return { status: 400, body: { error: lab.error, field: lab.field } };
     recipientLabel = lab.label;
-  } else if (body?.recipientLabel !== undefined) {
-    // A label without an event has no meaning — reject rather than drop.
-    return { status: 400, body: { error: "invalid_recipient_label", field: "event" } };
+  } else if (
+    body?.recipientLabel !== undefined &&
+    body?.recipientLabel !== null &&
+    String(body.recipientLabel).trim() !== ""
+  ) {
+    // Ordinary gifts carry an OPTIONAL salutation (TA 的称呼) — the recipient's
+    // name/pet-name the sender addressed the message to. Same normalizer, same
+    // ≤40 cap as the Event label; absent/empty simply means no salutation
+    // (never an error, never a blank rendered). Event semantics above are
+    // untouched: there the label stays REQUIRED.
+    const lab = normalizeRecipientLabel(body.recipientLabel);
+    if (!lab.ok) return { status: 400, body: { error: lab.error, field: lab.field } };
+    recipientLabel = lab.label;
   }
 
   // Access mode (sealing-time, immutable): 'heart_key' keeps the six-digit
@@ -281,9 +291,14 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
   }
   let presentation = null;
   if (presentationInput !== undefined && presentationInput !== null) {
-    if (!occasion) {
-      return { status: 400, body: { error: "invalid_media", field: "occasion" } };
-    }
+    // Rich presentation (photo story / voice / music) rides the ONE proven
+    // pipeline. It was originally occasion-only; a self-print Gift.Tag is an
+    // ORDINARY gift that ALSO carries rich presentation, so an occasion is no
+    // longer required — finalizePresentation applies the identical validation
+    // and limits either way, and an occasion-less gift creates no Event. Same-
+    // Event reuse (fromGiftId) still needs an event, so a standalone gift may
+    // carry only freshly-uploaded assets (resolveReuse stays null when eventId
+    // is null); music still comes from the same server-side allowlist.
     // Presentation reuse across the SAME Event (4.5-B): 继续邀请 carries the
     // Wedding photo/voice forward by product-level reference (fromGiftId) —
     // never S3 keys, never cross-sender, never cross-event, never from a
@@ -363,7 +378,9 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
     cooldownTier: 0,
     ...(occasion ? { occasion } : {}),
     ...(presentation ? { presentation } : {}),
-    ...(eventId ? { eventId, recipientLabel } : {}),
+    // recipientLabel: with an Event it is the household identity (required);
+    // on an ordinary gift it is the optional salutation (TA 的称呼).
+    ...(eventId ? { eventId, recipientLabel } : recipientLabel ? { recipientLabel } : {}),
     // §12 (4.5-C): a direct-share invitation is one LINK, not one household —
     // its RSVP must never masquerade as household attendance statistics.
     ...(eventId && body?.sharedDistribution === true ? { sharedDistribution: true } : {}),
@@ -606,6 +623,9 @@ async function sharedResponseFor(db, rec, tokenHash, body) {
 export async function rsvpGift({ db, body, now = Date.now() }) {
   const token = typeof body?.token === "string" ? body.token.trim() : "";
   const key = normalizeKey(body?.key);
+  // Canonical binary contract restored (Founder, 2026-08-27): 'maybe' was
+  // briefly a casual-only answer and is no longer accepted from ANYONE —
+  // legacy stored maybes stay readable but no new one can be written.
   const status =
     body?.status === "accepted" || body?.status === "declined" ? body.status : null;
 
