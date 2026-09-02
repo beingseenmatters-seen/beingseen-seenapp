@@ -66,6 +66,9 @@ import {
   MOMENT_CAPTION_TEMPERATURE,
 } from "./momentCaption.mjs";
 import { handleTagManage, handleTagScan } from "./tag.mjs";
+import { deleteGiftAccount, deleteMomentAccount } from "./accountDeletion.mjs";
+import { handleMind } from "./mind.mjs";
+import { runGiftVoiceScript } from "./spokenScript.mjs";
 import { distributeInvitations } from "./distribute.mjs";
 import { validateOccasion } from "./occasion.mjs";
 import { makeKmsShareCrypto } from "./shareCrypto.mjs";
@@ -1196,6 +1199,19 @@ export const handler = async (event) => {
 
   // ---- Seen.Tag (physical object → public QR → anonymous scanner → owner) --
   // Owner plane: authenticated; verifies ownerUid on every touched record.
+  // ---- Product-specific account deletion (shared login identity is NEVER
+  //      touched — see accountDeletion.mjs safeguards) ----------------------
+  if (path === "/sender/account/delete") {
+    const decoded = await verifyAuthToken(event);
+    const result = await deleteGiftAccount({ db: admin.firestore(), decoded, media: giftMediaStore });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/moment/account/delete") {
+    const decoded = await verifyAuthToken(event);
+    const result = await deleteMomentAccount({ db: admin.firestore(), decoded });
+    return httpResponse(result.status, result.body);
+  }
+
   if (path === "/tag/manage") {
     const decoded = await verifyAuthToken(event);
     const result = await handleTagManage({
@@ -1220,6 +1236,25 @@ export const handler = async (event) => {
       share: giftShareCrypto,
       publicBaseUrl: GIFT_PUBLIC_BASE_URL,
       sourceIp: event.requestContext?.http?.sourceIp || null,
+    });
+    return httpResponse(result.status, result.body);
+  }
+
+  // ---- Mind.Seen / 观·静心 (公益: authorized creators → permanent QR entries
+  // → anonymous public responses). ONE op-dispatched door; roles (project
+  // owner/editor, mind admin) are enforced inside mind.mjs per op. Auth is
+  // best-effort here: public ops (entry/respond) work anonymously, never 401.
+  // Media rides the existing staging store; AI drafting rides callExpressModel.
+  if (path === "/mind") {
+    const decoded = await verifyAuthToken(event); // null for anonymous — by design
+    const result = await handleMind({
+      db: admin.firestore(),
+      decoded,
+      body,
+      sourceIp: event.requestContext?.http?.sourceIp || null,
+      store: giftMediaStore,
+      auth: admin.auth(),
+      callModel: callExpressModel,
     });
     return httpResponse(result.status, result.body);
   }
@@ -1296,6 +1331,15 @@ export const handler = async (event) => {
     return httpResponse(result.status, result.body);
   }
   if (path === "/express/draft") {
+    // AI 帮我说 — the Gift.Seen VOICE-SCRIPT branch. Gated on an EXPLICIT
+    // kind so every existing drafting request (occasion mode below, legacy
+    // free-text after it) is byte-for-byte unaffected. Authenticated senders
+    // only; the prompt lives in spokenScript.mjs with GIFT context only.
+    if (body && typeof body === "object" && body.kind === "voice_script") {
+      const decoded = await verifyAuthToken(event);
+      const result = await runGiftVoiceScript({ decoded, body, callModel: callExpressModel });
+      return httpResponse(result.status, result.body);
+    }
     // Structured Occasion mode (body.occasion present) requires a verified
     // sender identity — Founder decision. The legacy free-text Expression
     // path below stays app-key-only, exactly as before.
