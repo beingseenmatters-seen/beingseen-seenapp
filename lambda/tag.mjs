@@ -33,6 +33,11 @@
  *                      never both win) and then fills the profile.
  */
 import crypto from "node:crypto";
+// Preprinted Gift.Tag activation (2026-09-05): the 100-Credit charge and the
+// tag↔gift binding commit in ONE billing transaction (chargeCredits guard).
+// gift.mjs never imports this module, so the graph stays acyclic.
+import { chargeCredits as chargeCreditsReal } from "./billing.mjs";
+import { GIFT_COLLECTION as BOUND_GIFT_COLLECTION } from "./gift.mjs";
 
 export const TAG_COLLECTION = "tags";
 export const TAG_CONTACT_COLLECTION = "tagContacts";
@@ -78,6 +83,16 @@ async function mintBatchReference(db, type, now) {
 // ≈ 48 bits — non-sequential and impractical to guess online.
 const PRINT_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const mintPrintCode = () => Array.from(crypto.randomBytes(10), (b) => PRINT_ALPHABET[b % PRINT_ALPHABET.length]).join("");
+// PREPRINTED Gift.Tag codes (2026-09-05): mass-production scale wants far
+// more entropy than the hand-typeable 10-char personal-tag code (~49.5 bits).
+// Gift.Tag QRs are scanned, never typed, so 18 chars of the same unambiguous
+// alphabet ≈ 89.2 bits — non-sequential, non-enumerable, QR-friendly, and
+// still human-readable for support. Existing pet/car/luggage codes are
+// untouched (backward compatible, no migration); the tagCodes atomic
+// reservation applies to both lengths identically.
+const GIFT_CODE_LENGTH = 18;
+const mintGiftPrintCode = () =>
+  Array.from(crypto.randomBytes(GIFT_CODE_LENGTH), (b) => PRINT_ALPHABET[b % PRINT_ALPHABET.length]).join("");
 
 // --- Type + reason registry — the ONE place a new Tag type is declared -------
 // `active:false` types are reserved: their schema/reasons exist so the engine
@@ -86,6 +101,14 @@ export const TAG_TYPES = {
   car:     { active: true, reasons: ["blocking", "lights_on", "window_open", "anomaly", "access", "other"] },
   pet:     { active: true, reasons: ["found", "safe_with_me", "seen_nearby", "injured", "danger", "other"] },
   luggage: { active: true, reasons: ["found", "safe_with_me", "seen_here", "handed_to_staff", "other"] },
+  // Official PREPRINTED Gift.Tag (founder-locked 2026-09-05): a mass-produced
+  // physical card whose unique QR is provisioned here and, once activated for
+  // 100 Credits, opens ONE bound Gift for the card's lifetime. No finder
+  // surface at all (empty reasons = the contact door refuses structurally);
+  // scans resolve through the gift branch in resolveTag. Commercial model:
+  // 100 Credits ONE-TIME activation — unlike pet/car/luggage, which are
+  // annual AU$ digital services outside the Credits system entirely.
+  gift:    { active: true, reasons: [] },
 };
 /** Types that support the owner-declared MISSING state (spec: car does not). */
 export const MISSING_CAPABLE_TYPES = ["pet", "luggage"];
@@ -116,25 +139,19 @@ const TAG_STATUSES = ["unactivated", "active", "missing", "paused"];
 // Master Admin authority = Firebase custom claim `master_admin: true`,
 // attached to a UID (never a string comparison at request time).
 //
-// TEMPORARY BOOTSTRAP — REMOVE AFTER CLAIMS ARE LIVE: because no role system
-// existed before this phase, the founder's verified email may still (a) act as
-// master admin and (b) grant the first claims. Once the intended admin account
-// carries the claim, delete this list and the fallback below.
-export const PROVISION_ADMIN_EMAILS = ["beingseenmatters@gmail.com"];
-
-/** Claim check (server-side, on the verified token) with the temporary
- *  bootstrap fallback. UI checks are cosmetic; THIS is the gate. */
+// The temporary founder-email bootstrap was RETIRED 2026-09-04 after the
+// claim was granted and verified on the real admin accounts — the claim is
+// now the ONLY authority. New admins are granted by existing claim-holders
+// through grant_master_admin.
 function isMasterAdmin(decoded) {
-  if (decoded?.master_admin === true) return true;
-  const email = typeof decoded?.email === "string" ? decoded.email.toLowerCase() : "";
-  return decoded?.email_verified === true && PROVISION_ADMIN_EMAILS.includes(email); // TEMPORARY BOOTSTRAP
+  return decoded?.master_admin === true;
 }
 
 /**
- * grant_master_admin — one-time/tightly-restricted: grants `master_admin: true`
+ * grant_master_admin — tightly-restricted: grants `master_admin: true`
  * to the Firebase UID resolved from the target email (or the caller when no
- * email is given). Callable only by an existing master admin or the bootstrap
- * list. The claim lands on the UID; alias addresses that have never signed in
+ * email is given). Callable ONLY by an existing master admin (claim-holder).
+ * The claim lands on the UID; alias addresses that have never signed in
  * do not resolve (getUserByEmail fails) — the returned uid+email report which
  * real account received it.
  */
@@ -394,7 +411,7 @@ async function provisionTags({ db, decoded, body, share, publicBaseUrl, now }) {
 
   const minted = [];
   for (let i = 0; i < count; i += 1) {
-    const code = customCode ?? mintPrintCode();
+    const code = customCode ?? (type === "gift" ? mintGiftPrintCode() : mintPrintCode());
     const publicQrHash = sha256Hex(code);
     // Legacy guard: tags minted before the reservation ledger existed (and
     // self-print tags) hold no reservation doc — a query still finds them.
@@ -570,6 +587,9 @@ async function activateTag({ db, decoded, body, now }) {
       const cur = await tx.get(ref);
       if (!cur.exists) { outcome = { status: 404, body: { error: "not_found" } }; return; }
       const t = cur.data();
+      // A preprinted Gift.Tag NEVER activates through the free personal-tag
+      // claim — its only door is the 100-Credit gift_activate transaction.
+      if (t.type === "gift") { outcome = { status: 400, body: { error: "wrong_flow", type: "gift" } }; return; }
       if (t.status !== "unactivated" || t.ownerUid) {
         outcome = t.ownerUid === decoded.uid
           ? { status: 200, body: { tagId: t.tagId, type: t.type, status: t.status, already: true } }
@@ -593,6 +613,116 @@ async function activateTag({ db, decoded, body, now }) {
     await emitTagEvent(db, { eventType: "TAG_ACTIVATED", tagId: id, recipientUid: decoded.uid, data: { type: outcome.body.type }, now });
   }
   return outcome;
+}
+
+/**
+ * gift_activate — the PREPRINTED Gift.Tag's one commercial transaction
+ * (founder-locked 2026-09-05): ONE official physical card = at most ONE
+ * successful activation = at most ONE 100-Credit charge = at most ONE bound
+ * Gift, for the card's lifetime.
+ *
+ * The pending Gift was published FREE via the tag-bound grant (gift.mjs) and
+ * is publicly invisible until this succeeds. Everything one-time commits in
+ * the SAME billing transaction (chargeCredits guard — the tagPublishAuth
+ * lesson): tag officialness + unactivated state + gift ownership/pairing are
+ * re-validated INSIDE the transaction, and the guard's writes (owner bind,
+ * boundGiftId, pendingTagBind cleared) land atomically with the ledger entry.
+ * Losers of any race abort with ZERO writes and ZERO charge; a retry of the
+ * winner's own intent recovers via the deterministic key tagact_{tagId}
+ * (charged-but-crashed windows heal with a free re-bind).
+ */
+async function activateGiftTag({ db, decoded, body, billing = null, now }) {
+  const charge = billing?.chargeCredits ?? chargeCreditsReal;
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  const token = clean(body?.token, 128);
+  const giftId = typeof body?.giftId === "string" ? body.giftId.trim().toLowerCase() : "";
+  if (!token) return { status: 400, body: { error: "invalid_request", field: "token" } };
+  if (!/^[a-f0-9]{64}$/.test(giftId)) return { status: 400, body: { error: "invalid_request", field: "giftId" } };
+
+  const found = await tagByToken({ db, token, now });
+  if (found.res) return found.res;
+  const tag = found.tag;
+  if (tag.type !== "gift") return { status: 400, body: { error: "wrong_flow", type: tag.type } };
+  const tagRef = db.collection(TAG_COLLECTION).doc(tag.tagId);
+  const giftRef = db.collection(BOUND_GIFT_COLLECTION).doc(giftId);
+
+  const bindWrites = () => ([
+    {
+      kind: "update",
+      ref: tagRef,
+      data: { ownerUid: decoded.uid, status: "active", boundGiftId: giftId, activatedAt: now, updatedAt: now },
+    },
+    { kind: "update", ref: giftRef, data: { pendingTagBind: false, boundTagId: tag.tagId } },
+  ]);
+  const guard = async (tx) => {
+    const t = (await tx.get(tagRef)).data();
+    if (!t || t.type !== "gift") return { ok: false, error: "not_found" };
+    if (t.status !== "unactivated" || t.ownerUid) {
+      // Consumed forever — even the same user cannot activate it for another
+      // Gift; their own completed activation recovers via the duplicate path.
+      return { ok: false, error: "already_activated" };
+    }
+    const g = (await tx.get(giftRef)).data();
+    if (!g || g.senderUid !== decoded.uid || g.revoked) return { ok: false, error: "invalid_gift" };
+    // The pairing minted at grant time is enforced here: only the Gift that
+    // was published FOR this physical card can be bound to it.
+    if (g.pendingTagBind !== true || g.pendingTagId !== t.tagId) return { ok: false, error: "invalid_gift" };
+    return { ok: true, writes: bindWrites() };
+  };
+
+  const res = await charge({
+    db,
+    uid: decoded.uid,
+    product: "preprinted_gift_tag_activation",
+    idempotencyKey: `tagact_${tag.tagId}`,
+    subjectId: tag.tagId,
+    guard,
+    meta: { giftId },
+    now,
+  });
+
+  if (res.ok && !res.duplicate) {
+    await emitTagEvent(db, { eventType: "TAG_ACTIVATED", tagId: tag.tagId, recipientUid: decoded.uid, data: { type: "gift" }, now });
+    return { status: 200, body: { tagId: tag.tagId, type: "gift", status: "active", giftId, charged: true, balances: res.balances ?? null } };
+  }
+  if (res.ok && res.duplicate) {
+    // The charge already stands (this tag's one activation was paid). Heal
+    // the crash window: if the bind itself never landed, complete it FREE —
+    // validating the same one-time state in its own transaction.
+    const cur = (await tagRef.get()).data();
+    if (cur?.ownerUid === decoded.uid && cur?.boundGiftId) {
+      return { status: 200, body: { tagId: tag.tagId, type: "gift", status: cur.status, giftId: cur.boundGiftId, already: true } };
+    }
+    if (cur && cur.status === "unactivated" && !cur.ownerUid) {
+      try {
+        await db.runTransaction(async (tx) => {
+          const g2 = await guard(tx);
+          if (!g2.ok) { const e = new Error(g2.error); e.code = g2.error; throw e; }
+          applyGuardWrites(tx, g2.writes);
+        });
+        return { status: 200, body: { tagId: tag.tagId, type: "gift", status: "active", giftId, relinked: true } };
+      } catch (err) {
+        return { status: 409, body: { error: err?.code === "invalid_gift" ? "invalid_gift" : "already_activated" } };
+      }
+    }
+    return { status: 409, body: { error: "already_activated" } };
+  }
+  if (res.error === "insufficient_credits") {
+    return { status: 402, body: { error: "insufficient_credits", needed: res.needed, free: res.free, paid: res.paid } };
+  }
+  if (res.error === "already_activated" || res.error === "invalid_gift" || res.error === "not_found") {
+    return { status: res.error === "not_found" ? 404 : 409, body: { error: res.error } };
+  }
+  return { status: 503, body: { error: "activation_failed" } };
+}
+
+/** Guard writes use the billing writes shape ({kind, ref, data}). */
+function applyGuardWrites(tx, writes) {
+  for (const w of writes) {
+    if (w.kind === "create") tx.create(w.ref, w.data);
+    else if (w.kind === "update") tx.update(w.ref, w.data);
+    else tx.set(w.ref, w.data);
+  }
 }
 
 async function listTags({ db, decoded, share, now }) {
@@ -749,7 +879,7 @@ async function contactPhoto({ db, decoded, body }) {
   return { status: 200, body: { contactId, photo: p.photo } };
 }
 
-export async function handleTagManage({ db, decoded, body, share, publicBaseUrl, auth = null, scanBaseUrl = null, now = Date.now() }) {
+export async function handleTagManage({ db, decoded, body, share, publicBaseUrl, auth = null, scanBaseUrl = null, billing = null, now = Date.now() }) {
   if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
   const action = typeof body?.action === "string" ? body.action : "";
   switch (action) {
@@ -759,6 +889,7 @@ export async function handleTagManage({ db, decoded, body, share, publicBaseUrl,
     case "export_batch": return exportBatch({ db, decoded, body, share, scanBaseUrl, now });
     case "list_batches": return listBatches({ db, decoded });
     case "activate": return activateTag({ db, decoded, body, now });
+    case "gift_activate": return activateGiftTag({ db, decoded, body, billing, now });
     case "list": return listTags({ db, decoded, share, now });
     case "detail": return detailTag({ db, decoded, body, share, publicBaseUrl });
     case "update": return updateTag({ db, decoded, body, now });
@@ -798,7 +929,7 @@ async function tagByToken({ db, token, now }) {
 }
 
 /** op:resolve — the public contact surface. Reveals ONLY what each status needs. */
-async function resolveTag({ db, body, now }) {
+async function resolveTag({ db, body, share = null, now }) {
   const found = await tagByToken({ db, token: body?.token, now });
   if (found.res) return found.res;
   const { tag } = found;
@@ -808,7 +939,29 @@ async function resolveTag({ db, body, now }) {
   }
   if (tag.status === "unactivated") {
     // Activation invitation — nothing to leak: the tag has no owner yet.
+    // A gift-type card additionally reaches the free creation intro (the
+    // 100-Credit disclosure happens before the paid completion, never here).
     return { status: 200, body: { status: "unactivated", type: tag.type } };
+  }
+  // PREPRINTED Gift.Tag (2026-09-05): an activated card IS the delivery of
+  // its one bound Gift — the scan hands back the gift token so the reveal
+  // opens (free, forever). A withdrawn/expired Gift leaves the card CONSUMED:
+  // an honest unavailable state, never a return to unactivated inventory.
+  if (tag.type === "gift") {
+    if (!tag.boundGiftId) return { status: 200, body: { status: "gift_withdrawn", type: "gift" } };
+    try {
+      const giftSnap = await db.collection(BOUND_GIFT_COLLECTION).doc(tag.boundGiftId).get();
+      const gift = giftSnap.exists ? giftSnap.data() : null;
+      if (!gift || gift.revoked || gift.pendingTagBind === true || (gift.expiresAt && now > gift.expiresAt)) {
+        return { status: 200, body: { status: "gift_withdrawn", type: "gift" } };
+      }
+      const giftToken = share ? await share.open(gift.shareTokenSealed, tag.boundGiftId) : null;
+      if (!giftToken) return { status: 200, body: { status: "gift_withdrawn", type: "gift" } };
+      return { status: 200, body: { status: "gift_bound", type: "gift", giftToken } };
+    } catch (err) {
+      console.warn("[tag] gift resolve failed:", err?.message);
+      return { status: 200, body: { status: "gift_withdrawn", type: "gift" } };
+    }
   }
   // TAG_SCANNED — the owner deserves to know the tag was seen, even if the
   // scanner never submits. Throttled per tag so the PUBLIC endpoint can never
@@ -952,5 +1105,5 @@ async function submitContact({ db, body, sourceIp, now }) {
 export async function handleTagScan({ db, body, share, publicBaseUrl, sourceIp = null, now = Date.now() }) {
   const op = typeof body?.op === "string" ? body.op : "resolve";
   if (op === "contact") return submitContact({ db, body, sourceIp, now });
-  return resolveTag({ db, body, now });
+  return resolveTag({ db, body, share, now });
 }

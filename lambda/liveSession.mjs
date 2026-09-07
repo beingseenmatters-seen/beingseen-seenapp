@@ -22,6 +22,7 @@
 import crypto from "node:crypto";
 import { EVENT_COLLECTION } from "./event.mjs";
 import { finalizePresentation } from "./giftMedia.mjs";
+import { purchaseLiveCapacity, liveCapacityState } from "./liveCapacity.mjs";
 import {
   LIVE_SESSION_COLLECTION,
   ONSITE_CONTEXT_ROLE,
@@ -133,6 +134,20 @@ async function setPresentationCursor({ db, decoded, body, now }) {
 }
 
 /** Resolve the public join URL (the venue QR link) for a presentation reader. */
+/**
+ * CANONICAL live join origin (P0 fix, 2026-09-05): a Live Interaction QR must
+ * open where the live guest experiences actually exist — the Gift.Seen app —
+ * NEVER the legacy Seen origin that GIFT_PUBLIC_BASE_URL still points at for
+ * historical normal-gift links. The venue big-screen QR encoded the raw
+ * app-origin joinUrl, so scanners landed on the legacy universal Heart-Key
+ * reveal ("Someone has a message for you") — a Live QR is not a Gift and
+ * must never enter that flow. Same class of defect (and same fix shape) as
+ * tag.mjs's TAG_SCAN_BASE_DEFAULT "/welcome dead end". Historical normal
+ * Seen/Gift links are untouched: only LIVE join/create URLs use this base.
+ */
+export const LIVE_JOIN_BASE_DEFAULT = "https://gift.beingseenmatters.com";
+const liveJoinBase = () => process.env.LIVE_JOIN_BASE_URL || LIVE_JOIN_BASE_DEFAULT;
+
 async function resolvePresentationJoinUrl({ db, share, giftCollection, publicBaseUrl, participationGiftId, now }) {
   try {
     if (!share || !participationGiftId) return null;
@@ -141,7 +156,7 @@ async function resolvePresentationJoinUrl({ db, share, giftCollection, publicBas
     const rec = gsnap.data();
     if (rec.revoked || (typeof rec.expiresAt === "number" && now > rec.expiresAt) || !rec.shareTokenSealed) return null;
     const token = await share.open(rec.shareTokenSealed, participationGiftId);
-    return `${publicBaseUrl}/s/${token}`;
+    return `${liveJoinBase()}/s/${token}`;
   } catch (err) {
     console.warn("[live] presentation joinUrl resolve failed:", err?.message);
     return null;
@@ -219,6 +234,20 @@ export async function createLiveSession({
 }) {
   if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
 
+  // Phase 3 (capacity billing): a billing-aware client stamps the session it
+  // creates — only stamped sessions enforce purchased participant capacity.
+  // Ack-less creates (already-deployed bundles) stay FREE and are logged; the
+  // same BILLING_REQUIRE_KEY switch that closes the Phase 2 window closes
+  // this one once every surface ships the capacity UI. NO INVISIBLE CHARGING:
+  // a client that cannot show the price is never billed — and never gated.
+  const billingRequired = body?.billingAck === true;
+  if (!billingRequired) {
+    if (process.env.BILLING_REQUIRE_KEY === "on") {
+      return { status: 400, body: { error: "billing_client_required" } };
+    }
+    console.warn(`[billing] legacy ack-less live session create uid=${decoded.uid}`);
+  }
+
   const eventId = typeof body?.eventId === "string" ? body.eventId.trim() : "";
 
   // --- Linked mode: an existing owned Event opens a session (sessionId=eventId).
@@ -247,6 +276,7 @@ export async function createLiveSession({
       // engines never branch on it — skin is display-only.
       skin: ev.type === "wedding" ? "wedding" : "neutral",
       occasion: ev.occasion ?? null,
+      billingRequired,
       status: "active",
       createdAt: now,
       updatedAt: now,
@@ -304,6 +334,7 @@ export async function createLiveSession({
     capabilities: capabilityFor(body?.capability),
     skin: "neutral",
     participationGiftId: tokenHash,
+    billingRequired,
     status: "active",
     createdAt: now,
     updatedAt: now,
@@ -341,7 +372,7 @@ export async function createLiveSession({
       existing: false,
       sessionId,
       token,
-      url: `${publicBaseUrl}/s/${token}`,
+      url: `${liveJoinBase()}/s/${token}`,
       participationGiftId: tokenHash,
       skin: "neutral",
     },
@@ -429,6 +460,13 @@ export async function handleSenderLive({ db, decoded, body, share, media, giftCo
       return setPresentationCursor({ db, decoded, body, now });
     case "list":
       return listLiveSessions({ db, decoded, now });
+    // Phase 3 — participant-capacity billing (owner side only; guest doors
+    // never see Credits). Purchase is idempotent + additive; state feeds the
+    // host console's seats card.
+    case "capacity_purchase":
+      return purchaseLiveCapacity({ db, decoded, body: { ...body, sessionId: body?.sessionId ?? body?.eventId }, now });
+    case "capacity_state":
+      return liveCapacityState({ db, decoded, body: { ...body, sessionId: body?.sessionId ?? body?.eventId } });
     case "detail":
       return liveSessionDetail({ db, decoded, body, now });
     case "draw_configure":

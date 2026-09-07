@@ -21,7 +21,15 @@
  */
 
 import crypto from "node:crypto";
+import {
+  chargeCredits as billingChargeCredits,
+  getBalance as billingGetBalance,
+  CHARGEABLE_PRODUCTS,
+  IDEMPOTENCY_KEY_RE,
+} from "./billing.mjs";
 import { validateOccasion, WEDDING_MUSIC_THEMES } from "./occasion.mjs";
+// FCM Phase 1: Quick Reply owner notification — best-effort, post-commit only.
+import { sendQuickReplyPush } from "./push.mjs";
 import { submitSharedRsvpForRecord, readSharedResponse } from "./sharedRsvp.mjs";
 import {
   normalizeRecipientLabel,
@@ -77,6 +85,67 @@ export function sha256Hex(input) {
 export function generateToken() {
   return crypto.randomBytes(16).toString("base64url");
 }
+
+// --- Billing publication idempotency (Monetisation Phase 2) ----------------
+// SECURITY DECISION (product-owner directive): idempotency must NEVER weaken
+// credential entropy. Gift tokens, Heart Keys and salts stay fully RANDOM on
+// every attempt. What is deterministic is only the mapping
+//     (uid, idempotencyKey) → the one committed publication
+// via a tiny intent record written in the SAME transaction as the gift.
+// A retry finds the intent, loads the original record, and recovers the
+// original credentials through the existing KMS seal (shareTokenSealed for
+// the token; retrievalKeySealed — same KMS key, context "#rk" — for a
+// GENERATED Heart Key). Nothing secret is ever stored in plaintext, and a
+// UUID never becomes key material.
+
+export const GIFT_PUBLISH_INTENTS_COLLECTION = "giftPublishIntents";
+
+// QUICK REPLY (locked product correction, 2026-09-03): a recipient reply is
+// a lightweight acknowledgment ATTACHED to the original Gift — it is NOT
+// another Gift, mints no QR, needs no account, costs 0 Credits, and never
+// routes through Compose. Authorization is SERVER-ISSUED at the one trusted
+// boundary that proves recipient-ness (a successful /gift/retrieve: raw-token
+// possession plus the six-digit key for heart_key gifts). A client-supplied
+// replyToGiftId or any other client field is NEVER sufficient — /gift/create
+// has no reply exemption at all, so no reply path can publish a Gift free.
+export const REPLY_AUTH_COLLECTION = "replyAuth";
+export const REPLY_AUTH_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+export const GIFT_REPLIES_COLLECTION = "giftReplies";
+/** Per SOURCE GIFT: max valid Quick Replies (LOCKED product rule — a light
+ * post-gift connection, not a chat). Server-authoritative count. */
+export const REPLY_QUOTA_COLLECTION = "replyQuota";
+export const REPLY_FREE_MAX = 5;
+export const QUICK_REPLY_MAX_LEN = 500;
+export const QUICK_REPLY_SIGNATURE_MAX_LEN = 40;
+
+/**
+ * Quick Reply signature — recipient-provided DISPLAY TEXT ONLY (署名，选填).
+ * Never identity: it has no effect on authorization, billing, grants, reply
+ * counting, or any security decision. Sanitized to one bounded line; blank
+ * is valid and renders as the generic 收件人 / Recipient label client-side.
+ */
+export function sanitizeReplySignature(raw) {
+  if (typeof raw !== "string") return null;
+  const cleaned = raw
+    .replace(/[\u0000-\u001f\u007f]/g, " ") // control chars → space
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, QUICK_REPLY_SIGNATURE_MAX_LEN)
+    .trim();
+  return cleaned === "" ? null : cleaned;
+}
+
+// Gift.Tag digital publication is FREE (LOCKED product rule) — 0 Free,
+// 0 Paid. The trusted classification is a SERVER-MINTED one-time grant:
+// no client field (type/context/flags) can ever make a publication free.
+// Grants are uid-bound, single-use, short-lived, and minting is throttled
+// per uid (a security bound against a free-publishing farm, not a price).
+export const TAG_PUBLISH_AUTH_COLLECTION = "tagPublishAuth";
+// The Seen.Tag inventory collection (tag.mjs owns it; the literal is repeated
+// here instead of imported so the module graph stays acyclic — tag.mjs
+// imports THIS module for the activation lane).
+const TAG_COLLECTION_FOR_GRANTS = "tags";
+export const TAG_PUBLISH_AUTH_TTL_MS = 30 * 60 * 1000;
 
 /**
  * Reject obvious/weak six-digit keys: non-6-digit, all-same-digit, or a
@@ -144,7 +213,19 @@ export async function moderateGiftMessage(message) {
 // --- Handlers -------------------------------------------------------------
 
 /** POST /gift/create — requires a verified Firebase ID token (author). */
-export async function createGift({ db, decoded, body, now = Date.now(), media = null, share = null }) {
+export async function createGift({
+  db,
+  decoded,
+  body,
+  now = Date.now(),
+  media = null,
+  share = null,
+  billing = { chargeCredits: billingChargeCredits, getBalance: billingGetBalance },
+  // Phase 3: "auto" (default) classifies and charges event publications here;
+  // "exempt" is passed ONLY by server-internal callers (distribute.mjs) that
+  // own the charge themselves. Never derived from the request body.
+  eventBilling = "auto",
+}) {
   if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
 
   const message = typeof body?.message === "string" ? body.message.trim() : "";
@@ -239,8 +320,169 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
     ({ salt: keySalt, hash: keyHash } = giftCrypto.hashKey(retrievalKey));
   }
 
+  // --- Billing classification (Monetisation Phase 2) -----------------------
+  // The SERVER derives the billing product from operation context alone —
+  // nothing in the request body (price, product, flags) is ever trusted for
+  // money. Chargeable = an ordinary Simple Gift publication from a
+  // billing-aware client (valid idempotencyKey present) WITHOUT server-issued
+  // reply authorization. Explicitly NOT charged in Phase 2:
+  //   - occasion/event invitations   (event charging is a later phase)
+  //   - server-authorized replies    (LOCKED: replying is FREE — proven by a
+  //     grant minted at /gift/retrieve, never by client-sent replyToGiftId)
+  //   - legacy clients w/o a key     (deployed bundles must not be charged
+  //     invisibly — the charge requires a client that SHOWED the price; this
+  //     window is logged, and BILLING_REQUIRE_KEY=on closes it once every
+  //     surface ships billing UI)
+  // A PRESENT-but-malformed key is a hard 400, never a silent free ride.
+  let billingKey = null;
+  if (body?.idempotencyKey !== undefined && body?.idempotencyKey !== null) {
+    if (typeof body.idempotencyKey !== "string" || !IDEMPOTENCY_KEY_RE.test(body.idempotencyKey)) {
+      return { status: 400, body: { error: "invalid_idempotency_key" } };
+    }
+    billingKey = body.idempotencyKey;
+  }
+  const simpleShape = !wantsEvent && !occasion;
+
+  // Retry short-circuit — MUST run before reply-grant validation: a retry of
+  // a committed reply arrives with its grant already consumed, and must get
+  // the original outcome, not invalid_reply. The intent record — written
+  // atomically WITH the gift — maps (uid, idempotencyKey) to the original
+  // tokenHash; the original credentials are recovered from their KMS seals.
+  // Never a duplicate error, never a second gift, never a second charge, and
+  // credential entropy is untouched (tokens stay random).
+  if (billingKey && (simpleShape || wantsEvent)) {
+    const intentSnap = await db
+      .collection(GIFT_PUBLISH_INTENTS_COLLECTION)
+      .doc(`${decoded.uid}_${billingKey}`)
+      .get();
+    if (intentSnap.exists) {
+      return await recoverPublishedGift({
+        db,
+        share,
+        uid: decoded.uid,
+        tokenHash: intentSnap.data().tokenHash,
+        providedKey: normalizeKey(body?.retrievalKey) || null,
+      });
+    }
+  }
+
+
+  // NO reply lane exists here (Quick Reply correction): replies live on the
+  // dedicated /gift/reply endpoint and never create a Gift. Any client-sent
+  // replyGrant / replyToGiftId / source field on THIS endpoint is ignored —
+  // the publication stays a normal chargeable publish. No bypass path.
+
+  // Server-minted Gift.Tag publish authorization (free lane, LOCKED 0-Credit
+  // rule). A forged/expired/foreign grant is refused outright (no publish,
+  // no charge); a bare client claim ("type":"tag" etc.) is simply ignored —
+  // the publication stays chargeable. Mutually exclusive with the reply lane.
+  let tagAuthRef = null;
+  let isTagPublish = false;
+  // PREPRINTED lane (2026-09-05): a grant bound to an official unactivated
+  // gift-type Tag publishes for 0 HERE — the record is born pendingTagBind
+  // (publicly unusable) and the single 100-Credit charge happens at the
+  // atomic activation in tag.mjs. Derived from the GRANT DOC the server
+  // minted, never from any client field.
+  let preprintedTagId = null;
+  const tagGrantRaw =
+    typeof body?.tagPublishGrant === "string" && body.tagPublishGrant.trim() !== ""
+      ? body.tagPublishGrant.trim()
+      : null;
+  if (billingKey && simpleShape && tagGrantRaw) {
+    tagAuthRef = db.collection(TAG_PUBLISH_AUTH_COLLECTION).doc(sha256Hex(tagGrantRaw));
+    const tagSnap = await tagAuthRef.get();
+    const auth = tagSnap.exists ? tagSnap.data() : null;
+    if (
+      !auth ||
+      auth.uid !== decoded.uid ||
+      (auth.expiresAt && now > auth.expiresAt) ||
+      (auth.usesRemaining ?? 0) < 1
+    ) {
+      return { status: 400, body: { error: "invalid_tag_grant" } };
+    }
+    isTagPublish = true;
+    preprintedTagId = typeof auth.preprintedTagId === "string" && auth.preprintedTagId ? auth.preprintedTagId : null;
+  }
+
+  // LOCKED price change (2026-09-04): Gift.Tag publication is CHARGEABLE at
+  // 50 Credits. The grant still decides CLASSIFICATION (which product), and
+  // the server registry alone decides the price. The preprinted flavor is
+  // the ONE exception: its publication is uncharged because its commercial
+  // outcome is the 100-Credit activation (billing.mjs registry).
+  const billedProduct = isTagPublish ? "gift_tag_publish" : "simple_gift_publish";
+  const chargeable = Boolean(billingKey) && simpleShape && !preprintedTagId;
+
+  // --- Phase 3: event publication classification (server state ONLY) -------
+  // The trusted boundary is the event TYPE: sealed by validateOccasion at
+  // create, stored on events/{id}, cross-type attach refused (event.mjs). A
+  // client cannot relabel a Wedding as 轻松相聚 without actually GETTING a
+  // casual gathering — the type drives the whole recipient experience.
+  //   wedding | birthday   → private_event_invitation   (100 / invitation)
+  //   business_event       → business_event_invitation  (100 / invitation)
+  //   casual               → casual_gathering_publish   (20 FLAT per
+  //     gathering: the deterministic ledger key cas_{eventId} charges the
+  //     FIRST publication and every later invitation/share rides it free)
+  // Shared-link invitations (OWNER DECISION 2026-09-04, Option A): ONE
+  // successfully published shared link = ONE independent invitation product
+  // = 100 Credits total — never per scanner, per RSVP, per attendee or per
+  // party size, and repeated copying of the same published link costs 0.
+  // The lower effective cost of a widely shared link vs managed rows is
+  // INTENTIONAL (different products), so shared seals ride the SAME
+  // invitation lane below: charge + gift + intent atomic, retry recovers the
+  // original, a genuinely NEW shared publication is a new 100.
+  // Per-row managed distribution is charged by distribute.mjs itself
+  // (eventBilling === "exempt" here).
+  const EVENT_PRODUCT_BY_TYPE = {
+    wedding: "private_event_invitation",
+    birthday: "private_event_invitation",
+    business_event: "business_event_invitation",
+  };
+  const eventProduct =
+    eventBilling === "auto" && wantsEvent
+      ? occasion?.type === "casual"
+        ? "casual_gathering_publish"
+        : EVENT_PRODUCT_BY_TYPE[occasion?.type] ?? null
+      : null;
+  const chargeableEvent = Boolean(billingKey) && eventProduct !== null;
+
+  // Controlled rollout gate: once every deployed surface ships billing UI,
+  // BILLING_REQUIRE_KEY=on turns keyless chargeable publishes into an
+  // explicit client-upgrade error instead of a silent free path. NO INVISIBLE
+  // CHARGING: an ack-less/keyless client is never billed — and logged.
+  if (!billingKey && simpleShape) {
+    if (process.env.BILLING_REQUIRE_KEY === "on") {
+      return { status: 400, body: { error: "billing_client_required" } };
+    }
+    console.warn(`[billing] legacy keyless simple publish uid=${decoded.uid}`);
+  }
+  if (!billingKey && eventBilling === "auto" && wantsEvent) {
+    if (process.env.BILLING_REQUIRE_KEY === "on") {
+      return { status: 400, body: { error: "billing_client_required" } };
+    }
+    console.warn(`[billing] legacy keyless event publish uid=${decoded.uid} type=${occasion?.type}`);
+  }
+
   const token = generateToken();
   const tokenHash = sha256Hex(token);
+
+  // Cheap authoritative pre-check BEFORE any share-seal or media finalize, so
+  // an insufficient balance never consumes staged assets. The binding check
+  // still happens inside the charge transaction (this one only saves work).
+  if (chargeable || chargeableEvent) {
+    const unitPrice = CHARGEABLE_PRODUCTS[chargeable ? billedProduct : eventProduct].unitPrice;
+    const bal = await billing.getBalance({ db, uid: decoded.uid, now });
+    if (bal.total < unitPrice) {
+      return {
+        status: 402,
+        body: {
+          error: "insufficient_credits",
+          free: bal.free,
+          paid: bal.paid,
+          needed: unitPrice,
+        },
+      };
+    }
+  }
 
   // Resolve/create the Event, then seal the sender-recoverable share
   // credential. Order matters for atomicity: everything expensive that can
@@ -258,12 +500,25 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
   const compensateEvent = async (reason) => {
     if (eventCreated) await deleteCreatedEvent({ db, eventId, reason });
   };
+  let retrievalKeySealed = null;
   if (share) {
     // Every NEW gift gets a recoverable credential while the feature is
     // configured (the future 我发出的心意 lists ordinary gifts too);
     // event-based creates REQUIRE it (checked above).
     try {
       shareTokenSealed = await share.seal(token, tokenHash);
+      // Billing-aware publications additionally seal a GENERATED Heart Key
+      // (context-bound "#rk") so an idempotent retry can return the ORIGINAL
+      // six-digit key. The key itself remains crypto-random; a sender-chosen
+      // custom key is never stored (the client resends it on retry).
+      if (billingKey && (simpleShape || wantsEvent) && accessMode === "heart_key" && !normalizeKey(body?.retrievalKey)) {
+        try {
+          retrievalKeySealed = await share.seal(retrievalKey, `${tokenHash}#rk`);
+        } catch (err) {
+          console.warn("[gift] heart-key seal failed (retry recovery degraded):", err?.message);
+          retrievalKeySealed = null;
+        }
+      }
     } catch (err) {
       console.error("[gift] share seal failed:", err?.message);
       if (wantsEvent) {
@@ -359,11 +614,19 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
   const tone =
     typeof body?.tone === "string" && body.tone.trim() ? body.tone.trim().slice(0, 24) : null;
 
+  // FCM Phase 1 correction (§4): the sender's ACTIVE Gift.Seen UI language,
+  // captured at seal time, later drives notification copy for this gift.
+  // Whitelisted zh|en; absent on legacy gifts (push falls back to the sealed
+  // occasion language, else zh — documented, deterministic, never geography).
+  const notifyLanguage =
+    body?.notifyLanguage === "en" || body?.notifyLanguage === "zh" ? body.notifyLanguage : null;
+
   const record = {
     schemaVersion: GIFT_SCHEMA_VERSION,
     senderUid: decoded.uid,
     senderName,
     tone,
+    ...(notifyLanguage ? { notifyLanguage } : {}),
     accessMode,
     ...giftCrypto.seal(message), // { message } in V1
     keySalt,
@@ -384,22 +647,184 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
     // §12 (4.5-C): a direct-share invitation is one LINK, not one household —
     // its RSVP must never masquerade as household attendance statistics.
     ...(eventId && body?.sharedDistribution === true ? { sharedDistribution: true } : {}),
+    // SERVER-derived classification (never a client field) — records which
+    // lane produced this publication.
+    ...(isTagPublish ? { productContext: preprintedTagId ? "gift_tag_preprinted" : "gift_tag" } : {}),
+    // Preprinted publications are UNUSABLE until the 100-Credit activation
+    // binds them to their physical Tag (retrieve refuses pendingTagBind) —
+    // the free publication here can never stand alone.
+    ...(preprintedTagId ? { pendingTagBind: true, pendingTagId: preprintedTagId } : {}),
     // Sender-only recoverable credential (KMS-sealed, context-bound to this
     // record). The raw token itself is still NEVER written to Firestore.
     ...(shareTokenSealed ? { shareTokenSealed } : {}),
+    // Billing-retry recoverable copy of a GENERATED Heart Key (KMS-sealed,
+    // context "#rk"). Plaintext keys are still never persisted.
+    ...(retrievalKeySealed ? { retrievalKeySealed } : {}),
   };
 
   // Doc id = tokenHash. The raw token is never written to Firestore.
-  try {
-    await db.collection(GIFT_COLLECTION).doc(tokenHash).set(record);
-  } catch (err) {
-    // Never strand sealed media objects behind a record that failed to
-    // exist — compensate every promoted role, then surface the failure.
+  const giftRef = db.collection(GIFT_COLLECTION).doc(tokenHash);
+  const intentRef =
+    billingKey && (simpleShape || wantsEvent)
+      ? db.collection(GIFT_PUBLISH_INTENTS_COLLECTION).doc(`${decoded.uid}_${billingKey}`)
+      : null;
+  const intentDoc = intentRef
+    ? {
+        uid: decoded.uid,
+        tokenHash,
+        kind: isTagPublish
+          ? "gift_tag"
+          : wantsEvent
+            ? occasion?.type === "casual"
+              ? "casual"
+              : "invitation"
+            : "simple",
+        createdAt: now,
+      }
+    : null;
+  const compensateMedia = async (reason) => {
     for (const assetId of sealedAssetIds(record)) {
-      await deleteSealedMedia({ store: media, tokenHash, assetId, reason: "create_failed" });
+      await deleteSealedMedia({ store: media, tokenHash, assetId, reason });
     }
-    await compensateEvent("record_write_failed");
-    throw err;
+  };
+  let chargedBalances = null;
+  let casualPaidElsewhere = false;
+  if (chargeable || chargeableEvent) {
+    const productToCharge = chargeable ? billedProduct : eventProduct;
+    // 轻松相聚 is FLAT: the ledger key is the GATHERING (cas_{eventId}), so
+    // exactly one 20-Credit entry can ever exist per casual event — the first
+    // successful publication pays it, every later invitation/share observes
+    // the duplicate and publishes free. Invitation products keep the client
+    // idempotency key: one intended seal → one 100-Credit charge.
+    const chargeIdemKey =
+      productToCharge === "casual_gathering_publish" ? `cas_${eventId}` : billingKey;
+    // Atomic charge + publish: the 20-Credit ledger entry, the balance
+    // update, the Gift record AND the idempotency intent commit in ONE
+    // Firestore transaction — "charged but unpublished" and "published but
+    // uncharged" are both structurally impossible. Price/product authority
+    // lives in billing.mjs; nothing from the request body is trusted for
+    // money.
+    const res = await billing.chargeCredits({
+      db,
+      uid: decoded.uid,
+      product: productToCharge,
+      idempotencyKey: chargeIdemKey,
+      subjectId: tokenHash,
+      domainWrites: [
+        { kind: "create", ref: giftRef, data: record },
+        { kind: "create", ref: intentRef, data: intentDoc },
+      ],
+      // Gift.Tag single-use enforcement (LOCKED invariant: one grant → at
+      // most ONE publication → at most ONE 50-Credit charge): the grant is
+      // re-verified and consumed INSIDE the charge transaction. Two racing
+      // requests — same or different idempotency keys, tabs, or Lambdas —
+      // serialize here: the loser retries, observes usesRemaining 0, and is
+      // refused with zero writes (unless its OWN ledger entry exists, i.e.
+      // the same intended publication — then it recovers the original).
+      guard: isTagPublish
+        ? async (tx) => {
+            const authSnap = await tx.get(tagAuthRef);
+            const a = authSnap.exists ? authSnap.data() : null;
+            if (
+              !a ||
+              a.uid !== decoded.uid ||
+              (a.expiresAt && now > a.expiresAt) ||
+              (a.usesRemaining ?? 0) < 1
+            ) {
+              return { ok: false, error: "invalid_tag_grant" };
+            }
+            return {
+              ok: true,
+              writes: [
+                {
+                  kind: "update",
+                  ref: tagAuthRef,
+                  data: { usesRemaining: (a.usesRemaining ?? 1) - 1, usedAt: now },
+                },
+              ],
+            };
+          }
+        : null,
+      meta: { tokenHash, ...(eventId ? { eventId } : {}) },
+      now,
+    });
+    if (!res.ok) {
+      await compensateMedia("charge_refused");
+      await compensateEvent("charge_refused");
+      if (res.error === "insufficient_credits") {
+        return {
+          status: 402,
+          body: {
+            error: "insufficient_credits",
+            free: res.free,
+            paid: res.paid,
+            needed: res.needed,
+          },
+        };
+      }
+      return { status: 400, body: { error: res.error ?? "billing_failed" } };
+    }
+    if (res.duplicate) {
+      if (productToCharge === "casual_gathering_publish") {
+        // The GATHERING is already paid (first publication won the flat
+        // charge). THIS is a different invitation on the same casual event —
+        // publish it with no further charge via the uncharged atomic path.
+        casualPaidElsewhere = true;
+      } else {
+        // A concurrent identical request already committed (charged exactly
+        // once). THIS invocation's random credentials belong to no record —
+        // recover and return the ORIGINAL publication. An event this very
+        // call silently created belongs to no publication either — undo it.
+        await compensateMedia("duplicate_publish");
+        await compensateEvent("duplicate_publish");
+        return await recoverPublishedGift({
+          db,
+          share,
+          uid: decoded.uid,
+          tokenHash: res.entry?.meta?.tokenHash,
+          providedKey: normalizeKey(body?.retrievalKey) || null,
+        });
+      }
+    } else {
+      chargedBalances = res.balances ?? null;
+    }
+  }
+  if (!(chargeable || chargeableEvent) || casualPaidElsewhere) {
+    try {
+      if (intentRef) {
+        // Billing-aware but uncharged shapes (today: the preprinted Gift.Tag
+        // pending publication): keep intent + gift atomic so retry recovery
+        // always works — and consume the single-use grant INSIDE the same
+        // transaction, so two racing publications on one grant serialize to
+        // exactly one record (the loser re-observes usesRemaining 0).
+        await db.runTransaction(async (tx) => {
+          if (preprintedTagId && tagAuthRef) {
+            const authSnap = await tx.get(tagAuthRef);
+            const a = authSnap.exists ? authSnap.data() : null;
+            if (!a || a.uid !== decoded.uid || (a.expiresAt && now > a.expiresAt) || (a.usesRemaining ?? 0) < 1) {
+              const e = new Error("invalid_tag_grant");
+              e.code = "invalid_tag_grant";
+              throw e;
+            }
+            tx.update(tagAuthRef, { usesRemaining: (a.usesRemaining ?? 1) - 1, usedAt: now });
+          }
+          tx.create(intentRef, intentDoc);
+          tx.create(giftRef, record);
+        });
+      } else {
+        await giftRef.set(record);
+      }
+    } catch (err) {
+      if (err?.code === "invalid_tag_grant") {
+        await compensateMedia("grant_consumed");
+        return { status: 400, body: { error: "invalid_tag_grant" } };
+      }
+      // Never strand sealed media objects behind a record that failed to
+      // exist — compensate every promoted role, then surface the failure.
+      await compensateMedia("create_failed");
+      await compensateEvent("record_write_failed");
+      throw err;
+    }
   }
 
   return {
@@ -414,8 +839,348 @@ export async function createGift({ db, decoded, body, now = Date.now(), media = 
       // presentation forward by reference (giftId = the sender-API record
       // id; opaque, never a secret).
       ...(eventId ? { eventId, giftId: tokenHash } : {}),
+      // Preprinted Gift.Tag: the composer needs the record id to run the
+      // 100-Credit activation that binds this pending publication to its card.
+      ...(preprintedTagId ? { giftId: tokenHash, pendingTagBind: true } : {}),
+      // Billing-aware clients receive the post-charge balance so the UI can
+      // confirm without a second round-trip. Display-only, never authority.
+      ...(chargedBalances ? { balances: chargedBalances } : {}),
     },
   };
+}
+
+/**
+ * Rebuild the ORIGINAL outcome of an already-committed billing-aware
+ * publication (idempotent retry / race loser). Credentials are recovered
+ * from their KMS seals — never from plaintext storage, never re-generated:
+ *   token       ← shareTokenSealed  (context: tokenHash)
+ *   Heart Key   ← retrievalKeySealed (context: `${tokenHash}#rk`), or the
+ *                 sender's own custom key resent in the retry body.
+ * If the seal layer is unavailable the retry gets an HONEST
+ * 409 already_published (the gift exists, was charged at most once, and is
+ * recoverable via 我发出的心意), never a second publication.
+ */
+async function recoverPublishedGift({ db, share, uid, tokenHash, providedKey = null }) {
+  if (typeof tokenHash !== "string" || !tokenHash) {
+    return { status: 409, body: { error: "already_published" } };
+  }
+  const snap = await db.collection(GIFT_COLLECTION).doc(tokenHash).get();
+  if (!snap.exists) return { status: 409, body: { error: "already_published" } };
+  const rec = snap.data();
+  if (rec.senderUid !== uid) return { status: 409, body: { error: "idempotency_conflict" } };
+  if (!share || !rec.shareTokenSealed) {
+    return { status: 409, body: { error: "already_published" } };
+  }
+  let token;
+  try {
+    token = await share.open(rec.shareTokenSealed, tokenHash);
+  } catch (err) {
+    console.error("[gift] retry token recovery failed:", err?.message);
+    return { status: 409, body: { error: "already_published" } };
+  }
+  let retrievalKey = null;
+  if (rec.accessMode === "heart_key") {
+    if (rec.retrievalKeySealed) {
+      try {
+        retrievalKey = await share.open(rec.retrievalKeySealed, `${tokenHash}#rk`);
+      } catch (err) {
+        console.warn("[gift] retry heart-key recovery failed:", err?.message);
+        retrievalKey = providedKey;
+      }
+    } else {
+      retrievalKey = providedKey; // sender-chosen custom key, resent by client
+    }
+  }
+  return {
+    status: 200,
+    body: {
+      token,
+      url: `${GIFT_PUBLIC_BASE_URL}/s/${token}`,
+      retrievalKey,
+      accessMode: rec.accessMode,
+      // Event retries keep composing: the original linkage rides back too.
+      ...(rec.eventId ? { eventId: rec.eventId, giftId: tokenHash } : {}),
+      duplicate: true,
+    },
+  };
+}
+
+
+/**
+ * POST /gift/reply — the QUICK REPLY door (app-key only; recipients need no
+ * account). A Quick Reply is a lightweight acknowledgment ATTACHED to the
+ * source Gift: no Gift record, no QR, no Credits, no Compose.
+ *
+ * Authorization: the server-issued replyGrant minted by a successful
+ * /gift/retrieve — client-sent ids are never proof. Limits (LOCKED): max 5
+ * valid replies per SOURCE GIFT, counted server-side in replyQuota/{giftId};
+ * the 6th is refused gracefully with remaining=0. Idempotent: the reply doc
+ * id derives from (sourceGiftId, idempotencyKey), so a retried send never
+ * duplicates. Message sealing follows the gift model (server-readable V1).
+ */
+export async function quickReply({ db, body, now = Date.now(), messaging = null }) {
+  const grantRaw =
+    typeof body?.replyGrant === "string" && body.replyGrant.trim() !== ""
+      ? body.replyGrant.trim()
+      : null;
+  if (!grantRaw) return { status: 401, body: { error: "invalid_reply_auth" } };
+  const idem = typeof body?.idempotencyKey === "string" ? body.idempotencyKey : "";
+  if (!IDEMPOTENCY_KEY_RE.test(idem)) {
+    return { status: 400, body: { error: "invalid_idempotency_key" } };
+  }
+  const message = typeof body?.message === "string" ? body.message.trim() : "";
+  if (!message) return { status: 400, body: { error: "invalid_message" } };
+  if (message.length > QUICK_REPLY_MAX_LEN) {
+    return { status: 400, body: { error: "message_too_long" } };
+  }
+  const moderation = await moderateGiftMessage(message);
+  if (!moderation.ok) {
+    return { status: 422, body: { error: "moderation_blocked", detail: moderation.reason } };
+  }
+  const signature = sanitizeReplySignature(body?.signature);
+
+  const authRef = db.collection(REPLY_AUTH_COLLECTION).doc(sha256Hex(grantRaw));
+  const authSnap = await authRef.get();
+  const auth = authSnap.exists ? authSnap.data() : null;
+  // NOTE: usesRemaining is NOT checked here — the transaction orders the
+  // graceful per-gift limit (409 reply_limit) ahead of grant exhaustion so a
+  // sixth attempt reads as "limit reached", never as a confusing auth error.
+  if (!auth || (auth.expiresAt && now > auth.expiresAt) || typeof auth.sourceGiftId !== "string") {
+    return { status: 401, body: { error: "invalid_reply_auth" } };
+  }
+  const sourceGiftId = auth.sourceGiftId;
+  const srcSnap = await db.collection(GIFT_COLLECTION).doc(sourceGiftId).get();
+  if (!srcSnap.exists) return { status: 404, body: { error: "not_found" } };
+  const rec = srcSnap.data();
+  // A preprinted Gift.Tag publication is INVISIBLE until its 100-Credit
+  // activation binds it to the physical Tag (founder §1, 2026-09-05) — the
+  // free pending record answers not_found on every public door.
+  if (rec.pendingTagBind === true) return { status: 404, body: { error: "not_found" } };
+  if (rec.revoked) return { status: 410, body: { error: "revoked" } };
+  if (rec.expiresAt && now > rec.expiresAt) return { status: 410, body: { error: "expired" } };
+  if (rec.sharedDistribution === true || rec.contextRole === "on_site") {
+    // Shared links and on-site records keep their own response flows
+    // (per-scanner RSVP, blessings) — Quick Reply is the 1:1 gift channel.
+    return { status: 400, body: { error: "reply_unavailable" } };
+  }
+
+  const replyRef = db
+    .collection(GIFT_REPLIES_COLLECTION)
+    .doc(sha256Hex(`qr:${sourceGiftId}:${idem}`));
+  const quotaRef = db.collection(REPLY_QUOTA_COLLECTION).doc(sourceGiftId);
+
+  try {
+    const result = await db.runTransaction(async (tx) => {
+      const dup = await tx.get(replyRef);
+      const quota = await tx.get(quotaRef);
+      const count = quota.exists ? (quota.data().count ?? 0) : 0;
+      if (dup.exists) {
+        // Retried send: the original outcome, never a duplicate reply.
+        return {
+          status: 200,
+          body: { ok: true, duplicate: true, remaining: Math.max(0, REPLY_FREE_MAX - count) },
+        };
+      }
+      if (count >= REPLY_FREE_MAX) {
+        return {
+          status: 409,
+          body: { error: "reply_limit", remaining: 0 },
+        };
+      }
+      const authNow = await tx.get(authRef);
+      const a = authNow.exists ? authNow.data() : null;
+      if (!a || (a.usesRemaining ?? 0) < 1 || (a.expiresAt && now > a.expiresAt)) {
+        return { status: 401, body: { error: "invalid_reply_auth" } };
+      }
+      tx.create(replyRef, {
+        schemaVersion: 1,
+        sourceGiftId,
+        ...giftCrypto.seal(message), // { message } in V1 — same boundary as gifts
+        // Recipient-typed display signature (bounded, sanitized, OPTIONAL) —
+        // display text only, never verified identity, never authority.
+        signature,
+        // Server-known label (the salutation the SENDER wrote on the
+        // original gift) kept for context. Never an invented identity.
+        recipientLabel: rec.recipientLabel ?? null,
+        createdAt: now,
+        status: "active",
+      });
+      tx.set(
+        quotaRef,
+        {
+          sourceGiftId,
+          count: count + 1,
+          updatedAt: now,
+          ...(quota.exists ? {} : { createdAt: now }),
+        },
+        { merge: true },
+      );
+      tx.update(authRef, { usesRemaining: (a.usesRemaining ?? 1) - 1, usedAt: now });
+      return {
+        status: 200,
+        body: { ok: true, duplicate: false, remaining: Math.max(0, REPLY_FREE_MAX - (count + 1)) },
+      };
+    });
+    // FCM Phase 1 (founder-locked): notify the gift OWNER — only after the
+    // reply transaction actually committed, only for a NEW reply (duplicate
+    // retries collapse in the push module's own event identity too), and
+    // strictly best-effort: sendQuickReplyPush never throws, so the saved
+    // reply's response is untouchable. Awaited deliberately — a detached
+    // promise would be frozen with the Lambda and the send silently lost.
+    if (result.status === 200 && result.body?.ok === true && result.body?.duplicate === false) {
+      await sendQuickReplyPush({
+        db,
+        messaging,
+        ownerUid: rec.senderUid ?? null,
+        giftId: sourceGiftId,
+        replyId: replyRef.id,
+        signature,
+        // Stored seal-time language first; legacy gifts fall back to the
+        // sealed occasion's language, else zh (deterministic, documented).
+        language:
+          rec.notifyLanguage === "en" || rec.notifyLanguage === "zh"
+            ? rec.notifyLanguage
+            : rec.occasion?.language === "en"
+              ? "en"
+              : "zh",
+        now,
+      });
+    }
+    return result;
+  } catch (err) {
+    if (err?.code === 6 || /ALREADY_EXISTS/i.test(String(err?.message ?? ""))) {
+      // Race of an identical retried send — the reply exists exactly once.
+      const quota = await quotaRef.get();
+      const count = quota.exists ? (quota.data().count ?? 0) : 0;
+      return {
+        status: 200,
+        body: { ok: true, duplicate: true, remaining: Math.max(0, REPLY_FREE_MAX - count) },
+      };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Sender-side Quick Reply list — rides the existing authenticated
+ * /sender/gift/share door (action:"replies"; API Gateway is per-route). Only
+ * the gift's own sender may read. Chronological, at most REPLY_FREE_MAX rows
+ * — deliberately a simple list, never a chat surface.
+ */
+export async function listGiftReplies({ db, decoded, body, now = Date.now() }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  const giftId = typeof body?.giftId === "string" ? body.giftId.trim() : "";
+  if (!/^[a-f0-9]{64}$/i.test(giftId)) {
+    return { status: 400, body: { error: "invalid_request" } };
+  }
+  const srcSnap = await db.collection(GIFT_COLLECTION).doc(giftId.toLowerCase()).get();
+  if (!srcSnap.exists) return { status: 404, body: { error: "not_found" } };
+  if (srcSnap.data().senderUid !== decoded.uid) {
+    return { status: 403, body: { error: "forbidden" } };
+  }
+  const snap = await db
+    .collection(GIFT_REPLIES_COLLECTION)
+    .where("sourceGiftId", "==", giftId.toLowerCase())
+    .get();
+  const replies = snap.docs
+    .filter((d) => d.data().status === "active")
+    .sort((a, b) => (a.data().createdAt ?? 0) - (b.data().createdAt ?? 0))
+    .map((d) => {
+      const r = d.data();
+      return {
+        // Deterministic reply id (= the push's replyId) so a deep-linked
+        // notification can highlight the exact newly arrived reply.
+        replyId: d.id,
+        message: giftCrypto.open(r),
+        signature: r.signature ?? null,
+        recipientLabel: r.recipientLabel ?? null,
+        createdAt: r.createdAt ?? null,
+      };
+    });
+  const quota = await db.collection(REPLY_QUOTA_COLLECTION).doc(giftId.toLowerCase()).get();
+  const count = quota.exists ? (quota.data().count ?? 0) : 0;
+  return {
+    status: 200,
+    body: { replies, remaining: Math.max(0, REPLY_FREE_MAX - count) },
+  };
+}
+
+/**
+ * POST /gift/tag-grant — authenticated. Mints the one-time authorization a
+ * Gift.Tag publication presents to publish FREE. Server-authoritative and
+ * uid-bound; the caller identity (not any client-declared "type") is what
+ * the grant certifies. Throttled per uid at the route (tag_grant_mint).
+ */
+export async function mintTagPublishGrant({ db, decoded, body = null, now = Date.now() }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  // PREPRINTED binding (founder-locked 2026-09-05): when the caller presents
+  // an official unactivated gift-type Tag code, the grant is BOUND to that
+  // physical Tag — its publication charges 0 here because the ONE commercial
+  // outcome (publish + activate + bind) is the 100-Credit activation in
+  // tag.mjs. The published record is born pendingTagBind and is UNUSABLE
+  // until that activation succeeds, so this can never become a separately
+  // usable free Gift publication. Server state decides everything: a bare
+  // client claim without a real unactivated official Tag mints the normal
+  // self-print grant (50-Credit product), never the preprinted one.
+  let preprinted = null;
+  const tagCodeRaw = typeof body?.tagCode === "string" ? body.tagCode.trim() : "";
+  if (tagCodeRaw) {
+    const tagSnap = await db
+      .collection(TAG_COLLECTION_FOR_GRANTS)
+      .where("publicQrHash", "==", sha256Hex(tagCodeRaw))
+      .get();
+    const tagDoc = (tagSnap.docs ?? [])[0]?.data() ?? null;
+    if (!tagDoc || tagDoc.type !== "gift") {
+      return { status: 404, body: { error: "tag_not_found" } };
+    }
+    if (tagDoc.status !== "unactivated" || tagDoc.ownerUid) {
+      return { status: 409, body: { error: "already_activated" } };
+    }
+    preprinted = { preprintedTagId: tagDoc.tagId };
+  }
+  const grant = generateToken();
+  await db.collection(TAG_PUBLISH_AUTH_COLLECTION).doc(sha256Hex(grant)).set({
+    uid: decoded.uid,
+    createdAt: now,
+    expiresAt: now + TAG_PUBLISH_AUTH_TTL_MS,
+    usesRemaining: 1,
+    ...(preprinted ?? {}),
+  });
+  return { status: 200, body: { grant, expiresAt: now + TAG_PUBLISH_AUTH_TTL_MS, ...(preprinted ? { preprinted: true } : {}) } };
+}
+
+/**
+ * Mint Quick Reply authorization at the ONE trusted boundary that proves
+ * recipient-ness: a successful retrieve (raw-token possession, plus the
+ * six-digit key for heart_key gifts). The grant token goes only into the
+ * retrieve response; Firestore stores its sha256. It is the ONLY key to
+ * /gift/reply — client-sent ids never are. Multi-use up to the per-gift
+ * reply limit (one reveal session can send several acknowledgments); the
+ * authoritative cap stays in replyQuota regardless of grant count.
+ * Ineligible records (shared links, on-site) mint nothing. Best-effort: a
+ * minting failure never blocks the retrieve itself.
+ */
+async function mintReplyAuth({ db, rec, tokenHash, now }) {
+  if (rec.sharedDistribution === true || rec.contextRole === "on_site") {
+    return { grant: null, remaining: null };
+  }
+  try {
+    const quota = await db.collection(REPLY_QUOTA_COLLECTION).doc(tokenHash).get();
+    const count = quota.exists ? (quota.data().count ?? 0) : 0;
+    const remaining = Math.max(0, REPLY_FREE_MAX - count);
+    if (remaining === 0) return { grant: null, remaining: 0 };
+    const grant = generateToken();
+    await db.collection(REPLY_AUTH_COLLECTION).doc(sha256Hex(grant)).set({
+      sourceGiftId: tokenHash,
+      createdAt: now,
+      expiresAt: now + REPLY_AUTH_TTL_MS,
+      usesRemaining: REPLY_FREE_MAX,
+    });
+    return { grant, remaining };
+  } catch (err) {
+    console.warn("[gift] reply auth mint failed:", err?.message);
+    return { grant: null, remaining: null };
+  }
 }
 
 /**
@@ -464,6 +1229,10 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
   if (!snap.exists) return { status: 404, body: { error: "not_found" } };
 
   const rec = snap.data();
+  // A preprinted Gift.Tag publication is INVISIBLE until its 100-Credit
+  // activation binds it to the physical Tag (founder §1, 2026-09-05) — the
+  // free pending record answers not_found on every public door.
+  if (rec.pendingTagBind === true) return { status: 404, body: { error: "not_found" } };
   if (rec.revoked) return { status: 410, body: { error: "revoked" } };
   if (rec.expiresAt && now > rec.expiresAt) return { status: 410, body: { error: "expired" } };
   if (rec.lockedUntil && now < rec.lockedUntil) {
@@ -479,9 +1248,12 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
     // key challenge. Revoke/expiry/not-found above remain fully in force.
     const redeemedAt = rec.redeemedAt || now;
     await ref.update({ failedAttempts: 0, lockedUntil: null, cooldownTier: 0, redeemedAt });
+    const replyAuth = await mintReplyAuth({ db, rec, tokenHash, now });
     return {
       status: 200,
       body: {
+        ...(replyAuth.grant ? { replyGrant: replyAuth.grant } : {}),
+        ...(replyAuth.remaining !== null ? { quickReplyRemaining: replyAuth.remaining } : {}),
         message: giftCrypto.open(rec),
         senderName: rec.senderName ?? null,
         tone: rec.tone ?? null,
@@ -545,10 +1317,13 @@ export async function retrieveGift({ db, body, now = Date.now(), media = null })
   // stays re-viewable by key thereafter).
   const redeemedAt = rec.redeemedAt || now;
   await ref.update({ failedAttempts: 0, lockedUntil: null, cooldownTier: 0, redeemedAt });
+  const replyAuth = await mintReplyAuth({ db, rec, tokenHash, now });
 
   return {
     status: 200,
     body: {
+      ...(replyAuth.grant ? { replyGrant: replyAuth.grant } : {}),
+      ...(replyAuth.remaining !== null ? { quickReplyRemaining: replyAuth.remaining } : {}),
       message: giftCrypto.open(rec),
       senderName: rec.senderName ?? null,
       tone: rec.tone ?? null,
@@ -699,6 +1474,10 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
   if (!snap.exists) return { status: 404, body: { error: "not_found" } };
 
   const rec = snap.data();
+  // A preprinted Gift.Tag publication is INVISIBLE until its 100-Credit
+  // activation binds it to the physical Tag (founder §1, 2026-09-05) — the
+  // free pending record answers not_found on every public door.
+  if (rec.pendingTagBind === true) return { status: 404, body: { error: "not_found" } };
   if (rec.revoked) return { status: 410, body: { error: "revoked" } };
   if (rec.expiresAt && now > rec.expiresAt) return { status: 410, body: { error: "expired" } };
   if (rec.lockedUntil && now < rec.lockedUntil) {

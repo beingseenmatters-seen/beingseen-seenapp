@@ -120,6 +120,69 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ---------------------------------------------------------------------
+    // Gift.Seen Credits + billing-adjacent collections (Monetisation
+    // Phase 2). Admin-SDK-only, like giftMessages: balances, the append-only
+    // financial ledger, publication idempotency intents, server-minted
+    // reply/tag authorizations, reply quotas and throttle windows are ALL
+    // server state. No client SDK may ever read or write them — the client
+    // gets balances only through the authenticated Lambda API. These blocks
+    // are defense-in-depth (default-deny already covers unmatched paths) and
+    // self-documentation.
+    // ---------------------------------------------------------------------
+    match /creditAccounts/{uid} {
+      allow read, write: if false;
+    }
+    match /creditLedger/{entryId} {
+      allow read, write: if false;
+    }
+    match /giftPublishIntents/{intentId} {
+      allow read, write: if false;
+    }
+    match /replyAuth/{grantHash} {
+      allow read, write: if false;
+    }
+    match /replyQuota/{quotaId} {
+      allow read, write: if false;
+    }
+    match /tagPublishAuth/{grantHash} {
+      allow read, write: if false;
+    }
+    match /apiThrottle/{windowId} {
+      allow read, write: if false;
+    }
+    match /giftReplies/{replyId} {
+      allow read, write: if false;
+    }
+    // Phase 3 (events + live capacity billing): purchased seat pools and
+    // per-participant seat docs are server state like the ledger — the
+    // client reads capacity only through the authenticated Lambda door.
+    match /liveCapacity/{capacityId} {
+      allow read, write: if false;
+    }
+    match /liveSeats/{seatId} {
+      allow read, write: if false;
+    }
+    // Payment Phase 2 (real-money foundation): purchase lifecycle records,
+    // future provider account-token bindings and future annual Tag service
+    // entitlements are ALL server-only financial state — the client learns
+    // about purchases exclusively through the authenticated Lambda API.
+    match /paymentPurchases/{purchaseId} {
+      allow read, write: if false;
+    }
+    match /paymentAccountTokens/{tokenId} {
+      allow read, write: if false;
+    }
+    match /tagServiceEntitlements/{tagId} {
+      allow read, write: if false;
+    }
+    // FCM Phase 1: push notification audit/dedup events are server-only.
+    // (Device tokens themselves live in users/{uid}.fcmTokens under the
+    // owner-only rule above — the registration binding IS the auth rule.)
+    match /pushEvents/{eventId} {
+      allow read, write: if false;
+    }
+
     // Anything not matched above is denied by default.
   }
 }

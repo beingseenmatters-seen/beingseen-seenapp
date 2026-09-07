@@ -29,6 +29,7 @@ import crypto from "node:crypto";
 import { EVENT_COLLECTION } from "./event.mjs";
 import { finalizePresentation } from "./giftMedia.mjs";
 import { WEDDING_MUSIC_THEMES } from "./occasion.mjs";
+import { capacityRequired, readSeatPhase, applySeatConsume, capacityDocId, LIVE_CAPACITY_COLLECTION } from "./liveCapacity.mjs";
 
 // --- Config / constants ----------------------------------------------------
 export const ONSITE_CONTEXT_ROLE = "on_site";
@@ -798,6 +799,13 @@ export async function quizControl({ db, decoded, body, now = Date.now() }) {
   } else {
     const need = { open: "ready", lock: "question_open", reveal: "locked", scores: "answer_reveal", next: "score_reveal" }[op];
     if (!need) return { status: 400, body: { error: "invalid_request", field: "op" } };
+    if (op === "open" && (await capacityRequired({ db, sessionId: eventId }))) {
+      // Phase 3 owner gate (mirror of openDraw): seats first, then questions.
+      const capSnap = await db.collection(LIVE_CAPACITY_COLLECTION).doc(capacityDocId(eventId, "live_quiz")).get();
+      if ((capSnap.exists ? capSnap.data()?.purchased ?? 0 : 0) < 1) {
+        return { status: 409, body: { error: "capacity_required", capability: "live_quiz" } };
+      }
+    }
     if (q.phase !== need) return { status: 409, body: { error: "wrong_phase", phase: q.phase, need } };
     if (op === "open") {
       const question = currentQuizQuestion(q); // tie-break question while a tie-break is active
@@ -981,12 +989,30 @@ export async function quizGuestAnswer({ db, body, giftCollection, now = Date.now
   // cheap DB writes, never 5000 LLM calls. Speed bonus from authoritative remaining.
   const windowMs = (q.durationSeconds ?? QUIZ_DEFAULT_DURATION_S) * 1000;
   const { correct, points } = scoreQuizAnswer(current, answer, remainingMs, windowMs);
+  const answerDoc = {
+    schemaVersion: 1, sessionId: rec.eventId, questionId, participantIdHash, nickname,
+    answer, answerType: current.answerType, correct, points, tieBreak: inTieBreak, submittedAt: now,
+    expireAt: now + QUIZ_ANSWER_TTL_MS, // operational lifecycle
+  };
+  // Phase 3 capacity: the participant's FIRST answer in the session consumes
+  // one seat, atomically with that answer; every later answer rides the same
+  // seat. Legacy sessions (no billing marker) skip the gate entirely.
+  const seatBilled = await capacityRequired({ db, sessionId: rec.eventId });
   try {
-    await ref.create({
-      schemaVersion: 1, sessionId: rec.eventId, questionId, participantIdHash, nickname,
-      answer, answerType: current.answerType, correct, points, tieBreak: inTieBreak, submittedAt: now,
-      expireAt: now + QUIZ_ANSWER_TTL_MS, // operational lifecycle
+    const outcome = await db.runTransaction(async (tx) => {
+      const dupSnap = await tx.get(ref);
+      if (dupSnap.exists) return { dup: true };
+      let seat = null;
+      if (seatBilled) {
+        seat = await readSeatPhase({ db, tx, sessionId: rec.eventId, capability: "live_quiz", participantIdHash, now });
+        if (!seat.ok) return { full: true };
+      }
+      if (seat) applySeatConsume({ tx, seat });
+      tx.create(ref, answerDoc);
+      return { created: true };
     });
+    if (outcome.dup) return { status: 200, body: { ok: true, received: true, duplicate: true } };
+    if (outcome.full) return { status: 409, body: { error: "capacity_full" } };
   } catch (err) {
     if ((await ref.get()).exists) return { status: 200, body: { ok: true, received: true, duplicate: true } };
     throw err;
@@ -1097,6 +1123,15 @@ export async function openDraw({ db, decoded, body, now = Date.now() }) {
   if (draw.enabled !== true) return { status: 409, body: { error: "draw_disabled" } };
   if (draw.status === "open") return { status: 200, body: { ok: true, status: "open" } };
   if (draw.status !== "draft") return { status: 409, body: { error: "draw_locked" } };
+  // Phase 3: a billing-required session must hold purchased Lucky Draw seats
+  // before the draw opens (organizer pays; participants stay free). Legacy
+  // sessions carry no marker and open exactly as before.
+  if (await capacityRequired({ db, sessionId: eventId })) {
+    const capSnap = await db.collection(LIVE_CAPACITY_COLLECTION).doc(capacityDocId(eventId, "lucky_draw")).get();
+    if ((capSnap.exists ? capSnap.data()?.purchased ?? 0 : 0) < 1) {
+      return { status: 409, body: { error: "capacity_required", capability: "lucky_draw" } };
+    }
+  }
   await ref.update({ status: "open", updatedAt: now });
   return { status: 200, body: { ok: true, status: "open" } };
 }
@@ -1415,7 +1450,7 @@ export async function submitBlessing({ db, body, giftCollection, now = Date.now(
   if (dupe) return { status: 200, body: { ok: true, entryId: dupe.id, duplicate: true, participantToken: presented } };
 
   // NO lottery expireAt here — blessings follow the Event lifecycle (§23).
-  await ref.set({
+  const entryDoc = {
     schemaVersion: 1,
     eventId: rec.eventId,
     senderUid: rec.senderUid,
@@ -1430,7 +1465,30 @@ export async function submitBlessing({ db, body, giftCollection, now = Date.now(
     moderation: moderation.tier ?? "normal", // advisory only; never authorizes display
     status: "active",
     createdAt: now,
-  });
+  };
+  // Phase 3 capacity: one HUMAN = one seat, consumed with their FIRST message
+  // in the same transaction; the per-identity 5-message cap and the P0
+  // approval gate above are untouched — messages themselves cost 0.
+  const seatBilled = await capacityRequired({ db, sessionId: rec.eventId });
+  try {
+    const outcome = await db.runTransaction(async (tx) => {
+      const dupSnap = await tx.get(ref);
+      if (dupSnap.exists) return { dup: true };
+      let seat = null;
+      if (seatBilled) {
+        seat = await readSeatPhase({ db, tx, sessionId: rec.eventId, capability: "live_guestbook", participantIdHash, now });
+        if (!seat.ok) return { full: true };
+      }
+      if (seat) applySeatConsume({ tx, seat });
+      tx.create(ref, entryDoc);
+      return { created: true };
+    });
+    if (outcome.dup) return { status: 200, body: { ok: true, entryId, duplicate: true, participantToken: presented } };
+    if (outcome.full) return { status: 409, body: { error: "capacity_full" } };
+  } catch (err) {
+    if ((await ref.get()).exists) return { status: 200, body: { ok: true, entryId, duplicate: true, participantToken: presented } };
+    throw err;
+  }
   return { status: 200, body: { ok: true, entryId, duplicate: false, participantToken } };
 }
 
@@ -1517,10 +1575,26 @@ export async function claimLuckyCode({ db, body, giftCollection, now = Date.now(
     createdAt: now,
     expireAt: draw.cutoffAt + LOTTERY_LINGER_MS, // AA-2 anchor (WD-3 re-anchors)
   };
+  // Phase 3 capacity: on billing-required sessions the seat is consumed in
+  // the SAME transaction that creates the entrant — the last seat cannot be
+  // double-granted (racing claimants serialize on the capacity doc), and a
+  // repeat claim by the SAME participant consumes nothing (deterministic
+  // seat id + the entrant duplicate check both short-circuit first).
+  const seatBilled = await capacityRequired({ db, sessionId: rec.eventId });
+  let outcome;
   try {
-    // create() (not set) — a concurrent duplicate claim loses the race and
-    // recovers the committed code below: one participant, one chance, ever.
-    await entrantRef.create(entrant);
+    outcome = await db.runTransaction(async (tx) => {
+      const dupSnap = await tx.get(entrantRef);
+      if (dupSnap.exists) return { already: dupSnap.data() };
+      let seat = null;
+      if (seatBilled) {
+        seat = await readSeatPhase({ db, tx, sessionId: rec.eventId, capability: "lucky_draw", participantIdHash, now });
+        if (!seat.ok) return { full: true };
+      }
+      if (seat) applySeatConsume({ tx, seat });
+      tx.create(entrantRef, entrant);
+      return { created: true };
+    });
   } catch (err) {
     const raced = await entrantRef.get();
     if (raced.exists) {
@@ -1531,6 +1605,14 @@ export async function claimLuckyCode({ db, body, giftCollection, now = Date.now(
       };
     }
     throw err;
+  }
+  if (outcome.full) return { status: 409, body: { error: "capacity_full" } };
+  if (outcome.already) {
+    const e = outcome.already;
+    return {
+      status: 200,
+      body: { ok: true, luckyCode: e.luckyCode, luckyBalls: e.luckyBalls ?? null, mode: draw.mode ?? "lucky_number", alreadyClaimed: true, cutoffAt: draw.cutoffAt },
+    };
   }
   return {
     status: 200,

@@ -167,7 +167,7 @@ export async function ensureEvent({ db, decoded, body, occasion, now = Date.now(
       createdAt: now,
       status: "active",
     });
-    return { ok: true, eventId, created: true };
+    return { ok: true, eventId, created: true, type: occasion.type };
   }
 
   const snap = await db.collection(EVENT_COLLECTION).doc(attachId).get();
@@ -183,7 +183,7 @@ export async function ensureEvent({ db, decoded, body, occasion, now = Date.now(
   if (ev.type !== occasion.type || ev.status !== "active") {
     return { ok: false, res: { status: 400, body: { error: "invalid_event", field: "status" } } };
   }
-  return { ok: true, eventId: attachId, created: false };
+  return { ok: true, eventId: attachId, created: false, type: ev.type };
 }
 
 /** Compensation: remove an event this very call created (never attached ones). */

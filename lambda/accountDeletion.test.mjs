@@ -11,7 +11,7 @@ import { handleTagManage, handleTagScan } from "./tag.mjs";
 
 const A = { uid: "user-a" };
 const B = { uid: "user-b" };
-const ADMIN = { uid: "founder-1", email: "beingseenmatters@gmail.com", email_verified: true };
+const ADMIN = { uid: "founder-1", email: "beingseenmatters@gmail.com", email_verified: true, master_admin: true };
 const fakeShare = () => ({ seal: async (t) => `sealed:${t}`, open: async (x) => String(x).replace(/^sealed:/, "") });
 
 function makeFakeDb() {

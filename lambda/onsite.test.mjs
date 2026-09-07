@@ -46,6 +46,17 @@ function makeFakeDb({ raceOn = null } = {}) {
             : refOrQuery.get()),
           update: (ref, patch) => void writes.push(() => store.set(ref._key, { ...store.get(ref._key), ...patch })),
           set: (ref, v) => void writes.push(() => store.set(ref._key, { ...v })),
+          create: (ref, v) => void writes.push(() => {
+            // Same raceOn semantics as ref-level create(): a concurrent
+            // writer lands between the transaction's read and its commit.
+            const col = String(ref._key).split("/")[0];
+            if (raceOn === col && !store.has(ref._key)) {
+              store.set(ref._key, { ...v, luckyCode: "111222", raced: true });
+              const e = new Error("ALREADY_EXISTS"); e.code = 6; throw e;
+            }
+            if (store.has(ref._key)) { const e = new Error("ALREADY_EXISTS"); e.code = 6; throw e; }
+            store.set(ref._key, { ...v });
+          }),
         };
         const out = await fn(tx);
         if (txConflictsLeft > 0) { txConflictsLeft -= 1; continue; } // discard writes, retry fn

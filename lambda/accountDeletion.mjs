@@ -24,6 +24,11 @@
  *   eventDrawEntrants (eventId)   A  delete with the event
  *   eventDraw (doc id = eventId)  A  delete with the event
  *   liveSessions (ownerUid)       A  delete
+ *   liveCapacity (ownerUid)       A  delete (purchase HISTORY stays in the
+ *                                    retained creditLedger; this doc is only
+ *                                    the live seat-pool state)
+ *   liveSeats (per session)       A  delete with the owning session — the
+ *                                    docs hold participant hashes, never uid
  *   tags self-print (ownerUid)    A  delete + contacts/photos (QR was
  *                                    owner-printed; meaningless without them)
  *   tags pre-manufactured         C  DETACH: reset to the unactivated factory
@@ -31,12 +36,42 @@
  *                                    by a future owner) + delete contacts
  *   tagContacts / tagContactPhotos A delete with their tag (private inbox)
  *   tagEvents (recipientUid)      A  delete (notification spine entries)
+ *   pushEvents (ownerUid)         A  delete (FCM Phase 1 push audit/dedup —
+ *                                    operational data, never financial).
+ *                                    users/{uid}.fcmTokens is NOT touched:
+ *                                    device tokens belong to the SHARED Seen
+ *                                    identity (other products keep pushing).
  *   tagBatches (createdBy)        C/D anonymize createdBy — manufacturing
  *                                    traceability retained, identity removed
  *   tagCodes                      D  retained: code-uniqueness ledger, carries
  *                                    only hashes — no personal data
  *   authHandoff*                  D  ephemeral TTL'd SSO codes — not identity,
  *                                    self-expiring
+ *   creditAccounts (doc id = uid) D  RETAINED: financial/audit record
+ *                                    (Monetisation Phase 2) — balances and
+ *                                    their history must survive product
+ *                                    deletion; never casually deleted with
+ *                                    product content. Disclosed in the
+ *                                    deletion response.
+ *   creditLedger (uid)            D  RETAINED: append-only financial audit
+ *                                    trail — same rationale as above.
+ *   paymentPurchases (uid)        D  RETAINED (Payment Phase 2): real-money
+ *                                    purchase lifecycle/audit records —
+ *                                    grants, holds and provider reversals
+ *                                    (incl. any negative-paid DEBT state)
+ *                                    must survive product deletion exactly
+ *                                    like the ledger. The SAME authoritative
+ *                                    UID returning later sees the same
+ *                                    balance/debt; nothing is ever restored
+ *                                    or matched by email.
+ *   giftPublishIntents (uid)      A  operational idempotency map for the
+ *                                    account's own publications — delete
+ *   replyAuth                     D  anonymous recipient-side grants (carry
+ *                                    no uid); TTL'd by expiresAt read gate
+ *   giftReplies (sourceGiftId)    A  Quick Replies delete with their gift
+ *   replyQuota (doc id = giftId)  A  per-gift reply counter — delete with gift
+ *   tagPublishAuth (uid)          A  uid-bound Gift.Tag publish grants —
+ *                                    delete (short-lived operational auth)
  *   mind* collections             —  Mind.Seen is a SEPARATE product; out of
  *                                    scope, untouched
  *
@@ -55,6 +90,7 @@ import { GIFT_COLLECTION } from "./gift.mjs";
 import { sealedAssetIds, deleteSealedMedia } from "./giftMedia.mjs";
 import { EVENT_COLLECTION, GUEST_COLLECTION } from "./event.mjs";
 import { SHARED_RSVP_COLLECTION } from "./sharedRsvp.mjs";
+import { LIVE_CAPACITY_COLLECTION, LIVE_SEAT_COLLECTION } from "./liveCapacity.mjs";
 import {
   GUESTBOOK_COLLECTION, ENTRANT_COLLECTION, DRAW_COLLECTION, LIVE_SESSION_COLLECTION,
 } from "./onsite.mjs";
@@ -80,7 +116,7 @@ export async function deleteGiftAccount({ db, decoded, media = null, now = Date.
   const uid = decoded.uid;
   const deleted = {
     gifts: 0, sharedRsvps: 0, events: 0, eventGuests: 0, guestbook: 0,
-    drawEntrants: 0, draws: 0, liveSessions: 0,
+    drawEntrants: 0, draws: 0, liveSessions: 0, liveCapacity: 0, liveSeats: 0,
     tagsDeleted: 0, tagsDetached: 0, tagContacts: 0, tagEvents: 0, batchesAnonymized: 0,
   };
 
@@ -96,6 +132,13 @@ export async function deleteGiftAccount({ db, decoded, media = null, now = Date.
       await db.collection(SHARED_RSVP_COLLECTION).doc(id).delete();
       deleted.sharedRsvps += 1;
     }
+    // Quick Replies are attached to the gift — they die with it, along with
+    // the per-gift reply counter.
+    for (const { id } of await docsWhere(db, "giftReplies", "sourceGiftId", tokenHash)) {
+      await db.collection("giftReplies").doc(id).delete();
+      deleted.quickReplies = (deleted.quickReplies ?? 0) + 1;
+    }
+    await db.collection("replyQuota").doc(tokenHash).delete().catch(() => {});
     await db.collection(GIFT_COLLECTION).doc(tokenHash).delete();
     deleted.gifts += 1;
   }
@@ -123,10 +166,20 @@ export async function deleteGiftAccount({ db, decoded, media = null, now = Date.
   }
 
   // 3. Live sessions (sessionId === eventId for event ones; ownerUid query
-  //    also catches any future standalone sessions).
+  //    also catches any future standalone sessions). Phase 3 capacity pools
+  //    and their per-participant seat docs die with the session; the FINANCIAL
+  //    record of every purchase stays in the retained creditLedger.
   for (const { id } of await docsWhere(db, LIVE_SESSION_COLLECTION, "ownerUid", uid)) {
+    for (const { id: seatId } of await docsWhere(db, LIVE_SEAT_COLLECTION, "sessionId", id)) {
+      await db.collection(LIVE_SEAT_COLLECTION).doc(seatId).delete();
+      deleted.liveSeats += 1;
+    }
     await db.collection(LIVE_SESSION_COLLECTION).doc(id).delete();
     deleted.liveSessions += 1;
+  }
+  for (const { id } of await docsWhere(db, LIVE_CAPACITY_COLLECTION, "ownerUid", uid)) {
+    await db.collection(LIVE_CAPACITY_COLLECTION).doc(id).delete();
+    deleted.liveCapacity += 1;
   }
 
   // 4. Tags. Self-print tags die with the account; pre-manufactured tags are
@@ -165,6 +218,13 @@ export async function deleteGiftAccount({ db, decoded, media = null, now = Date.
     await db.collection(TAG_EVENT_COLLECTION).doc(id).delete();
     deleted.tagEvents += 1;
   }
+  // FCM Phase 1: Gift.Seen push audit events are product-scoped operational
+  // data — deleted with the product. The SHARED identity's device tokens
+  // (users/{uid}.fcmTokens) are deliberately untouched.
+  for (const { id } of await docsWhere(db, "pushEvents", "ownerUid", uid)) {
+    await db.collection("pushEvents").doc(id).delete();
+    deleted.pushEvents = (deleted.pushEvents ?? 0) + 1;
+  }
 
   // 6. Manufacturing batches: traceability stays, identity goes.
   for (const { id } of await docsWhere(db, TAG_BATCH_COLLECTION, "createdBy", uid)) {
@@ -172,10 +232,34 @@ export async function deleteGiftAccount({ db, decoded, media = null, now = Date.
     deleted.batchesAnonymized += 1;
   }
 
+  // 7. Operational billing-adjacent records keyed to this uid (idempotency
+  // intents, reply quotas). The FINANCIAL records (creditAccounts,
+  // creditLedger, paymentPurchases) are deliberately RETAINED — append-only
+  // audit history is not product content, and deleting it would erase why
+  // balances moved (or erase provider-reversal debt, which must survive).
+  for (const { id } of await docsWhere(db, "giftPublishIntents", "uid", uid)) {
+    await db.collection("giftPublishIntents").doc(id).delete();
+    deleted.publishIntents = (deleted.publishIntents ?? 0) + 1;
+  }
+  for (const { id } of await docsWhere(db, "tagPublishAuth", "uid", uid)) {
+    await db.collection("tagPublishAuth").doc(id).delete();
+    deleted.tagPublishGrants = (deleted.tagPublishGrants ?? 0) + 1;
+  }
+
   // The shared Firebase identity is deliberately NOT touched — Seen and
   // Moment.Seen keep working with this UID, and the user may re-enter
   // Gift.Seen later as a fresh product user.
-  return { status: 200, body: { ok: true, product: "gift", deleted } };
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      product: "gift",
+      deleted,
+      // Honest retention disclosure: financial/audit records survive product
+      // deletion (they are not product content).
+      retained: ["creditAccounts", "creditLedger"],
+    },
+  };
 }
 
 /**

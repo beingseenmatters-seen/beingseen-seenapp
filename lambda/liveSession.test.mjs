@@ -10,6 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   createLiveSession, listLiveSessions, liveSessionDetail, handleSenderLive, LIVE_CAPABILITIES,
+  LIVE_JOIN_BASE_DEFAULT,
 } from "./liveSession.mjs";
 import {
   configureDraw, drawWinner, claimLuckyCode, LIVE_SESSION_COLLECTION, DRAW_COLLECTION, ENTRANT_COLLECTION,
@@ -45,6 +46,12 @@ function makeFakeDb() {
   return { collection, runTransaction: async (fn) => fn({
     get: async (ref) => ref.get(),
     update: (ref, v) => ref.update(v),
+    set: (ref, v) => ref.set(v),
+    create: (ref, v) => {
+      const key = ref._key;
+      if (key !== undefined ? store.has(key) : false) { const e = new Error("ALREADY_EXISTS"); e.code = 6; throw e; }
+      return ref.create ? ref.create(v) : ref.set(v);
+    },
   }), _store: store };
 }
 
@@ -903,7 +910,7 @@ test("presentation token reads display state WITHOUT owner login (second device)
   const detail = await Screen(db, { action: "detail", sessionId: sid, presentationToken: tok });
   assert.equal(detail.status, 200);
   assert.equal(detail.body.session.sessionId, sid);
-  assert.ok(detail.body.joinUrl && detail.body.joinUrl.startsWith("https://x/s/")); // QR resolvable server-side
+  assert.ok(detail.body.joinUrl && detail.body.joinUrl.startsWith(`${LIVE_JOIN_BASE_DEFAULT}/s/`)); // QR resolvable server-side, CANONICAL live origin (P0 2026-09-05)
   assert.ok("cursor" in detail.body);
   const ent = await Screen(db, { action: "draw_entrants", sessionId: sid, presentationToken: tok });
   assert.equal(ent.status, 200);
@@ -1021,4 +1028,30 @@ test("presentation quiz_state is public+answer-safe and exposes answered/joined 
   assert.equal(typeof st.body.participants, "number");        // "joined" proxy
   assert.equal(typeof st.body.answeredThis, "number");        // "answered"
   assert.ok("cursor" in st.body);
+});
+
+
+// --- P0 (2026-09-05): a Live QR is NOT a Gift -------------------------------
+// The venue QR landed on the legacy Seen origin's universal Heart-Key reveal.
+// Live join/create URLs now use the CANONICAL Gift.Seen origin where the live
+// guest experiences exist; the participation record stays direct-access with
+// no key material — a Live participant can never meet a six-digit prompt.
+
+test("P0: live create + joinUrl use the canonical Gift.Seen origin, never the legacy app origin", async () => {
+  const db = makeFakeDb();
+  const sess = await createLiveSession({ db, decoded: OWNER, body: { title: "Party" }, share: fakeShare(), giftCollection: GIFT_COLLECTION, publicBaseUrl: "https://app.beingseenmatters.com", now: 1000 });
+  assert.equal(sess.status, 200);
+  assert.ok(sess.body.url.startsWith(`${LIVE_JOIN_BASE_DEFAULT}/s/`), sess.body.url);
+  assert.ok(!sess.body.url.includes("app.beingseenmatters.com"));
+});
+
+test("P0: the live participation record is direct-access — no Heart Key exists to demand", async () => {
+  const db = makeFakeDb();
+  const sess = await createLiveSession({ db, decoded: OWNER, body: { title: "Party" }, share: fakeShare(), giftCollection: GIFT_COLLECTION, publicBaseUrl: "https://x", now: 1000 });
+  const rec = db._store.get(`${GIFT_COLLECTION}/${sess.body.participationGiftId}`);
+  assert.equal(rec.accessMode, "direct");
+  assert.equal("keyHash" in rec, false);
+  assert.equal("keySalt" in rec, false);
+  assert.equal("retrievalKeySealed" in rec, false);
+  assert.equal(rec.contextRole, "on_site"); // the reveal classifies it as LIVE, never a message
 });

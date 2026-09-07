@@ -470,7 +470,7 @@ test("pause/reactivate work across all three types with a durable QR", async () 
 // Pre-manufactured lifecycle (unactivated → activate → profile → finder →
 // inbox → missing → found) + finder GPS/photo + permissions + events.
 // ===========================================================================
-const ADMIN = { uid: "founder-1", email: "beingseenmatters@gmail.com", email_verified: true };
+const ADMIN = { uid: "founder-1", email: "beingseenmatters@gmail.com", email_verified: true, master_admin: true };
 const JPEG = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
 
@@ -478,7 +478,10 @@ test("provision: founder-only (verified email allowlist), custom code TESTPET001
   const db = makeFakeDb();
   // Non-admin and unverified-admin are both refused.
   assert.equal((await M(db, { action: "provision", type: "pet", code: "TESTPET001" }, OWNER)).status, 403);
+  // RETIRED bootstrap: the founder email — verified or not — is no longer an
+  // authority; only the master_admin claim opens provisioning.
   assert.equal((await M(db, { action: "provision", type: "pet", code: "TESTPET001" }, { uid: "x", email: "beingseenmatters@gmail.com", email_verified: false })).status, 403);
+  assert.equal((await M(db, { action: "provision", type: "pet", code: "TESTPET001" }, { uid: "x", email: "beingseenmatters@gmail.com", email_verified: true })).status, 403);
   // Founder mints the named test tag.
   const r = await M(db, { action: "provision", type: "pet", code: "TESTPET001" }, ADMIN);
   assert.equal(r.status, 200);

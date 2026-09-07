@@ -71,11 +71,20 @@ zip -r "$PACKAGE" \
   onsite.mjs \
   liveSession.mjs \
   tag.mjs \
+  mind.mjs \
   distribute.mjs \
   shareCrypto.mjs \
   sharedRsvp.mjs \
   occasion.mjs \
+  spokenScript.mjs \
   momentCaption.mjs \
+  accountDeletion.mjs \
+  billing.mjs \
+  payments.mjs \
+  stripeAdapter.mjs \
+  push.mjs \
+  liveCapacity.mjs \
+  throttle.mjs \
   giftMedia.mjs \
   authHandoff.mjs \
   reflect-handler.mjs \
@@ -91,6 +100,24 @@ zip -r "$PACKAGE" \
 
 echo "5. Packaged runtime modules:"
 unzip -l "$PACKAGE" | grep -E "\.mjs$|/package.json$" | grep -v "node_modules/" || true
+
+# Completeness guard: EVERY local module index.mjs imports MUST be inside the
+# zip, or the Lambda crashes at module load and every route 500s. This exact
+# omission (accountDeletion.mjs) took the whole backend down once — never again.
+echo "5b. Verifying every ./*.mjs imported by index.mjs is packaged..."
+# Bare top-level module names actually inside the zip (last field of each row).
+PACKAGED="$(unzip -l "$PACKAGE" | awk '{print $NF}' | grep -E '^[a-zA-Z]+\.mjs$' | sort -u)"
+MISSING=""
+for mod in $(grep -oE 'from "\./[a-zA-Z]+\.mjs"' index.mjs | sed 's/from "\.\///;s/"//' | sort -u); do
+  printf '%s\n' "$PACKAGED" | grep -qxF "$mod" || MISSING="$MISSING $mod"
+done
+if [ -n "$MISSING" ]; then
+  echo "ERROR: index.mjs imports these modules but the zip is MISSING them:$MISSING" >&2
+  echo "       Add them to the include list above. Refusing to ship a broken package." >&2
+  rm -f "$PACKAGE"
+  exit 1
+fi
+echo "   OK — all imported modules present."
 
 echo
 echo "6. Done. Upload $PACKAGE to AWS Lambda function 'seen-reflect-proxy' and ensure the handler is 'index.handler'."

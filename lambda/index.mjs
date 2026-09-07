@@ -41,7 +41,7 @@ import {
   parseExtractionContent,
   toExtractResponsePayload,
 } from "./reflectModes.mjs";
-import { createGift, retrieveGift, revokeGift, setGiftHidden, rsvpGift, GIFT_COLLECTION, GIFT_PUBLIC_BASE_URL } from "./gift.mjs";
+import { createGift, retrieveGift, revokeGift, setGiftHidden, rsvpGift, mintTagPublishGrant, quickReply, listGiftReplies, GIFT_COLLECTION, GIFT_PUBLIC_BASE_URL } from "./gift.mjs";
 import { senderLibrary, eventDetail, recoverShare, createEvent, upsertGuest, removeGuest, saveVariant } from "./event.mjs";
 import {
   createOnsite,
@@ -69,6 +69,14 @@ import { handleTagManage, handleTagScan } from "./tag.mjs";
 import { deleteGiftAccount, deleteMomentAccount } from "./accountDeletion.mjs";
 import { handleMind } from "./mind.mjs";
 import { runGiftVoiceScript } from "./spokenScript.mjs";
+import { balanceHandler, adminTestGrantPhase3 } from "./billing.mjs";
+// Payment Phase 3 (Stripe TEST MODE): checkout + purchase history ride the
+// normal app-key+auth gate; the webhook rides its own signature gate below.
+import { listUserPurchases } from "./payments.mjs";
+// FCM Phase 1: Gift.Seen device token lifecycle (server-bound registration).
+import { registerPushToken, unregisterPushToken } from "./push.mjs";
+import { createCheckoutSession, handleStripeWebhook } from "./stripeAdapter.mjs";
+import { allowRequest, throttledResponse } from "./throttle.mjs";
 import { distributeInvitations } from "./distribute.mjs";
 import { validateOccasion } from "./occasion.mjs";
 import { makeKmsShareCrypto } from "./shareCrypto.mjs";
@@ -167,6 +175,39 @@ async function getOpenAIKey() {
   );
   const s = v.SecretString ? JSON.parse(v.SecretString) : {};
   return s.key || s.OPENAI_API_KEY || Object.values(s)[0];
+}
+
+/**
+ * Stripe TEST-MODE config (Payment Phase 3). Secrets follow the strongest
+ * existing convention — AWS Secrets Manager (the OpenAI pattern) via
+ * STRIPE_SECRET_ID holding {STRIPE_SECRET_KEY_TEST, STRIPE_WEBHOOK_SECRET_TEST};
+ * plain env vars of the same names are the fallback. Nothing is ever
+ * committed. `environment` is HARD-WIRED "test" in this phase: a future live
+ * lane gets its own config + endpoint + secret, never a toggle on this one.
+ */
+let stripeTestConfigCache = null;
+async function getStripeTestConfig() {
+  if (stripeTestConfigCache) return stripeTestConfigCache;
+  let secretKey = process.env.STRIPE_SECRET_KEY_TEST || null;
+  let webhookSecret = process.env.STRIPE_WEBHOOK_SECRET_TEST || null;
+  const sid = process.env.STRIPE_SECRET_ID;
+  if (sid) {
+    try {
+      const v = await secrets.send(new GetSecretValueCommand({ SecretId: sid }));
+      const s = v.SecretString ? JSON.parse(v.SecretString) : {};
+      secretKey = s.STRIPE_SECRET_KEY_TEST || secretKey;
+      webhookSecret = s.STRIPE_WEBHOOK_SECRET_TEST || webhookSecret;
+    } catch (err) {
+      console.error("[payment] stripe secret fetch failed:", err?.message);
+    }
+  }
+  stripeTestConfigCache = {
+    secretKey,
+    webhookSecret,
+    environment: "test",
+    checkoutOrigin: process.env.STRIPE_CHECKOUT_ORIGIN || "https://gift.beingseenmatters.com",
+  };
+  return stripeTestConfigCache;
 }
 
 // ========================
@@ -1005,6 +1046,25 @@ function handoffResponse(statusCode, body, event) {
 }
 
 export const handler = async (event) => {
+  // --- Direct-invoke maintenance plane (NEVER publicly routable) -----------
+  // API Gateway ALWAYS wraps requests in an HTTP envelope (requestContext /
+  // rawPath / routeKey), so a bare `{ maintenance: … }` event can only come
+  // from lambda:InvokeFunction — i.e. AWS admin credentials. Anything that
+  // looks even faintly like an HTTP request falls through to normal routing
+  // and this branch is unreachable. One operation exists: the one-off,
+  // parameterless, forever-idempotent Phase 3 test grant (billing.mjs).
+  if (
+    event &&
+    event.maintenance === "admin_test_grant_phase3" &&
+    !event.requestContext &&
+    !event.rawPath &&
+    !event.routeKey &&
+    !event.httpMethod
+  ) {
+    console.log("[maintenance] admin_test_grant_phase3 direct invoke");
+    return await adminTestGrantPhase3({ db: admin.firestore(), auth: admin.auth() });
+  }
+
   // MATTERS SSO handoff preflight — must run before the generic `*` OPTIONS block.
   {
     const method = event.requestContext?.http?.method || event.httpMethod;
@@ -1030,6 +1090,36 @@ export const handler = async (event) => {
     return httpResponse(200, { ok: true });
   }
 
+  // ---- Stripe webhook — DEDICATED TEST ENDPOINT (Payment Phase 3) ---------
+  // Deliberately BEFORE the app-key gate: Stripe cannot send X-Seen-App-Key.
+  // This is the ONLY exempted path, matched exactly; its security boundary is
+  // the webhook HMAC over the RAW body (+ livemode/environment separation)
+  // inside handleStripeWebhook. Environment isolation is PATH-level (owner-
+  // locked): this endpoint reads ONLY the TEST secret bundle and refuses
+  // livemode events; the future live lane will be its own path
+  // (/billing/webhook/stripe/live) with its own secret — never a toggle here.
+  {
+    const p = event.requestContext?.http?.path || event.rawPath || event.path || "";
+    const m = event.requestContext?.http?.method || event.httpMethod;
+    if (p === "/billing/webhook/stripe/test" && m === "POST") {
+      // Signature verification REQUIRES the raw bytes — decode base64 if the
+      // gateway flagged it, never JSON-parse/re-serialize first.
+      const rawBody = event.isBase64Encoded
+        ? Buffer.from(event.body || "", "base64").toString("utf8")
+        : (event.body || "");
+      const signatureHeader =
+        event.headers?.["stripe-signature"] || event.headers?.["Stripe-Signature"] || null;
+      const config = await getStripeTestConfig();
+      const result = await handleStripeWebhook({
+        db: admin.firestore(),
+        rawBody,
+        signatureHeader,
+        config,
+      });
+      return httpResponse(result.status, result.body);
+    }
+  }
+
   // App identifier check (X-Seen-App-Key). Non-secret application
   // identification — real authorization is per-route (Firebase ID tokens,
   // possession credentials, one-time codes). SEEN_APP_API_KEY may hold a
@@ -1043,7 +1133,14 @@ export const handler = async (event) => {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  if (validAppKeys.length > 0 && !validAppKeys.includes(appKey)) {
+  // FAIL CLOSED (Monetisation Phase 2 hardening): a missing key CONFIG must
+  // never silently disable the gate — that would open every app-key-only
+  // route (including cost-bearing AI) to the world.
+  if (validAppKeys.length === 0) {
+    console.error("[gate] SEEN_APP_API_KEY is not configured — refusing all traffic");
+    return httpResponse(401, { error: "unauthorized" });
+  }
+  if (!validAppKeys.includes(appKey)) {
     return httpResponse(401, { error: "unauthorized" });
   }
 
@@ -1054,6 +1151,69 @@ export const handler = async (event) => {
   } catch {}
 
   const path = event.requestContext?.http?.path || event.rawPath || event.path;
+  const sourceIp = event.requestContext?.http?.sourceIp || null;
+  // Anonymous-caller throttle for cost-bearing AI doors: a verified Firebase
+  // identity skips the IP window (signed-in traffic is attributable); an
+  // anonymous caller pays into a transactional per-IP sliding window.
+  const throttleAnonymous = async (bucket) => {
+    const decoded = await verifyAuthToken(event);
+    if (decoded?.uid) return null;
+    const check = await allowRequest({ db: admin.firestore(), bucket, key: sourceIp });
+    if (check.allowed) return null;
+    const r = throttledResponse(check);
+    return httpResponse(r.status, r.body);
+  };
+
+  // ---- Gift.Seen Credits (Monetisation Phase 2) ---------------------------
+  // Server-authoritative balance; applies the lazy weekly Free top-up.
+  // Read-only for the client — no request can ever set a balance.
+  if (path === "/billing/balance") {
+    const decoded = await verifyAuthToken(event);
+    const result = await balanceHandler({ db: admin.firestore(), decoded, body });
+    return httpResponse(result.status, result.body);
+  }
+  // ---- Stripe TEST-MODE checkout (Payment Phase 3) ------------------------
+  // Client sends ONLY internalProduct; price/amount/uid binding are resolved
+  // server-side. Requires the current official frontend contract (app key
+  // already enforced above) + a verified Firebase identity — no legacy-free
+  // payment lane exists or ever will.
+  if (path === "/billing/checkout") {
+    const decoded = await verifyAuthToken(event);
+    if (!decoded?.uid) return httpResponse(401, { error: "unauthorized" });
+    const config = await getStripeTestConfig();
+    const result = await createCheckoutSession({
+      uid: decoded.uid,
+      internalProduct: body?.internalProduct,
+      config,
+    });
+    return httpResponse(result.status, result.body);
+  }
+  // ---- FCM Phase 1: Gift.Seen push token lifecycle ------------------------
+  // Server binds the token to the VERIFIED caller UID (never a client-named
+  // target); logout releases only the submitted device's binding.
+  if (path === "/push/register") {
+    const decoded = await verifyAuthToken(event);
+    const result = await registerPushToken({ db: admin.firestore(), decoded, body });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/push/unregister") {
+    const decoded = await verifyAuthToken(event);
+    const result = await unregisterPushToken({ db: admin.firestore(), decoded, body });
+    return httpResponse(result.status, result.body);
+  }
+
+  // Authenticated, read-only payment history — the safe whitelist view only
+  // (no raw provider transaction refs ever leave payments.mjs).
+  if (path === "/billing/purchases") {
+    const decoded = await verifyAuthToken(event);
+    if (!decoded?.uid) return httpResponse(401, { error: "unauthorized" });
+    const purchases = await listUserPurchases({
+      db: admin.firestore(),
+      uid: decoded.uid,
+      limit: body?.limit,
+    });
+    return httpResponse(200, { purchases });
+  }
 
   // ---- Relationship Expression / QR Gift (feat/expression-gift-v1) --------
   // Firestore via Admin SDK; GLOBAL-only V1. create/revoke require a verified
@@ -1068,6 +1228,44 @@ export const handler = async (event) => {
       media: giftMediaStore,
       share: giftShareCrypto,
     });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/gift/tag-grant") {
+    // Gift.Tag free-publication authorization (LOCKED 0-Credit rule): minted
+    // ONLY here, uid-bound, single-use. The per-uid mint throttle is the
+    // security bound against using the free lane as a publishing farm.
+    const decoded = await verifyAuthToken(event);
+    if (!decoded?.uid) return httpResponse(401, { error: "unauthorized" });
+    const check = await allowRequest({
+      db: admin.firestore(),
+      bucket: "tag_grant_mint",
+      key: decoded.uid,
+    });
+    if (!check.allowed) {
+      const r = throttledResponse(check);
+      return httpResponse(r.status, r.body);
+    }
+    // body.tagCode (optional) binds the grant to an official unactivated
+    // preprinted Gift.Tag — server-verified inside the mint, never a client
+    // pricing claim.
+    const result = await mintTagPublishGrant({ db: admin.firestore(), decoded, body });
+    return httpResponse(result.status, result.body);
+  }
+  if (path === "/gift/reply") {
+    // QUICK REPLY (locked product correction): a lightweight acknowledgment
+    // attached to the source Gift. App-key only — recipients need no account;
+    // authorization is the server-minted replyGrant from a successful
+    // retrieve. Anonymous door, so it pays into a per-IP window.
+    const replyThrottle = await allowRequest({
+      db: admin.firestore(),
+      bucket: "quick_reply_anon",
+      key: sourceIp,
+    });
+    if (!replyThrottle.allowed) {
+      const r = throttledResponse(replyThrottle);
+      return httpResponse(r.status, r.body);
+    }
+    const result = await quickReply({ db: admin.firestore(), body, messaging: admin.messaging() });
     return httpResponse(result.status, result.body);
   }
   if (path === "/gift/retrieve") {
@@ -1321,6 +1519,11 @@ export const handler = async (event) => {
       const hid = await setGiftHidden({ db: admin.firestore(), decoded, body });
       return httpResponse(hid.status, hid.body);
     }
+    if (body?.action === "replies") {
+      // Sender-side Quick Reply list (sender-only; simple chronological list).
+      const rep = await listGiftReplies({ db: admin.firestore(), decoded, body });
+      return httpResponse(rep.status, rep.body);
+    }
     const result = await recoverShare({
       db: admin.firestore(),
       decoded,
@@ -1354,12 +1557,16 @@ export const handler = async (event) => {
             : await runWeddingDraft({ decoded, body, callModel: callExpressModel });
       return httpResponse(result.status, result.body);
     }
+    const throttled = await throttleAnonymous("express_draft_anon");
+    if (throttled) return throttled;
     return await handleExpressDraft(body);
   }
 
   // Moment.Seen caption assistant — app-key only (no account needed to prepare
   // a photo to share). Text in, captions out; the photo stays in the browser.
   if (path === "/moment/caption") {
+    const throttled = await throttleAnonymous("moment_caption_anon");
+    if (throttled) return throttled;
     return await handleMomentCaption(body);
   }
 
@@ -1406,6 +1613,14 @@ export const handler = async (event) => {
 
   // Route: /test/push
   if (path === "/test/push") {
+    // Hardened (Phase 2): sending FCM to arbitrary tokens was reachable with
+    // only the PUBLIC app key (which ships inside every web bundle). Public
+    // app-key possession is identification, not authorization — this door now
+    // requires a verified master_admin identity.
+    const pushAdmin = await verifyAuthToken(event);
+    if (pushAdmin?.master_admin !== true) {
+      return httpResponse(403, { error: "forbidden" });
+    }
     console.log("Handling /test/push request");
     const { token, title, body: pushBody, type, level, language } = body;
     
@@ -1909,6 +2124,8 @@ Seen · Being seen matters`;
 
   // Route: /extract
   if (path === "/reflect/extract") {
+    const throttled = await throttleAnonymous("reflect_extract_anon");
+    if (throttled) return throttled;
     console.log("Handling /reflect/extract request");
     
     const conversation = body.conversation;
@@ -1976,6 +2193,8 @@ Seen · Being seen matters`;
 
   // Route: /voice/transcribe
   if (path === "/voice/transcribe") {
+    const throttled = await throttleAnonymous("voice_transcribe_anon");
+    if (throttled) return throttled;
     console.log("Handling /voice/transcribe request");
 
     const { audio, mimeType, language: voiceLang } = body;
@@ -2049,6 +2268,21 @@ Seen · Being seen matters`;
       console.error("[Voice] Transcription error:", error);
       return httpResponse(500, { error: "internal_server_error", detail: error.message });
     }
+  }
+
+  // ---- Explicit terminal route: POST /reflect/send ------------------------
+  // Historically the Reflect processor was the FALL-THROUGH for any unmatched
+  // path — every typo'd or probed URL executed an OpenAI call on the public
+  // app key. Phase 2 hardening: /reflect/send is the ONLY path that reaches
+  // this code (matching the Seen app client and the local dev adapter, which
+  // both use exactly this route); every other unmatched path is a plain 404
+  // and makes ZERO model calls.
+  if (path !== "/reflect/send") {
+    return httpResponse(404, { error: "not_found" });
+  }
+  {
+    const throttled = await throttleAnonymous("reflect_send_anon");
+    if (throttled) return throttled;
   }
 
   const text = (body.text || "").trim();
