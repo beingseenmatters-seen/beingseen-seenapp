@@ -378,9 +378,11 @@ test("push path creates ZERO Credits documents; type registry implements quick_r
   assert.equal(billingDocs(db).length, 0, "no creditAccounts/creditLedger writes anywhere in the chain");
 
   assert.equal(PUSH_TYPES[0], "quick_reply");
-  // Reserved names exist for later phases but NOTHING else may send: the
-  // push module exposes exactly one send function.
+  assert.ok(PUSH_TYPES.includes("rsvp_received"));
+  assert.ok(PUSH_TYPES.includes("tag_contact"));
+  // Phase 3 implements three senders (quick_reply + rsvp_received +
+  // tag_contact); the remaining PUSH_TYPES stay reserved with no sender.
   const mod = await import("./push.mjs");
-  const senders = Object.keys(mod).filter((n) => n.toLowerCase().startsWith("send"));
-  assert.deepEqual(senders, ["sendQuickReplyPush"]);
+  const senders = Object.keys(mod).filter((n) => n.toLowerCase().startsWith("send")).sort();
+  assert.deepEqual(senders, ["sendQuickReplyPush", "sendRsvpPush", "sendTagContactPush"]);
 });

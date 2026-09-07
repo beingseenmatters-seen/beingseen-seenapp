@@ -290,7 +290,9 @@ test("Seen.Tag is its own domain — no Gift/Event record is created", async () 
   const { token } = await makeCar(db);
   await S(db, { op: "contact", token, reason: "blocking", idempotencyKey: "idem-dom", scannerToken: SCAN });
   const keys = [...db._store.keys()];
-  assert.ok(keys.every((k) => k.startsWith(`${TAG_COLLECTION}/`) || k.startsWith(`${TAG_CONTACT_COLLECTION}/`) || k.startsWith(`${TAG_EVENT_COLLECTION}/`) || k.startsWith(`${TAG_CONTACT_PHOTO_COLLECTION}/`)));
+  // Tag domain + its own notification audit (pushEvents) — never a cross-domain
+  // Gift/Event/Live record.
+  assert.ok(keys.every((k) => k.startsWith(`${TAG_COLLECTION}/`) || k.startsWith(`${TAG_CONTACT_COLLECTION}/`) || k.startsWith(`${TAG_EVENT_COLLECTION}/`) || k.startsWith(`${TAG_CONTACT_PHOTO_COLLECTION}/`) || k.startsWith("pushEvents/")));
   assert.equal(keys.some((k) => k.startsWith("gifts/") || k.startsWith("events/") || k.startsWith("liveSessions/")), false);
 });
 

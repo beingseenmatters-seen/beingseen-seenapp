@@ -38,6 +38,8 @@ import crypto from "node:crypto";
 // gift.mjs never imports this module, so the graph stays acyclic.
 import { chargeCredits as chargeCreditsReal } from "./billing.mjs";
 import { GIFT_COLLECTION as BOUND_GIFT_COLLECTION } from "./gift.mjs";
+// FCM Phase 3: Seen.Tag contact notification (best-effort, post-commit).
+import { sendTagContactPush } from "./push.mjs";
 
 export const TAG_COLLECTION = "tags";
 export const TAG_CONTACT_COLLECTION = "tagContacts";
@@ -1001,7 +1003,7 @@ async function resolveTag({ db, body, share = null, now }) {
  * hashed IP. The optional callback phone is stored owner-only and never returned
  * on the public surface or placed in any URL.
  */
-async function submitContact({ db, body, sourceIp, now }) {
+async function submitContact({ db, body, sourceIp, now, messaging = null }) {
   const found = await tagByToken({ db, token: body?.token, now });
   if (found.res) return found.res;
   const { tag } = found;
@@ -1099,11 +1101,29 @@ async function submitContact({ db, body, sourceIp, now }) {
   if (coords) {
     await emitTagEvent(db, { eventType: "TAG_LOCATION_SHARED", tagId: tag.tagId, recipientUid: tag.ownerUid, data: { contactId }, now });
   }
+
+  // FCM Phase 3: notify the Tag OWNER that a MEANINGFUL contact was submitted.
+  // Only reached after the contact actually persisted — a bare QR scan, a
+  // cooldown/rate-limit rejection or a duplicate all return earlier, so none
+  // of them push. pet/luggage/car only (gift is Quick Reply's job and cannot
+  // reach here anyway). Best-effort; a saved contact is never disturbed. Tags
+  // carry no notify language → zh default (product primary; detail view is
+  // localized on open).
+  await sendTagContactPush({
+    db, messaging, now,
+    ownerUid: tag.ownerUid ?? null,
+    tagId: tag.tagId,
+    tagType: tag.type,
+    contactId,
+    petName: tag.profile?.name ?? null,
+    language: "zh",
+  });
+
   return { status: 200, body: { ok: true, duplicate: false, scannerToken } };
 }
 
-export async function handleTagScan({ db, body, share, publicBaseUrl, sourceIp = null, now = Date.now() }) {
+export async function handleTagScan({ db, body, share, publicBaseUrl, sourceIp = null, now = Date.now(), messaging = null }) {
   const op = typeof body?.op === "string" ? body.op : "resolve";
-  if (op === "contact") return submitContact({ db, body, sourceIp, now });
+  if (op === "contact") return submitContact({ db, body, sourceIp, now, messaging });
   return resolveTag({ db, body, share, now });
 }

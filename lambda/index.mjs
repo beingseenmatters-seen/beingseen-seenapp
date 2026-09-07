@@ -1273,7 +1273,7 @@ export const handler = async (event) => {
     return httpResponse(result.status, result.body);
   }
   if (path === "/gift/rsvp") {
-    const result = await rsvpGift({ db: admin.firestore(), body });
+    const result = await rsvpGift({ db: admin.firestore(), body, messaging: admin.messaging() });
     return httpResponse(result.status, result.body);
   }
   // Shared-link RSVP needs NO route of its own: /gift/rsvp delegates to the
@@ -1434,6 +1434,7 @@ export const handler = async (event) => {
       share: giftShareCrypto,
       publicBaseUrl: GIFT_PUBLIC_BASE_URL,
       sourceIp: event.requestContext?.http?.sourceIp || null,
+      messaging: admin.messaging(),
     });
     return httpResponse(result.status, result.body);
   }

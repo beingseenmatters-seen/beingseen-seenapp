@@ -28,8 +28,8 @@ import {
   IDEMPOTENCY_KEY_RE,
 } from "./billing.mjs";
 import { validateOccasion, WEDDING_MUSIC_THEMES } from "./occasion.mjs";
-// FCM Phase 1: Quick Reply owner notification — best-effort, post-commit only.
-import { sendQuickReplyPush } from "./push.mjs";
+// FCM Phase 1/2: owner notifications — best-effort, post-commit only.
+import { sendQuickReplyPush, maybeSendRsvpPush } from "./push.mjs";
 import { submitSharedRsvpForRecord, readSharedResponse } from "./sharedRsvp.mjs";
 import {
   normalizeRecipientLabel,
@@ -1395,7 +1395,7 @@ async function sharedResponseFor(db, rec, tokenHash, body) {
   return readSharedResponse({ db, tokenHash, participantToken: body?.participantToken });
 }
 
-export async function rsvpGift({ db, body, now = Date.now() }) {
+export async function rsvpGift({ db, body, now = Date.now(), messaging = null }) {
   const token = typeof body?.token === "string" ? body.token.trim() : "";
   const key = normalizeKey(body?.key);
   // Canonical binary contract restored (Founder, 2026-08-27): 'maybe' was
@@ -1520,7 +1520,7 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
     if (rsvpMode === "heart_key" && (rec.failedAttempts || rec.lockedUntil || rec.cooldownTier)) {
       await ref.update({ failedAttempts: 0, lockedUntil: null, cooldownTier: 0 });
     }
-    return submitSharedRsvpForRecord({ db, body, rec, tokenHash, now });
+    return submitSharedRsvpForRecord({ db, body, rec, tokenHash, now, messaging });
   }
 
   if (rsvpMode === "heart_key") {
@@ -1536,6 +1536,22 @@ export async function rsvpGift({ db, body, now = Date.now() }) {
   }
 
   await ref.update(responseFields);
+
+  // FCM Phase 2: notify the event ORGANIZER of a MEANINGFUL RSVP change on a
+  // MANAGED per-household invitation. After the commit, best-effort, and only
+  // when attendance actually changed (a message- or dietary-only edit writes
+  // no status → no push, §14). Casual is EXCLUDED this phase (§27). `rec` is
+  // the pre-update record, so it carries the previous attendance state.
+  await maybeSendRsvpPush({
+    db, messaging, now, rec,
+    ownerUid: rec.senderUid ?? null,
+    giftId: tokenHash, // the managed invitation gift IS the RSVP subject
+    rsvpId: tokenHash,
+    label: rec.recipientLabel ?? null,
+    prev: { response: rec.rsvpStatus ?? null, adultCount: rec.rsvpAdultCount ?? null, childCount: rec.rsvpChildCount ?? null, stamp: rec.rsvpAt ?? null },
+    next: { response: status, adultCount: countFields.rsvpAdultCount, childCount: countFields.rsvpChildCount },
+    statusSupplied: !!status,
+  });
   return { status: 200, body: rsvpEcho };
 }
 

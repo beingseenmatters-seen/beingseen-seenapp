@@ -26,6 +26,8 @@
  */
 import crypto from "node:crypto";
 import { validateRsvpCounts, validateRsvpDietary, validateRsvpMessage } from "./event.mjs";
+// FCM Phase 2: organizer RSVP notification (best-effort, post-commit).
+import { maybeSendRsvpPush } from "./push.mjs";
 
 export const SHARED_RSVP_COLLECTION = "sharedRsvp";
 
@@ -89,7 +91,7 @@ export async function submitSharedRsvp({ db, body, giftCollection, now = Date.no
  * per-route, so a new path would need an infrastructure change — and one door
  * for "answer this invitation" is the better contract anyway.
  */
-export async function submitSharedRsvpForRecord({ db, body, rec, tokenHash, now = Date.now() }) {
+export async function submitSharedRsvpForRecord({ db, body, rec, tokenHash, now = Date.now(), messaging = null }) {
 
   let participantToken =
     typeof body?.participantToken === "string" ? body.participantToken.trim() : "";
@@ -146,6 +148,20 @@ export async function submitSharedRsvpForRecord({ db, body, rec, tokenHash, now 
     expiresAt: rec.expiresAt ?? null,
   };
   await ref.set(next);
+
+  // FCM Phase 2: notify the event ORGANIZER of a meaningful shared-link RSVP.
+  // A shared link captures NO per-responder name (§12), so the copy is always
+  // generic (label = null). Best-effort, post-commit, casual excluded (§27).
+  await maybeSendRsvpPush({
+    db, messaging, now, rec,
+    ownerUid: rec.senderUid ?? null,
+    giftId: tokenHash,
+    rsvpId: `${tokenHash}_${participantIdHash}`,
+    label: null,
+    prev: { response: prev?.status ?? null, adultCount: prev?.adultCount ?? null, childCount: prev?.childCount ?? null, stamp: prev?.updatedAt ?? null },
+    next: { response: next.status ?? null, adultCount: next.adultCount ?? null, childCount: next.childCount ?? null },
+    statusSupplied: !!status,
+  });
 
   return {
     status: 200,
