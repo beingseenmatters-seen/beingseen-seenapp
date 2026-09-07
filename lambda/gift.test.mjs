@@ -455,7 +455,7 @@ test("occasion: malformed wedding data is rejected clearly, never silently dropp
     // Birthday validator, which rejects these wedding-shaped facts on the
     // first missing Birthday field. Still fail-closed, more precisely.
     [weddingOccasion({ type: "birthday" }), "birthdayPersonName"],
-    [weddingOccasion({ type: "graduation" }), "type"],
+    [weddingOccasion({ type: "unknown_party" }), "type"],
     // v2 is the CULTURAL contract version: still refused here, because it
     // must declare a culture. An unsupported version is refused as before.
     [weddingOccasion({ version: 2 }), "culture"],

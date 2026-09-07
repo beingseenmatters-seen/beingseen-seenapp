@@ -236,7 +236,7 @@ test("birthday drafts generate in zh and en with birthday guidance, never weddin
 
 test("fail-closed: unknown birthday version and unknown types are refused at the seal", () => {
   assert.equal(validateOccasion({ type: "birthday", version: 2, ...bFacts() }).field, "version");
-  assert.equal(validateOccasion({ type: "graduation", version: 1, ...bFacts() }).field, "type");
+  assert.equal(validateOccasion({ type: "unknown_party", version: 1, ...bFacts() }).field, "type");
   assert.equal(validateOccasion(bOccasion()).ok, true);
 });
 

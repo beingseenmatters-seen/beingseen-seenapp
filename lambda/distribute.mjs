@@ -55,6 +55,11 @@ import {
 const EVENT_PRODUCT_BY_TYPE = {
   wedding: "private_event_invitation",
   birthday: "private_event_invitation",
+  // Private Gathering + Graduation ride the SAME private-event price (100 /
+  // independent invitation) — server-derived from the sealed event type, so a
+  // client can never forge a cheaper classification (negative tests cover it).
+  private_gathering: "private_event_invitation",
+  graduation: "private_event_invitation",
   [OCCASION_TYPE_BUSINESS]: "business_event_invitation",
 };
 
@@ -193,7 +198,7 @@ export async function distributeInvitations({
       if (g.invitationGiftId) continue;
       if (orphanLabels.has(g.label)) { orphanLabels.delete(g.label); continue; }
       const v = variants[g.relationshipType] ??
-        (ev.type === "birthday" || ev.type === "business_event" || ev.type === "casual" ? variants.general : undefined);
+        (ev.type === "birthday" || ev.type === "business_event" || ev.type === "casual" || ev.type === "private_gathering" || ev.type === "graduation" ? variants.general : undefined);
       if (!v?.message) continue;
       chargeableCount += 1;
     }
@@ -253,7 +258,7 @@ export async function distributeInvitations({
     // its strict per-relationship contract unchanged.
     const variant =
       variants[guest.relationshipType] ??
-      (ev.type === "birthday" || ev.type === "business_event" || ev.type === "casual" ? variants.general : undefined);
+      (ev.type === "birthday" || ev.type === "business_event" || ev.type === "casual" || ev.type === "private_gathering" || ev.type === "graduation" ? variants.general : undefined);
     if (!variant?.message) { fail("missing_variant", { relationshipType: guest.relationshipType }); continue; }
 
     // A balance exhausted mid-batch stops FURTHER chargeable rows honestly —

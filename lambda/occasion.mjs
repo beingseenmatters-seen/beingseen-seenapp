@@ -80,7 +80,28 @@ export const OCCASION_TYPE_BUSINESS = "business_event";
  */
 export const OCCASION_TYPE_CASUAL = "casual";
 
-export const INVITATION_EVENT_TYPES = [OCCASION_TYPE_WEDDING, OCCASION_TYPE_BIRTHDAY, OCCASION_TYPE_BUSINESS, OCCASION_TYPE_CASUAL];
+/**
+ * Private Gathering (私人聚会) — a STRUCTURED private/social event (BBQ, camping,
+ * family gathering, dinner party, housewarming, picnic, small reunion). Unlike
+ * Casual (轻松相聚, lightweight/one-tap/shared-first), Private Gathering is the
+ * managed model: named households, relationship-aware wording, RSVP, Continue
+ * Invite and a dashboard — Business's architecture with social semantics.
+ * Bills as private_event_invitation (100/invitation), NEVER Business.
+ */
+export const OCCASION_TYPE_PRIVATE = "private_gathering";
+
+/**
+ * Graduation Gathering (毕业季聚会) — Birthday's guest-first lifecycle, subject =
+ * a graduation milestone. Supports BOTH an individual graduate celebration
+ * ("Emily's Graduation") and a group/class gathering ("2026 Class Graduation")
+ * — graduateName is OPTIONAL (§7). Bills as private_event_invitation.
+ */
+export const OCCASION_TYPE_GRADUATION = "graduation";
+
+export const INVITATION_EVENT_TYPES = [
+  OCCASION_TYPE_WEDDING, OCCASION_TYPE_BIRTHDAY, OCCASION_TYPE_BUSINESS, OCCASION_TYPE_CASUAL,
+  OCCASION_TYPE_PRIVATE, OCCASION_TYPE_GRADUATION,
+];
 
 /**
  * Birthday relationship vocabulary — ITS OWN list, not Wedding's. 长辈 and
@@ -105,6 +126,8 @@ export function variantKeysForEventType(type) {
   if (type === OCCASION_TYPE_BIRTHDAY) return BIRTHDAY_VARIANT_KEYS;
   if (type === OCCASION_TYPE_BUSINESS) return BUSINESS_VARIANT_KEYS;
   if (type === OCCASION_TYPE_CASUAL) return CASUAL_VARIANT_KEYS;
+  if (type === OCCASION_TYPE_PRIVATE) return PRIVATE_VARIANT_KEYS;
+  if (type === OCCASION_TYPE_GRADUATION) return GRADUATION_VARIANT_KEYS;
   return WEDDING_AUDIENCES;
 }
 
@@ -147,11 +170,33 @@ export const CASUAL_AUDIENCES = ["friends", "family", "colleagues", "classmates"
 export const CASUAL_GENERAL_AUDIENCE = "general";
 export const CASUAL_VARIANT_KEYS = [CASUAL_GENERAL_AUDIENCE, ...CASUAL_AUDIENCES];
 
+/**
+ * Private Gathering vocabulary — social relationships (§3). `neighbours` is an
+ * ADDITIVE new relationship value (no migration); the rest reuse existing
+ * enum values. "general" is the anonymous shared-link wording, same contract.
+ */
+export const PRIVATE_AUDIENCES = ["family", "friends", "close_friends", "colleagues", "classmates", "neighbours", "other"];
+export const PRIVATE_TONES = ["warm", "casual", "heartfelt", "playful", "simple"];
+export const PRIVATE_GENERAL_AUDIENCE = "general";
+export const PRIVATE_VARIANT_KEYS = [PRIVATE_GENERAL_AUDIENCE, ...PRIVATE_AUDIENCES];
+
+/**
+ * Graduation vocabulary (§9) — `teachers` is an ADDITIVE new relationship
+ * value (Teachers / Mentors; no existing safe mapping), the rest reuse
+ * existing enum values.
+ */
+export const GRADUATION_AUDIENCES = ["family", "friends", "close_friends", "classmates", "teachers", "colleagues", "other"];
+export const GRADUATION_TONES = ["warm", "heartfelt", "celebratory", "simple", "playful"];
+export const GRADUATION_GENERAL_AUDIENCE = "general";
+export const GRADUATION_VARIANT_KEYS = [GRADUATION_GENERAL_AUDIENCE, ...GRADUATION_AUDIENCES];
+
 /** Relationship vocabulary for an EVENT type — guests/variants validate here. */
 export function audiencesForEventType(type) {
   if (type === OCCASION_TYPE_BIRTHDAY) return BIRTHDAY_AUDIENCES;
   if (type === OCCASION_TYPE_BUSINESS) return BUSINESS_AUDIENCES;
   if (type === OCCASION_TYPE_CASUAL) return CASUAL_AUDIENCES;
+  if (type === OCCASION_TYPE_PRIVATE) return PRIVATE_AUDIENCES;
+  if (type === OCCASION_TYPE_GRADUATION) return GRADUATION_AUDIENCES;
   return WEDDING_AUDIENCES;
 }
 
@@ -694,6 +739,179 @@ export function validateCasualOccasion(raw) {
   return { ok: true, occasion: { type: OCCASION_TYPE_CASUAL, version: CASUAL_OCCASION_VERSION, ...res.facts } };
 }
 
+// --- Private Gathering (私人聚会) — structured social event, Business rails ----
+
+export const PRIVATE_OCCASION_VERSION = 1;
+const PRIVATE_LIMITS = { eventTitle: 60, venueName: 80, address: 160, inviter: 40, details: 300, whatToBring: 200 };
+
+/**
+ * Private Gathering facts — the smallest STRUCTURED private-event contract:
+ * a title, when, where, who invites (optional), an optional note and an
+ * optional "what to bring". Deliberately NO Business-only company/context/
+ * dressCode/materials fields (§4).
+ */
+export function validatePrivateFacts(raw) {
+  if (!raw || typeof raw !== "object") return { ok: false, field: "facts" };
+  const eventTitle = cleanString(raw.eventTitle, PRIVATE_LIMITS.eventTitle);
+  if (!eventTitle) return { ok: false, field: "eventTitle" };
+
+  if (!isValidIsoDate(raw.date)) return { ok: false, field: "date" };
+  const time = raw.time;
+  if (!time || typeof time !== "object") return { ok: false, field: "time" };
+  if (typeof time.start !== "string" || !TIME_RE.test(time.start)) return { ok: false, field: "time.start" };
+  let end = null;
+  if (time.end !== undefined && time.end !== null && time.end !== "") {
+    if (typeof time.end !== "string" || !TIME_RE.test(time.end)) return { ok: false, field: "time.end" };
+    end = time.end;
+  }
+
+  const venue = raw.venue;
+  if (!venue || typeof venue !== "object") return { ok: false, field: "venue" };
+  const displayName = cleanString(venue.displayName, PRIVATE_LIMITS.venueName);
+  if (!displayName) return { ok: false, field: "venue.displayName" };
+  let formattedAddress = null;
+  if (venue.formattedAddress !== undefined && venue.formattedAddress !== null && venue.formattedAddress !== "") {
+    formattedAddress = cleanString(venue.formattedAddress, PRIVATE_LIMITS.address);
+    if (!formattedAddress) return { ok: false, field: "venue.formattedAddress" };
+  }
+
+  let inviter = null;
+  if (raw.inviter !== undefined && raw.inviter !== null && raw.inviter !== "") {
+    inviter = cleanString(raw.inviter, PRIVATE_LIMITS.inviter);
+    if (!inviter) return { ok: false, field: "inviter" };
+  }
+  let details = null;
+  if (raw.details !== undefined && raw.details !== null && raw.details !== "") {
+    details = cleanString(raw.details, PRIVATE_LIMITS.details);
+    if (!details) return { ok: false, field: "details" };
+  }
+  let whatToBring = null;
+  if (raw.whatToBring !== undefined && raw.whatToBring !== null && raw.whatToBring !== "") {
+    whatToBring = cleanString(raw.whatToBring, PRIVATE_LIMITS.whatToBring);
+    if (!whatToBring) return { ok: false, field: "whatToBring" };
+  }
+
+  if (!PRIVATE_VARIANT_KEYS.includes(raw.audienceType)) return { ok: false, field: "audienceType" };
+
+  return {
+    ok: true,
+    facts: {
+      eventTitle,
+      date: raw.date,
+      time: { start: time.start, end },
+      venue: { displayName, formattedAddress },
+      inviter,
+      details,
+      whatToBring,
+      audienceType: raw.audienceType,
+    },
+  };
+}
+
+export function validatePrivateOccasion(raw) {
+  if (!raw || typeof raw !== "object") return { ok: false, field: "occasion" };
+  if (raw.type !== OCCASION_TYPE_PRIVATE) return { ok: false, field: "type" };
+  if (raw.version !== PRIVATE_OCCASION_VERSION) return { ok: false, field: "version" };
+  const { type: _t, version: _v, ...facts } = raw;
+  const res = validatePrivateFacts(facts);
+  if (!res.ok) return res;
+  return { ok: true, occasion: { type: OCCASION_TYPE_PRIVATE, version: PRIVATE_OCCASION_VERSION, ...res.facts } };
+}
+
+// --- Graduation Gathering (毕业季聚会) — Birthday rails, individual OR group ----
+
+export const GRADUATION_OCCASION_VERSION = 1;
+const GRADUATION_LIMITS = { name: 40, eventTitle: 60, school: 80, program: 60, venueName: 80, address: 160, inviter: 40 };
+
+/**
+ * Graduation facts — title is the required subject; graduateName is OPTIONAL
+ * so a class/group gathering ("2026 Class Graduation") never has to invent a
+ * single graduate (§7). School / program / graduationYear are optional colour.
+ */
+export function validateGraduationFacts(raw) {
+  if (!raw || typeof raw !== "object") return { ok: false, field: "facts" };
+  const eventTitle = cleanString(raw.eventTitle, GRADUATION_LIMITS.eventTitle);
+  if (!eventTitle) return { ok: false, field: "eventTitle" };
+
+  // OPTIONAL: an individual celebration names the graduate; a class gathering
+  // leaves it null. The AI branches on presence (§8).
+  let graduateName = null;
+  if (raw.graduateName !== undefined && raw.graduateName !== null && raw.graduateName !== "") {
+    graduateName = cleanString(raw.graduateName, GRADUATION_LIMITS.name);
+    if (!graduateName) return { ok: false, field: "graduateName" };
+  }
+  let school = null;
+  if (raw.school !== undefined && raw.school !== null && raw.school !== "") {
+    school = cleanString(raw.school, GRADUATION_LIMITS.school);
+    if (!school) return { ok: false, field: "school" };
+  }
+  let program = null;
+  if (raw.program !== undefined && raw.program !== null && raw.program !== "") {
+    program = cleanString(raw.program, GRADUATION_LIMITS.program);
+    if (!program) return { ok: false, field: "program" };
+  }
+  let graduationYear = null;
+  if (raw.graduationYear !== undefined && raw.graduationYear !== null && raw.graduationYear !== "") {
+    const y = String(raw.graduationYear).trim();
+    if (!/^\d{4}$/.test(y)) return { ok: false, field: "graduationYear" };
+    graduationYear = y;
+  }
+
+  if (!isValidIsoDate(raw.date)) return { ok: false, field: "date" };
+  const time = raw.time;
+  if (!time || typeof time !== "object") return { ok: false, field: "time" };
+  if (typeof time.start !== "string" || !TIME_RE.test(time.start)) return { ok: false, field: "time.start" };
+  let end = null;
+  if (time.end !== undefined && time.end !== null && time.end !== "") {
+    if (typeof time.end !== "string" || !TIME_RE.test(time.end)) return { ok: false, field: "time.end" };
+    end = time.end;
+  }
+
+  const venue = raw.venue;
+  if (!venue || typeof venue !== "object") return { ok: false, field: "venue" };
+  const displayName = cleanString(venue.displayName, GRADUATION_LIMITS.venueName);
+  if (!displayName) return { ok: false, field: "venue.displayName" };
+  let formattedAddress = null;
+  if (venue.formattedAddress !== undefined && venue.formattedAddress !== null && venue.formattedAddress !== "") {
+    formattedAddress = cleanString(venue.formattedAddress, GRADUATION_LIMITS.address);
+    if (!formattedAddress) return { ok: false, field: "venue.formattedAddress" };
+  }
+
+  let inviter = null;
+  if (raw.inviter !== undefined && raw.inviter !== null && raw.inviter !== "") {
+    inviter = cleanString(raw.inviter, GRADUATION_LIMITS.inviter);
+    if (!inviter) return { ok: false, field: "inviter" };
+  }
+
+  if (!GRADUATION_VARIANT_KEYS.includes(raw.audienceType)) return { ok: false, field: "audienceType" };
+
+  return {
+    ok: true,
+    facts: {
+      eventTitle,
+      graduateName,
+      school,
+      program,
+      graduationYear,
+      date: raw.date,
+      time: { start: time.start, end },
+      venue: { displayName, formattedAddress },
+      inviter,
+      audienceType: raw.audienceType,
+    },
+  };
+}
+
+export function validateGraduationOccasion(raw) {
+  if (!raw || typeof raw !== "object") return { ok: false, field: "occasion" };
+  if (raw.type !== OCCASION_TYPE_GRADUATION) return { ok: false, field: "type" };
+  if (raw.version !== GRADUATION_OCCASION_VERSION) return { ok: false, field: "version" };
+  const { type: _t, version: _v, ...facts } = raw;
+  const res = validateGraduationFacts(facts);
+  if (!res.ok) return res;
+  return { ok: true, occasion: { type: OCCASION_TYPE_GRADUATION, version: GRADUATION_OCCASION_VERSION, ...res.facts } };
+}
+
 /**
  * ONE seal-door validator, dispatching on the declared type. Unknown types
  * fail closed — which is also the deployment-order story: a backend without
@@ -705,6 +923,8 @@ export function validateOccasion(raw) {
   if (raw.type === OCCASION_TYPE_BIRTHDAY) return validateBirthdayOccasion(raw);
   if (raw.type === OCCASION_TYPE_BUSINESS) return validateBusinessOccasion(raw);
   if (raw.type === OCCASION_TYPE_CASUAL) return validateCasualOccasion(raw);
+  if (raw.type === OCCASION_TYPE_PRIVATE) return validatePrivateOccasion(raw);
+  if (raw.type === OCCASION_TYPE_GRADUATION) return validateGraduationOccasion(raw);
   return validateWeddingOccasion(raw);
 }
 
@@ -1580,6 +1800,416 @@ export async function runBusinessDraft({ decoded, body, callModel, log = console
   if (valid.length < 2) {
     log.error?.(`[Occasion] business draft generation failed: ${valid.length} valid after retry`);
     return { status: 502, body: { error: "business_draft_failed" } };
+  }
+  return { status: 200, body: { drafts: valid.slice(0, 3) } };
+}
+
+// --- Private Gathering generation (私人聚会) — social, managed invitation -----
+
+const PRIVATE_TONE_GUIDANCE_EN = {
+  warm: "Warm — affectionate and genuine, glad to have them along.",
+  casual: "Casual — easy and low-key, the way you'd message a friend.",
+  heartfelt: "Heartfelt — sincere about the gathering and the company.",
+  playful: "Playful — light and fun; a get-together, not a ceremony.",
+  simple: "Simple — short, clear and friendly; no fuss.",
+};
+const PRIVATE_TONE_GUIDANCE_ZH = {
+  warm: "温暖——真挚亲切，高兴地请对方来。",
+  casual: "随性——像给朋友发消息一样自然，不端着。",
+  heartfelt: "走心——认真说出这次相聚的心意。",
+  playful: "俏皮——轻松有趣，是聚会不是典礼。",
+  simple: "简洁——短短几句，清楚友好，不啰嗦。",
+};
+const PRIVATE_AUDIENCE_GUIDANCE_EN = {
+  general: "Everyone invited — warm and welcoming to any guest; no inside references, no assumed closeness.",
+  family: "Family — close and unguarded.",
+  friends: "Friends — natural and warm, glad to share the time.",
+  close_friends: "Closest friends — personal, room for in-jokes and shared history.",
+  colleagues: "Colleagues — friendly and easy, without presuming intimacy.",
+  classmates: "Classmates — familiar and fun, the tone of a group that grew up together.",
+  neighbours: "Neighbours — neighbourly and welcoming; friendly without over-familiarity.",
+  other: "A guest — warm and welcoming, no assumed closeness.",
+};
+const PRIVATE_AUDIENCE_GUIDANCE_ZH = {
+  general: "所有来宾——对任何人都亲切合适，不预设关系，不用内部梗。",
+  family: "家人——亲近自然，不用客套。",
+  friends: "朋友——自然温暖，高兴地邀请对方来相聚。",
+  close_friends: "挚友——更私人，可以带共同回忆和玩笑。",
+  colleagues: "同事——友好轻松，有分寸。",
+  classmates: "同学——熟悉热闹，一起长大的语气。",
+  neighbours: "邻居——邻里之间的友好，热情但有分寸。",
+  other: "来宾——亲切欢迎，不预设关系。",
+};
+
+export function buildPrivateDraftPrompt({ facts, tone, personalContext, attempt = 0, language = "zh" }) {
+  const en = language === "en";
+  const dateDisplay = formatWeddingDate(facts.date, language);
+  const toneKey = PRIVATE_TONES.includes(tone) ? tone : "warm";
+  const signoff = facts.inviter || (en ? "your host" : "主人");
+  const angleSets = en
+    ? [
+        "lead with the invitation itself — simply and gladly ask them to come",
+        "lead with the gathering — what kind of get-together this will be",
+        "the shortest one — a complete, friendly invitation in a few lines",
+        "lead with the company — who's coming together and why it'll be good",
+      ]
+    : [
+        "以邀请本身为主线——高兴地请对方来",
+        "以聚会气氛为主线——这会是一场什么样的相聚",
+        "最短的一篇——几句话说清，但仍是完整友好的邀请",
+        "以相聚的人为主线——大家聚在一起为什么值得期待",
+      ];
+  const n = angleSets.length;
+  const off = ((Math.trunc(attempt) % n) + n) % n;
+  const angles = [0, 1, 2].map((i) => angleSets[(off + i) % n]);
+
+  const bring = facts.whatToBring ? (en ? `What to bring: ${facts.whatToBring} (mention naturally if it fits)` : `需要带的：${facts.whatToBring}（自然带入即可）`) : null;
+  const detail = facts.details ? (en ? `Note: ${facts.details} (weave in only if natural)` : `备注：${facts.details}（自然的话可带入）`) : null;
+
+  const system = en
+    ? [
+        "You are writing the body of a private gathering invitation — complete and sendable, warm and social, never corporate and not a greeting-card line.",
+        "[FACTS — HIGHEST PRIORITY]",
+        `These must appear exactly: the event \"${facts.eventTitle}\", the date \"${dateDisplay}\", and the venue \"${facts.venue.displayName}\". The time should appear naturally.`,
+        "Write the time as a natural clock time (\"6:00 PM\", \"six in the evening\") — never 24-hour form.",
+        "Invent NO fact not supplied: no address details beyond what's given, no schedule, no gifts, no dress code, no other guests' names.",
+        "[LANGUAGE] Contemporary, natural English — a friendly private invitation, easy and warm.",
+        "[STRUCTURE] Each draft: a fitting opening, what the gathering is, a clear invitation, date, time, place, and a natural sign-off from \"" + signoff + "\".",
+        "[DIFFERENCE] The three drafts must genuinely differ per the assigned lines.",
+        '[OUTPUT] Strictly one JSON object: {"drafts":["first","second","third"]} — nothing else. Use \\n for line breaks.',
+      ].join("\n")
+    : [
+        "你在替主人写一份中文私人聚会邀请正文——完整、可直接送出，温暖有人情味，不是商务口吻，也不是贺卡金句。",
+        "【事实规则（最高优先级）】",
+        `以下内容必须原样出现：活动「${facts.eventTitle}」、日期「${dateDisplay}」、地点「${facts.venue.displayName}」；时间也应自然出现。`,
+        "时间用 24 小时制（如「18:00」）或自然中文说法（如「傍晚六点」），不要混用。",
+        "严禁编造未提供的事实：额外地址细节、具体环节、着装、礼物要求、其他宾客。",
+        "【语言】当代自然的中文，轻松有温度——这是私人相聚的邀请。",
+        `【结构】每篇都要有开场、说清这是什么相聚、明确的邀请、日期时间地点，并以「${signoff}」自然落款。`,
+        "【差异】三篇按指定主线真正不同。",
+        '【输出】严格输出一个 JSON 对象：{"drafts":["第一篇","第二篇","第三篇"]}，不要其它内容。换行用 \\n。',
+      ].join("\n");
+
+  const factsLines = en
+    ? [
+        "[GATHERING FACTS]",
+        `Event: ${facts.eventTitle}`,
+        `Date: ${dateDisplay} (must appear exactly)`,
+        `Time: ${formatWeddingTime(facts.time.start, "en")}${facts.time.end ? ` – ${formatWeddingTime(facts.time.end, "en")}` : ""}`,
+        `Venue: ${facts.venue.displayName} (must appear exactly)`,
+        ...(facts.venue.formattedAddress ? [`Address: ${facts.venue.formattedAddress} (optional to include)`] : []),
+        ...(bring ? [bring] : []),
+        ...(detail ? [detail] : []),
+        `Host / sign-off: ${signoff}`,
+      ]
+    : [
+        "【聚会事实】",
+        `活动：${facts.eventTitle}`,
+        `日期：${dateDisplay}（须原样出现）`,
+        `时间：${facts.time.start}${facts.time.end ? `–${facts.time.end}` : ""}`,
+        `地点：${facts.venue.displayName}（须原样出现）`,
+        ...(facts.venue.formattedAddress ? [`地址：${facts.venue.formattedAddress}（可自然带入）`] : []),
+        ...(bring ? [bring] : []),
+        ...(detail ? [detail] : []),
+        `落款：${signoff}`,
+      ];
+  const user = [
+    ...factsLines,
+    "",
+    (en ? "[GUESTS] " : "【受邀对象】") + (en ? PRIVATE_AUDIENCE_GUIDANCE_EN : PRIVATE_AUDIENCE_GUIDANCE_ZH)[facts.audienceType],
+    (en ? "[TONE] " : "【语气】") + (en ? PRIVATE_TONE_GUIDANCE_EN : PRIVATE_TONE_GUIDANCE_ZH)[toneKey],
+    ...(personalContext
+      ? ["", (en ? `[FROM THE HOST] (context to weave in, never quote): "${personalContext}"` : `【主人的心里话】（供你体会，不要原句照抄）：「${personalContext}」`)]
+      : []),
+    "",
+    en ? "[THE THREE LINES]" : "【三篇的主线】",
+    ...(en ? [`First: ${angles[0]}`, `Second: ${angles[1]}`, `Third: ${angles[2]}`] : [`第一篇：${angles[0]}`, `第二篇：${angles[1]}`, `第三篇：${angles[2]}`]),
+  ].join("\n");
+
+  return { system, user };
+}
+
+export function validatePrivateDraft(text, facts, language = "zh") {
+  const t = typeof text === "string" ? text : "";
+  if (!t.trim()) return false;
+  return (
+    t.includes(facts.eventTitle) &&
+    weddingDateVariants(facts.date, language).some((v) => t.includes(v)) &&
+    t.includes(facts.venue.displayName)
+  );
+}
+
+/** POST /express/draft, occasion.type === "private_gathering". */
+export async function runPrivateGatheringDraft({ decoded, body, callModel, log = console }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  if (typeof body?.situation === "string" && body.situation.trim()) {
+    return { status: 400, body: { error: "invalid_request" } };
+  }
+  const language = body?.language === "en" ? "en" : body?.language === "zh" || body?.language === undefined || body?.language === null || body?.language === "" ? "zh" : null;
+  if (!language) return { status: 400, body: { error: "occasion_language_unsupported" } };
+
+  const occ = body?.occasion;
+  if (!occ || typeof occ !== "object") return { status: 400, body: { error: "invalid_occasion", field: "occasion" } };
+  if (occ.type !== OCCASION_TYPE_PRIVATE) return { status: 400, body: { error: "invalid_occasion", field: "type" } };
+  if (occ.version !== PRIVATE_OCCASION_VERSION) return { status: 400, body: { error: "invalid_occasion", field: "version" } };
+  const factsRes = validatePrivateFacts(occ.facts);
+  if (!factsRes.ok) return { status: 400, body: { error: "invalid_occasion", field: factsRes.field } };
+  const facts = factsRes.facts;
+
+  let tone = "warm";
+  if (occ.tone !== undefined && occ.tone !== null && occ.tone !== "") {
+    if (!PRIVATE_TONES.includes(occ.tone)) return { status: 400, body: { error: "invalid_occasion", field: "tone" } };
+    tone = occ.tone;
+  }
+  let personalContext = null;
+  if (occ.personalContext !== undefined && occ.personalContext !== null && occ.personalContext !== "") {
+    if (typeof occ.personalContext !== "string" || occ.personalContext.trim().length > 200) {
+      return { status: 400, body: { error: "invalid_occasion", field: "personalContext" } };
+    }
+    personalContext = occ.personalContext.trim();
+  }
+  const attempt = typeof occ.attempt === "number" && Number.isFinite(occ.attempt) ? Math.max(0, Math.trunc(occ.attempt)) : 0;
+
+  const seen = new Set();
+  const valid = [];
+  for (let round = 0; round < 2; round += 1) {
+    let content;
+    try {
+      content = await callModel({
+        ...buildPrivateDraftPrompt({ facts, tone, personalContext, attempt: attempt + round, language }),
+        maxTokens: WEDDING_DRAFT_MAX_TOKENS,
+        temperature: WEDDING_DRAFT_TEMPERATURE,
+        jsonObject: true,
+      });
+    } catch (e) {
+      log.error?.("[Occasion] private draft model call failed", e?.message || e);
+      continue;
+    }
+    let parsed = [];
+    try {
+      const p = JSON.parse(String(content || ""));
+      parsed = (Array.isArray(p) ? p : p?.drafts) || [];
+    } catch { parsed = []; }
+    for (const d of parsed.map((x) => String(x).trim()).filter(Boolean)) {
+      if (seen.has(d)) continue;
+      seen.add(d);
+      if (validatePrivateDraft(d, facts, language)) valid.push(d);
+    }
+    if (valid.length >= 3) break;
+  }
+  if (valid.length < 2) {
+    log.error?.(`[Occasion] private draft generation failed: ${valid.length} valid after retry`);
+    return { status: 502, body: { error: "private_draft_failed" } };
+  }
+  return { status: 200, body: { drafts: valid.slice(0, 3) } };
+}
+
+// --- Graduation generation (毕业季聚会) — individual OR group/class ------------
+
+const GRADUATION_TONE_GUIDANCE_EN = {
+  warm: "Warm — proud and glad, celebrating a real milestone.",
+  heartfelt: "Heartfelt — sincere about what reaching this day means.",
+  celebratory: "Celebratory — upbeat and festive; an achievement worth marking.",
+  simple: "Simple — short, clear and friendly; no fuss.",
+  playful: "Playful — light and fun, a gathering among people who studied together.",
+};
+const GRADUATION_TONE_GUIDANCE_ZH = {
+  warm: "温暖——自豪而欣喜，庆祝一个真正的里程碑。",
+  heartfelt: "走心——认真说出走到这一天的意义。",
+  celebratory: "喜庆——欢快热闹，是值得庆祝的成就。",
+  simple: "简洁——短短几句，清楚友好，不啰嗦。",
+  playful: "俏皮——轻松有趣，一起读过书的人的语气。",
+};
+const GRADUATION_AUDIENCE_GUIDANCE_EN = {
+  general: "Everyone invited — warm and welcoming to any guest; no inside references.",
+  family: "Family — a family milestone; proud and unguarded.",
+  friends: "Friends — celebration and companionship, glad to share the day.",
+  close_friends: "Closest friends — personal, room for shared memories.",
+  classmates: "Classmates — shared years, study experience and this graduation moment.",
+  teachers: "Teachers / mentors — respectful and appropriate to the relationship; gratitude without stiffness.",
+  colleagues: "Colleagues — a fitting professional/personal celebration.",
+  other: "A guest — warm and welcoming, no assumed closeness.",
+};
+const GRADUATION_AUDIENCE_GUIDANCE_ZH = {
+  general: "所有来宾——对任何人都亲切合适，不用内部梗。",
+  family: "家人——家庭的里程碑，自豪而亲近。",
+  friends: "朋友——庆祝与陪伴，高兴地一起庆祝这一天。",
+  close_friends: "挚友——更私人，可带共同回忆。",
+  classmates: "同学——共同的求学岁月、一起走过的日子和这个毕业时刻。",
+  teachers: "老师／导师——尊重、得体，表达谢意但不生硬。",
+  colleagues: "同事——得体的庆祝，兼顾专业与情谊。",
+  other: "来宾——亲切欢迎，不预设关系。",
+};
+
+export function buildGraduationDraftPrompt({ facts, tone, personalContext, attempt = 0, language = "zh" }) {
+  const en = language === "en";
+  const dateDisplay = formatWeddingDate(facts.date, language);
+  const toneKey = GRADUATION_TONES.includes(tone) ? tone : "warm";
+  const signoff = facts.inviter || facts.graduateName || (en ? "your host" : "主人");
+  // §8: branch on whether a single graduate is named.
+  const subjectLine = facts.graduateName
+    ? (en
+        ? `This is an INDIVIDUAL celebration for ${facts.graduateName}'s graduation${facts.school ? ` from ${facts.school}` : ""}. Write around this person's milestone.`
+        : `这是为「${facts.graduateName}」的毕业庆祝${facts.school ? `（${facts.school}）` : ""}。围绕这个人的里程碑来写。`)
+    : (en
+        ? `This is a GROUP / CLASS graduation gathering (no single graduate named). Write around the shared graduation experience and the class coming together — never invent one graduate's name.`
+        : `这是一次同学／班级的毕业聚会（没有指定某一位毕业生）。围绕共同的毕业经历和同学相聚来写——不要编造某个人的名字。`);
+
+  const angleSets = en
+    ? [
+        "lead with the invitation itself — gladly ask them to come celebrate",
+        "lead with the milestone — what graduating means and why it's worth marking",
+        "the shortest one — a complete, warm invitation in a few lines",
+        "lead with the togetherness — the people gathering to celebrate",
+      ]
+    : [
+        "以邀请本身为主线——高兴地请对方来一起庆祝",
+        "以里程碑为主线——毕业意味着什么、为什么值得纪念",
+        "最短的一篇——几句话说清，但仍是完整温暖的邀请",
+        "以相聚为主线——大家聚在一起庆祝",
+      ];
+  const n = angleSets.length;
+  const off = ((Math.trunc(attempt) % n) + n) % n;
+  const angles = [0, 1, 2].map((i) => angleSets[(off + i) % n]);
+
+  const system = en
+    ? [
+        "You are writing the body of a graduation gathering invitation — complete and sendable, proud and warm, not a greeting-card line.",
+        subjectLine,
+        "[FACTS — HIGHEST PRIORITY]",
+        `These must appear exactly: the event \"${facts.eventTitle}\", the date \"${dateDisplay}\", and the venue \"${facts.venue.displayName}\". The time should appear naturally.`,
+        "Write the time as a natural clock time — never 24-hour form.",
+        "Invent NO fact not supplied: no degree, no school, no grades, no other names beyond what's given.",
+        "[LANGUAGE] Contemporary, natural English — celebratory and warm.",
+        "[STRUCTURE] Each draft: a fitting opening, what is being celebrated, a clear invitation, date, time, place, and a natural sign-off from \"" + signoff + "\".",
+        "[DIFFERENCE] The three drafts must genuinely differ per the assigned lines.",
+        '[OUTPUT] Strictly one JSON object: {"drafts":["first","second","third"]} — nothing else. Use \\n for line breaks.',
+      ].join("\n")
+    : [
+        "你在写一份中文毕业季聚会邀请正文——完整、可直接送出，自豪而温暖，不是贺卡金句。",
+        subjectLine,
+        "【事实规则（最高优先级）】",
+        `以下内容必须原样出现：活动「${facts.eventTitle}」、日期「${dateDisplay}」、地点「${facts.venue.displayName}」；时间也应自然出现。`,
+        "时间用 24 小时制或自然中文说法，不要混用。",
+        "严禁编造未提供的事实：学位、学校、成绩、其他名字。",
+        "【语言】当代自然的中文，喜庆而温暖。",
+        `【结构】每篇都要有开场、说清庆祝什么、明确的邀请、日期时间地点，并以「${signoff}」自然落款。`,
+        "【差异】三篇按指定主线真正不同。",
+        '【输出】严格输出一个 JSON 对象：{"drafts":["第一篇","第二篇","第三篇"]}，不要其它内容。换行用 \\n。',
+      ].join("\n");
+
+  const factsLines = en
+    ? [
+        "[GRADUATION FACTS]",
+        `Event: ${facts.eventTitle}`,
+        ...(facts.graduateName ? [`Graduate: ${facts.graduateName}`] : ["Graduate: (class/group — none named)"]),
+        ...(facts.school ? [`School: ${facts.school}`] : []),
+        ...(facts.graduationYear ? [`Graduation year: ${facts.graduationYear}`] : []),
+        `Date: ${dateDisplay} (must appear exactly)`,
+        `Time: ${formatWeddingTime(facts.time.start, "en")}${facts.time.end ? ` – ${formatWeddingTime(facts.time.end, "en")}` : ""}`,
+        `Venue: ${facts.venue.displayName} (must appear exactly)`,
+        ...(facts.venue.formattedAddress ? [`Address: ${facts.venue.formattedAddress} (optional)`] : []),
+        `Host / sign-off: ${signoff}`,
+      ]
+    : [
+        "【毕业事实】",
+        `活动：${facts.eventTitle}`,
+        ...(facts.graduateName ? [`毕业生：${facts.graduateName}`] : ["毕业生：（班级／集体——未指定）"]),
+        ...(facts.school ? [`学校：${facts.school}`] : []),
+        ...(facts.graduationYear ? [`毕业年份：${facts.graduationYear}`] : []),
+        `日期：${dateDisplay}（须原样出现）`,
+        `时间：${facts.time.start}${facts.time.end ? `–${facts.time.end}` : ""}`,
+        `地点：${facts.venue.displayName}（须原样出现）`,
+        ...(facts.venue.formattedAddress ? [`地址：${facts.venue.formattedAddress}（可自然带入）`] : []),
+        `落款：${signoff}`,
+      ];
+  const user = [
+    ...factsLines,
+    "",
+    (en ? "[GUESTS] " : "【受邀对象】") + (en ? GRADUATION_AUDIENCE_GUIDANCE_EN : GRADUATION_AUDIENCE_GUIDANCE_ZH)[facts.audienceType],
+    (en ? "[TONE] " : "【语气】") + (en ? GRADUATION_TONE_GUIDANCE_EN : GRADUATION_TONE_GUIDANCE_ZH)[toneKey],
+    ...(personalContext
+      ? ["", (en ? `[FROM THE HOST] (context to weave in, never quote): "${personalContext}"` : `【主人的心里话】（供你体会，不要原句照抄）：「${personalContext}」`)]
+      : []),
+    "",
+    en ? "[THE THREE LINES]" : "【三篇的主线】",
+    ...(en ? [`First: ${angles[0]}`, `Second: ${angles[1]}`, `Third: ${angles[2]}`] : [`第一篇：${angles[0]}`, `第二篇：${angles[1]}`, `第三篇：${angles[2]}`]),
+  ].join("\n");
+
+  return { system, user };
+}
+
+export function validateGraduationDraft(text, facts, language = "zh") {
+  const t = typeof text === "string" ? text : "";
+  if (!t.trim()) return false;
+  return (
+    t.includes(facts.eventTitle) &&
+    weddingDateVariants(facts.date, language).some((v) => t.includes(v)) &&
+    t.includes(facts.venue.displayName)
+  );
+}
+
+/** POST /express/draft, occasion.type === "graduation". */
+export async function runGraduationDraft({ decoded, body, callModel, log = console }) {
+  if (!decoded?.uid) return { status: 401, body: { error: "unauthorized" } };
+  if (typeof body?.situation === "string" && body.situation.trim()) {
+    return { status: 400, body: { error: "invalid_request" } };
+  }
+  const language = body?.language === "en" ? "en" : body?.language === "zh" || body?.language === undefined || body?.language === null || body?.language === "" ? "zh" : null;
+  if (!language) return { status: 400, body: { error: "occasion_language_unsupported" } };
+
+  const occ = body?.occasion;
+  if (!occ || typeof occ !== "object") return { status: 400, body: { error: "invalid_occasion", field: "occasion" } };
+  if (occ.type !== OCCASION_TYPE_GRADUATION) return { status: 400, body: { error: "invalid_occasion", field: "type" } };
+  if (occ.version !== GRADUATION_OCCASION_VERSION) return { status: 400, body: { error: "invalid_occasion", field: "version" } };
+  const factsRes = validateGraduationFacts(occ.facts);
+  if (!factsRes.ok) return { status: 400, body: { error: "invalid_occasion", field: factsRes.field } };
+  const facts = factsRes.facts;
+
+  let tone = "warm";
+  if (occ.tone !== undefined && occ.tone !== null && occ.tone !== "") {
+    if (!GRADUATION_TONES.includes(occ.tone)) return { status: 400, body: { error: "invalid_occasion", field: "tone" } };
+    tone = occ.tone;
+  }
+  let personalContext = null;
+  if (occ.personalContext !== undefined && occ.personalContext !== null && occ.personalContext !== "") {
+    if (typeof occ.personalContext !== "string" || occ.personalContext.trim().length > 200) {
+      return { status: 400, body: { error: "invalid_occasion", field: "personalContext" } };
+    }
+    personalContext = occ.personalContext.trim();
+  }
+  const attempt = typeof occ.attempt === "number" && Number.isFinite(occ.attempt) ? Math.max(0, Math.trunc(occ.attempt)) : 0;
+
+  const seen = new Set();
+  const valid = [];
+  for (let round = 0; round < 2; round += 1) {
+    let content;
+    try {
+      content = await callModel({
+        ...buildGraduationDraftPrompt({ facts, tone, personalContext, attempt: attempt + round, language }),
+        maxTokens: WEDDING_DRAFT_MAX_TOKENS,
+        temperature: WEDDING_DRAFT_TEMPERATURE,
+        jsonObject: true,
+      });
+    } catch (e) {
+      log.error?.("[Occasion] graduation draft model call failed", e?.message || e);
+      continue;
+    }
+    let parsed = [];
+    try {
+      const p = JSON.parse(String(content || ""));
+      parsed = (Array.isArray(p) ? p : p?.drafts) || [];
+    } catch { parsed = []; }
+    for (const d of parsed.map((x) => String(x).trim()).filter(Boolean)) {
+      if (seen.has(d)) continue;
+      seen.add(d);
+      if (validateGraduationDraft(d, facts, language)) valid.push(d);
+    }
+    if (valid.length >= 3) break;
+  }
+  if (valid.length < 2) {
+    log.error?.(`[Occasion] graduation draft generation failed: ${valid.length} valid after retry`);
+    return { status: 502, body: { error: "graduation_draft_failed" } };
   }
   return { status: 200, body: { drafts: valid.slice(0, 3) } };
 }

@@ -435,6 +435,8 @@ export async function createGift({
   const EVENT_PRODUCT_BY_TYPE = {
     wedding: "private_event_invitation",
     birthday: "private_event_invitation",
+    private_gathering: "private_event_invitation",
+    graduation: "private_event_invitation",
     business_event: "business_event_invitation",
   };
   const eventProduct =
